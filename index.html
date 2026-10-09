@@ -393,6 +393,14 @@ function migrate(o){
     if(it.pack > 0 && !it.pu){ it.pu = 'عبوة'; it.pf = it.pack; }
     delete it.pack; delete it.unit;
   });
+  // مرة واحدة: الأصناف الشائعة اللي اتضافت قبل نظام العبوات تاخد عبوتها الافتراضية
+  if(!o.settings.packsV2){
+    (o.items || []).forEach(it => {
+      const sd = SEED_ITEMS.find(x => x[1] === it.name);
+      if(sd && sd[3] && !it.pu && it.base === sd[2]){ it.pu = sd[3]; it.pf = sd[4]; }
+    });
+    o.settings.packsV2 = true;
+  }
   return o;
 }
 let S;
@@ -1554,16 +1562,45 @@ function itemLabels(){
 }
 function buyItem(id){
   const it = byId(S.items, id); if(!it) return;
-  const x = shopList().find(s => s.it.id === id);
-  const f = packF(it), qty = x && x.qty > 0 ? +(x.qty / f).toFixed(2) : 1;
-  const body = `<div class="fld2">${Fd.num('qty', 'الكمية (بالـ' + esc(entryUnit(it)) + ')', qty, 'autofocus')}${Fd.num('amount', 'دفعت كام إجمالي', it.price ? Math.round(qty * f * it.price) : '')}</div>
+  const x = shopList().find(s_ => s_.it.id === id), base = BASES[baseOf(it)];
+  const opts = hasPack(it)
+    ? [[it.pu, esc(it.pu) + ` (= ${fmtQ(it.pf)} ${base.en})`], [baseOf(it), base.en + ' — ' + base.ar]]
+    : [[baseOf(it), base.en + ' — ' + base.ar], ['__setpack', '➕ بعبوة (كيس، زجاجة، علبة…)']];
+  const f0 = packF(it), q0 = x && x.qty > 0 ? +(x.qty / f0).toFixed(2) : 1;
+  const packs = Array.from(new Set([...PACKS, ...(S.settings.packs || [])]));
+  const body = `<label class="fld"><span>اشتريت بالـ</span><select name="bu" data-bl>${opts.map(o => `<option value="${esc(o[0])}">${o[1]}</option>`).join('')}</select></label>
+    <div class="fld2" data-bl-pack style="display:none"><label class="fld"><span>العبوة</span><select name="npu" data-bl>${packs.map(p_ => `<option>${esc(p_)}</option>`).join('')}</select></label>
+      ${Fd.num('npf', `<span data-bl-l="npf">فيها كام ${base.en}</span>`, '', 'data-bl')}</div>
+    <div class="fld2">${Fd.num('qty', '<span data-bl-l="qty">الكمية</span>', q0, 'autofocus data-bl')}${Fd.num('amount', 'دفعت كام إجمالي', it.price ? Math.round(q0 * f0 * it.price) : '')}</div>
+    <div class="muted" data-bl-l="conv" style="margin:-4px 0 10px"></div>
     ${Fd.date('date', 'التاريخ', todayS())}<div class="muted">هيتسجّل كمصروف "استوك البيت"، والكمية هتتضاف للموجود، والسعر هيتحدّث.</div>${Fd.foot('سجّل الشراء')}`;
   openSheet('اشتريت ' + it.name, body, v => {
     const q = num(v.qty), a = num(v.amount);
     if(!need(q > 0, 'اكتب الكمية')) return false;
+    let f = 1;
+    if(v.bu === '__setpack'){
+      if(!need(num(v.npf) > 0, `اكتب العبوة فيها كام ${base.en}`)) return false;
+      it.pu = v.npu; it.pf = num(v.npf); f = it.pf;   // تتحفظ للصنف للمرة الجاية
+    }else if(hasPack(it) && v.bu === it.pu) f = it.pf;
     recordBuy(it, q * f, a, v.date || todayS());
     save(); toast('اتسجّل الشراء');
   });
+  $('#sheetBody').dataset.item = it.id;
+  buyLabels(it);
+}
+/* بيحدّث عناوين شاشة الشراء حسب الوحدة المختارة */
+function buyLabels(it){
+  const q = n => document.querySelector(`#sheetBody [name="${n}"]`), L = k => document.querySelector(`#sheetBody [data-bl-l="${k}"]`);
+  if(!q('bu')) return;
+  it = it || byId(S.items, document.querySelector('#sheetBody').dataset.item);
+  const base = BASES[baseOf(it)], bu = q('bu').value, setp = bu === '__setpack';
+  document.querySelector('#sheetBody [data-bl-pack]').style.display = setp ? '' : 'none';
+  const unit = setp ? q('npu').value : (BASES[bu] ? base.en : bu);
+  const f = setp ? num(q('npf').value) : (BASES[bu] ? 1 : it.pf);
+  L('qty').textContent = `الكمية (عدد ${unit})`;
+  if(setp) L('npf').textContent = `الـ${unit} فيه كام ${base.en}`;
+  const qty = num(q('qty').value);
+  L('conv').innerHTML = f > 0 && !BASES[bu] ? `${fmtQ(qty)} ${esc(unit)} = <b class="num">${fmtQ(qty * f)}</b> ${base.en}` : '';
 }
 function recordBuy(it, q, a, date){
   if(a > 0){
@@ -2031,9 +2068,11 @@ document.addEventListener('change', e => {
     return;
   }
   if(el.hasAttribute('data-ilbl')){ itemLabels(); return; }
+  if(el.hasAttribute('data-bl')){ buyLabels(); return; }
   if(el.dataset.act === 'cycleDay'){ setCycleDay(+el.value); save(); toast('اتغيّر بداية الشهر'); }
   if(el.dataset.act === 'rollDebts'){ const g = byId(S.goals, el.dataset.id); if(g){ g.rollDebts = el.checked; save(); } }
 });
+document.addEventListener('input', e => { if(e.target.hasAttribute && e.target.hasAttribute('data-bl')) buyLabels(); });
 $('#importFile').addEventListener('change', async e => {
   const f = e.target.files[0]; e.target.value = '';
   if(!f) return;
