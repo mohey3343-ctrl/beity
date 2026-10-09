@@ -170,6 +170,7 @@
   .jard-row:last-child{border-bottom:none;}
   .jard-row .nm{flex:1; font-size:14px; font-weight:600;}
   .jard-row .nm small{display:block; font-weight:400; color:var(--soft); font-size:11.5px;}
+  .jard-row select{width:74px; padding:8px 4px; border:1px solid var(--line); border-radius:10px; background:var(--card-2); color:var(--ink); font-size:13px;}
   .jard-row input{width:90px; padding:8px; border:1px solid var(--line); border-radius:10px; background:var(--card-2); color:var(--ink); text-align:center;}
   .group-h{font-size:12.5px; color:var(--soft); font-weight:700; margin:12px 0 2px;}
 
@@ -997,20 +998,40 @@ function itemsHtml(){
   });
   return h;
 }
+/* وحدة الجرد لكل صنف: 'pack' (كيس…) أو 'base' (KG/L/PCS) */
+const jardF = (it, u) => u === 'pack' && hasPack(it) ? it.pf : 1;
+function jardUnitSel(it, u, attrs){
+  if(!hasPack(it)) return `<span class="muted" style="width:74px; text-align:center; font-size:13px" dir="ltr">${BASES[baseOf(it)].en}</span>`;
+  return `<select ${attrs}><option value="pack" ${u !== 'base' ? 'selected' : ''}>${esc(it.pu)}</option><option value="base" ${u === 'base' ? 'selected' : ''}>${BASES[baseOf(it)].en}</option></select>`;
+}
 function jardHtml(){
+  const jv = S.settings.jardView === 'base' ? 'base' : 'pack';
   let h = `<div class="card"><h3>📝 الجرد — اكتب اللي عندك دلوقتي</h3>
-    <div class="muted" style="line-height:1.8">اكتب الكمية الموجودة فعلًا من كل صنف. سيب الخانة فاضية لو مش عاوز تجرده دلوقتي. الرقم الرمادي هو اللي البرنامج متوقعه.</div></div>
+    <div class="muted" style="line-height:1.8">اكتب الكمية الموجودة فعلًا من كل صنف، واختار الوحدة جنبها (كيس أو KG…). سيب الخانة فاضية لو مش عاوز تجرده دلوقتي. الرقم الرمادي هو اللي البرنامج متوقعه.</div>
+    <div class="row" style="margin-top:10px"><span class="muted">اجرد الكل بـ</span>
+      <div class="seg" style="margin:0; flex:1; max-width:250px">
+        <button type="button" class="${jv === 'pack' ? 'on' : ''}" data-act="jardAll" data-v="pack">العبوة (كيس…)</button>
+        <button type="button" class="${jv === 'base' ? 'on' : ''}" data-act="jardAll" data-v="base">KG / L / PCS</button></div></div></div>
     <div class="card" id="jardForm">`;
   groupsOf().forEach(g => {
     h += `<div class="group-h">${esc(g)}</div>`;
     S.items.filter(it => (it.group || 'تاني') === g).forEach(it => {
-      const e = estStock(it);
-      const f = packF(it);
-      h += `<div class="jard-row"><div class="nm">${esc(it.name)}<small>بالـ${esc(entryUnit(it))}${hasPack(it) && !(baseOf(it) === 'PCS' && f === 1) ? ` (الواحد = ${fmtQ(f)} ${BASES[baseOf(it)].en})` : ''}${e != null ? ' · متوقع ' + fmtQ(e / f) : ''}</small></div>
+      const e = estStock(it), f = jardF(it, jv);
+      const conv = hasPack(it) && !(baseOf(it) === 'PCS' && it.pf === 1) ? `1 ${esc(it.pu)} = <span dir="ltr" style="unicode-bidi:isolate">${fmtQ(it.pf)} ${BASES[baseOf(it)].en}</span>` : '';
+      h += `<div class="jard-row"><div class="nm">${esc(it.name)}<small>${conv}${e != null ? `${conv ? ' · ' : ''}متوقع <span data-est>${fmtQ(e / f)}</span>` : ''}</small></div>
+        ${jardUnitSel(it, jv, `data-junit="${it.id}"`)}
         <input data-item="${it.id}" inputmode="decimal" placeholder="${e != null ? fmtQ(e / f) : '—'}"></div>`;
     });
   });
   return h + `</div><button class="btn primary block" data-act="saveJard" style="padding:13px; margin-bottom:12px">احفظ الجرد وطلّعلي قائمة الشراء</button>`;
+}
+/* لما الوحدة تتغيّر: نحدّث الرقم المتوقع، ولو فيه رقم مكتوب نحوّله للوحدة الجديدة */
+function jardUnitChanged(sel, prev){
+  const it = byId(S.items, sel.dataset.junit), row = sel.closest('.jard-row'), inp = row.querySelector('input[data-item]');
+  const e = estStock(it), f = jardF(it, sel.value);
+  if(inp.value.trim() !== '' && prev) inp.value = +(num(inp.value) * jardF(it, prev) / f).toFixed(3);
+  if(e != null){ inp.placeholder = fmtQ(e / f); const es = row.querySelector('[data-est]'); if(es) es.textContent = fmtQ(e / f); }
+  sel.dataset.prev = sel.value;
 }
 /* عرض كمية في قائمة الشراء: بالعبوة (كيس…) أو بالمقياس (KG/L/PCS) */
 function shopQty(it, q, view, html){
@@ -1644,11 +1665,12 @@ function buyMany(){
   });
 }
 function countItem(id){
-  const it = byId(S.items, id), e = estStock(it);
-  const f = packF(it);
-  openSheet('جرد ' + it.name, Fd.num('qty', `الموجود دلوقتي (بالـ${esc(entryUnit(it))})`, '', `autofocus placeholder="${e != null ? fmtQ(e / f) : ''}"`) + Fd.foot('حفظ'), v => {
+  const it = byId(S.items, id), e = estStock(it), jv = S.settings.jardView === 'base' ? 'base' : 'pack';
+  const body = `<div class="jard-row" style="border:none"><div class="nm">الموجود دلوقتي${e != null ? `<small>متوقع <span data-est>${fmtQ(e / jardF(it, jv))}</span></small>` : ''}</div>
+      ${jardUnitSel(it, jv, `name="ju" data-junit="${it.id}"`)}<input name="qty" data-item="${it.id}" inputmode="decimal" autofocus placeholder="${e != null ? fmtQ(e / jardF(it, jv)) : ''}"></div>` + Fd.foot('حفظ');
+  openSheet('جرد ' + it.name, body, v => {
     if(!need(String(v.qty).trim() !== '', 'اكتب الكمية')) return false;
-    S.counts.push({id:uid(), ts:Date.now(), itemId:id, date:todayS(), qty:num(v.qty) * f});
+    S.counts.push({id:uid(), ts:Date.now(), itemId:id, date:todayS(), qty:num(v.qty) * jardF(it, v.ju || 'pack')});
     save(); toast('اتسجّل الجرد');
   });
 }
@@ -1960,13 +1982,19 @@ const ACT = {
     let n = 0; const ts = Date.now();
     document.querySelectorAll('#jardForm input[data-item]').forEach((inp, i) => {
       if(inp.value.trim() === '') return;
-      const it = byId(S.items, inp.dataset.item);
-      S.counts.push({id:uid(), ts:ts + i, itemId:inp.dataset.item, date:todayS(), qty:num(inp.value) * packF(it)}); n++;
+      const it = byId(S.items, inp.dataset.item), sel = inp.closest('.jard-row').querySelector('select[data-junit]');
+      S.counts.push({id:uid(), ts:ts + i, itemId:inp.dataset.item, date:todayS(), qty:num(inp.value) * jardF(it, sel ? sel.value : 'base')}); n++;
     });
     if(!n){ toast('ما كتبتش أي كمية', true); return; }
     SUB.stock = 'shop'; save(); window.scrollTo(0, 0); toast(`اتسجّل جرد ${n} صنف`);
   },
   cover:(d) => { S.settings.coverMode = d.v; save(); },
+  // بيقلب وحدة كل صفوف الجرد من غير ما يمسح اللي اتكتب
+  jardAll:(d, el) => {
+    S.settings.jardView = d.v; persist();
+    el.parentNode.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === el));
+    document.querySelectorAll('#jardForm select[data-junit]').forEach(sel => { const prev = sel.value; sel.value = d.v; jardUnitChanged(sel, prev); });
+  },
   shopView:(d) => { S.settings.shopView = d.v; save(); },
   buffer:(d) => { S.settings.bufferDays = Math.max(0, Math.min(30, (S.settings.bufferDays || 0) + (+d.d))); save(); },
   shareList:() => {
@@ -2082,6 +2110,7 @@ document.addEventListener('change', e => {
   }
   if(el.hasAttribute('data-ilbl')){ itemLabels(); return; }
   if(el.hasAttribute('data-bl')){ buyLabels(); return; }
+  if(el.hasAttribute('data-junit')){ jardUnitChanged(el, el.dataset.prev || (el.value === 'pack' ? 'base' : 'pack')); return; }
   if(el.dataset.act === 'cycleDay'){ setCycleDay(+el.value); save(); toast('اتغيّر بداية الشهر'); }
   if(el.dataset.act === 'rollDebts'){ const g = byId(S.goals, el.dataset.id); if(g){ g.rollDebts = el.checked; save(); } }
 });
