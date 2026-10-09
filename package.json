@@ -1,0 +1,11 @@
+{
+  "name": "beity",
+  "private": true,
+  "description": "بيتي — ميزانية البيت",
+  "scripts": {
+    "test": "node tests/e2e.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.1"
+  }
+}
