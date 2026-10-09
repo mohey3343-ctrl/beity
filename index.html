@@ -239,6 +239,11 @@
     opacity:0; pointer-events:none; transition:opacity .2s;}
   .toast.show{opacity:1;}
   .toast.err{background:var(--bad);}
+  .undo-bar{position:fixed; z-index:61; left:50%; transform:translateX(-50%); bottom:calc(150px + env(safe-area-inset-bottom));
+    background:var(--night); color:#fff; padding:6px 6px 6px 14px; border-radius:999px; font-size:13.5px; box-shadow:0 8px 20px rgba(0,0,0,.25);
+    display:none; align-items:center; gap:10px; white-space:nowrap;}
+  .undo-bar.show{display:flex;}
+  .undo-bar button{background:var(--gold); color:#2b1a00; border:none; border-radius:999px; padding:7px 14px; font-weight:700; font-size:13px;}
 
   .hist-row{display:grid; grid-template-columns:72px 1fr 70px; align-items:center; gap:8px; font-size:12px; margin-bottom:7px;}
   .hist-row .bar{height:12px;}
@@ -312,6 +317,7 @@
   </form>
 </div>
 <div class="toast" id="toast"></div>
+<div class="undo-bar" id="undoBar"><span id="undoMsg">اتمسح</span><button type="button" data-act="undo">↩️ تراجع</button></div>
 <input type="file" id="importFile" accept="application/json,.json" hidden>
 
 <script>
@@ -475,7 +481,28 @@ function load(){
   }catch(e){}
   S = fresh();
 }
+/* EPOCH بيزيد مع أي تغيير — الحسابات التقيلة بتتخزن مؤقتًا لحد ما يزيد */
+let EPOCH = 0, PERSISTED = null;
+function memo(fn, keyf){
+  const c = new Map(); let e = -1;
+  return (...a) => { if(e !== EPOCH){ c.clear(); e = EPOCH; } const k = keyf(...a); if(c.has(k)) return c.get(k); const v = fn(...a); c.set(k, v); return v; };
+}
+/* نسخة تلقائية يومية على الجهاز (آخر 7 أيام) — بتحمي من تعديل أو مسح بالغلط */
+const SNAP_KEY = KEY + '::snaps';
+function snapshots(){ try{ return JSON.parse(localStorage.getItem(SNAP_KEY) || '[]'); }catch(e){ return []; } }
+function takeSnapshot(){
+  try{
+    const old = localStorage.getItem(KEY); if(!old) return;
+    const snaps = snapshots(), td = todayS();
+    if(snaps.length && snaps[snaps.length - 1].d === td) return;
+    snaps.push({d:td, raw:old});
+    while(snaps.length > 7) snaps.shift();
+    for(;;){ try{ localStorage.setItem(SNAP_KEY, JSON.stringify(snaps)); break; }catch(e){ if(snaps.length <= 1) break; snaps.shift(); } }
+  }catch(e){}
+}
 function persist(){
+  EPOCH++;
+  takeSnapshot();
   try{ localStorage.setItem(KEY, JSON.stringify(S)); }
   catch(e){ toast('مش قادر يحفظ على الجهاز!', true); }
 }
@@ -570,14 +597,16 @@ function learnedDaily(it){
   if(used < 0) return null;
   return used / diffDays(first.date, last.date);
 }
-function dailyRate(it){
+const dailyRate = memo(dailyRateRaw, it => it.id);
+const estStock = memo(estStockRaw, it => it.id);
+function dailyRateRaw(it){
   const l = learnedDaily(it);
   if(l != null) return {v:l, src:'learned'};
   if(it.monthly > 0) return {v:it.monthly / 30, src:'manual'};
   return {v:0, src:'none'};
 }
 /* الموجود المتوقع دلوقتي = آخر جرد + اللي اتشرى بعده − الاستهلاك من ساعتها */
-function estStock(it){
+function estStockRaw(it){
   const cs = itemCounts(it);
   if(!cs.length) return null;
   const last = cs[cs.length - 1], lk = evKey(last);
@@ -731,7 +760,8 @@ function cashBalance(){
 }
 
 /* ---- ملخص شهر مالي ---- */
-function summary(p){
+const summary = memo(summaryRaw, p => p.y + '-' + p.m);
+function summaryRaw(p){
   const r = periodRange(p), T = txBetween(r.start, r.end);
   const o = {p, r, T};
   // الدخل: اللي اتسجل فعلًا، وإلا المتوقع من مصادر الدخل الثابتة
@@ -812,6 +842,7 @@ const SUB = {stock:'items', bills:'bills'};
 const PAGES = {}, AFTER = {};
 
 function render(){
+  EPOCH++;
   renderHero();
   $('#view').innerHTML = PAGES[TAB]();
   if(AFTER[TAB]) AFTER[TAB]();
@@ -1042,9 +1073,13 @@ function alertsHtml(o){
   if(toSet > 1) out.push(['info', '📥', `الشهر ده المفروض تشيل <b class="num">${fmt(toSet)}</b> للمواعيد الجاية`, `<button class="btn sm dark" data-act="goDues">التفاصيل</button>`]);
   const low = S.items.map(it => ({it, d:daysLeft(it)})).filter(x => x.d != null && x.d <= 5).sort((a, b) => a.d - b.d);
   if(low.length) out.push(['warn', '🧺', `هيخلصوا قريب: ${low.slice(0, 4).map(x => esc(x.it.name) + ' (' + Math.max(0, Math.floor(x.d)) + ' يوم)').join('، ')}${low.length > 4 ? '…' : ''}`, `<button class="btn sm dark" data-act="goShop">قائمة الشراء</button>`]);
-  if(!S.settings.syncUrl && S.tx.length >= 10){
+  // امبارح ما اتسجلش فيه ولا مصروف
+  const yd = addDays(td, -1), firstExp = S.tx.filter(t => t.type === 'exp').map(t => t.date).sort()[0];
+  if(firstExp && firstExp < yd && !S.tx.some(t => t.type === 'exp' && t.date === yd) && !(S.settings.noSpend || {})[yd])
+    out.push(['info', '📝', `امبارح ما سجلتش ولا مصروف — صرفت حاجة؟`, `<span class="btns"><button class="btn sm dark" data-act="addYesterday">سجّل</button><button class="btn sm" data-act="noSpend" data-d="${yd}">ما صرفتش</button></span>`]);
+  if(!S.settings.syncUrl && S.tx.length >= 5){
     const ex = Number(localStorage.getItem(EXPORTED_KEY) || 0);
-    if(Date.now() - ex > 14 * 864e5) out.push(['info', '💾', 'بقالك فترة من غير نسخة احتياطية. البيانات متخزنة على الموبايل بس.', `<button class="btn sm dark" data-act="exportData">نزّل نسخة</button>`]);
+    if(Date.now() - ex > 7 * 864e5) out.push(['info', '💾', 'اعمل نسخة احتياطية الأسبوع ده — دوسة واحدة تبعتها لنفسك على واتساب أو تحفظها في Files.', `<button class="btn sm dark" data-act="exportData">نسخة</button>`]);
   }
   if(!out.length) return '';
   return out.map(a => `<div class="alert ${a[0]}"><span class="ic">${a[1]}</span><span class="tx">${a[2]}</span>${a[3] || ''}</div>`).join('');
@@ -1755,14 +1790,27 @@ PAGES.settings = function(){
   h += `<div class="card"><h3>🏷️ تصنيفات المصروف <button class="btn sm dark" data-act="catForm">+ إضافة</button></h3>
     <div class="chips" style="flex-wrap:wrap">${S.cats.map(c => `<button class="chip" data-act="catForm" data-id="${c.id}">${c.icon} ${esc(c.name)}</button>`).join('')}</div></div>`;
   h += `<div class="card"><h3>☁️ المزامنة مع جوجل شيت <span class="tag ${s.syncUrl ? 'good' : ''}">${s.syncUrl ? 'شغالة' : 'مقفولة'}</span></h3>
-    <div class="muted" style="line-height:1.8">اختياري — عشان البيانات تتحفظ على جوجل وتفتحها من أكتر من جهاز. انسخ ملف <b>Code.gs</b> في Apps Script لشيت جديد، وانشره Web app (Anyone)، وحط الرابط هنا.</div>
+    <div class="muted" style="line-height:1.9">${s.syncUrl ? 'بياناتك بتتحفظ على جوجل شيت أول بأول.' : `<b>أضمن حماية لبياناتك</b> — بتتحفظ على جوجل وتفتحها من أي جهاز. الخطوات (مرة واحدة، 5 دقايق):
+      <br>١. دوس <b>"انسخ كود السكريبت"</b> تحت.
+      <br>٢. افتح <b>sheets.new</b> من المتصفح (شيت جديد)، ومن <b>Extensions ← Apps Script</b> امسح اللي موجود والصق الكود.
+      <br>٣. غيّر <b>SECRET</b> في أول الكود لكلمة سر من عندك، ودوس 💾.
+      <br>٤. <b>Deploy ← New deployment ← Web app</b>، وخلّي <b>Who has access: Anyone</b>، ودوس Deploy ووافق على الصلاحيات.
+      <br>٥. انسخ الرابط اللي هيطلع، وحطه هنا مع كلمة السر، ودوس "حفظ واتصال".`}</div>
+    <button class="btn sm" style="margin-top:8px" data-act="copyScript">📋 انسخ كود السكريبت</button>
     <label class="fld" style="margin-top:10px"><span>رابط السكريبت (Web app URL)</span><input id="syncUrlIn" dir="ltr" value="${esc(s.syncUrl)}" placeholder="https://script.google.com/macros/s/.../exec"></label>
     <label class="fld"><span>كلمة السر (نفس اللي في Code.gs)</span><input id="syncSecretIn" dir="ltr" value="${esc(s.syncSecret)}"></label>
     <div class="btns"><button class="btn dark" data-act="saveSync">حفظ واتصال</button>${s.syncUrl ? '<button class="btn" data-act="pullNow">سحب من الشيت</button><button class="btn" data-act="pushNow">رفع للشيت</button>' : ''}</div>
     <div class="muted" id="syncInfo" style="margin-top:8px">${esc(syncInfoText())}</div></div>`;
+  const snaps = snapshots().slice().reverse();
   h += `<div class="card"><h3>💾 نسخة احتياطية</h3>
-    <div class="btns"><button class="btn dark" data-act="exportData">تنزيل نسخة (ملف)</button><button class="btn" data-act="importData">استرجاع من ملف</button></div>
-    <div class="muted" style="margin-top:8px">${S.tx.length} حركة · ${S.items.length} صنف · ${S.debts.length} دين · ${S.goals.length} هدف</div></div>`;
+    <div class="btns"><button class="btn dark" data-act="exportData">نسخة (واتساب / Files)</button><button class="btn" data-act="importData">استرجاع من ملف</button></div>
+    <div class="muted" style="margin-top:8px">${S.tx.length} حركة · ${S.items.length} صنف · ${S.debts.length} دين · ${S.goals.length} هدف · <span id="persistInfo">${PERSISTED == null ? '' : PERSISTED ? 'التخزين محمي ✅' : 'التخزين مش محمي — اعمل نسخ'}</span></div>
+    ${snaps.length ? `<div class="day-h"><span>نسخ تلقائية على الجهاز (أول ما فتحت كل يوم)</span></div>` + snaps.map((x, i) => { let n = 0; try{ n = JSON.parse(x.raw).tx.length; }catch(e){} return `<div class="kv"><span>${dayLabel(x.d)} · ${n} حركة</span><button class="btn sm" data-act="restoreSnap" data-i="${snaps.length - 1 - i}">استرجع</button></div>`; }).join('') : ''}</div>`;
+  h += `<div class="card"><h3>🔔 التذكيرات</h3>
+    <div class="muted" style="line-height:1.8">بيتضافوا لتقويم الموبايل وبيرنّوا حتى لو التطبيق مقفول.</div>
+    <div class="fld2" style="margin-top:8px"><label class="fld"><span>تذكير يومي "سجّل مصاريفك" الساعة</span><input type="time" id="remTime" value="${esc(s.remTime || '22:00')}"></label>
+      <label class="fld"><span>&nbsp;</span><button class="btn dark" data-act="icsDaily">ضيفه للتقويم</button></label></div>
+    <button class="btn" data-act="icsWeekly">تذكير أسبوعي (الجمعة): جرد الفلوس والبيت</button></div>`;
   h += `<div class="card"><h3>🗑️ منطقة خطر</h3><button class="btn danger" data-act="wipe">مسح كل البيانات</button></div>`;
   return h;
 };
@@ -2568,16 +2616,48 @@ const ACT = {
   },
   pullNow:() => pullRemote(true),
   pushNow:() => pushRemote(true),
-  exportData:() => {
-    const blob = new Blob([JSON.stringify(S, null, 1)], {type:'application/json'});
+  exportData:async () => {
+    const name = 'beity-backup-' + todayS() + '.json', json = JSON.stringify(S, null, 1);
+    // على الموبايل: شاشة المشاركة (واتساب، Files، Drive...)، وإلا تنزيل عادي
+    try{
+      const file = new File([json], name, {type:'application/json'});
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        await navigator.share({files:[file], title:'نسخة بيتي'});
+        localStorage.setItem(EXPORTED_KEY, String(Date.now())); toast('اتعملت النسخة ✔'); render(); return;
+      }
+    }catch(e){ if(e && e.name === 'AbortError') return; }
+    const blob = new Blob([json], {type:'application/json'});
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = 'beity-backup-' + todayS() + '.json';
+    a.href = URL.createObjectURL(blob); a.download = name;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     localStorage.setItem(EXPORTED_KEY, String(Date.now()));
     toast('اتنزّلت النسخة'); render();
   },
   importData:() => $('#importFile').click(),
+  restoreSnap:(d) => {
+    const x = snapshots()[+d.i]; if(!x) return;
+    if(!confirm(`ترجع البيانات زي ما كانت ${dayLabel(x.d)}؟ أي حاجة اتسجلت بعدها هتضيع (وتقدر تتراجع).`)) return;
+    const keep = {syncUrl:S.settings.syncUrl, syncSecret:S.settings.syncSecret};
+    S = migrate(JSON.parse(x.raw)); Object.assign(S.settings, keep); VIEW = periodOf(todayS()); save(); toast('اتسترجعت');
+  },
+  copyScript:async () => {
+    try{
+      const txt = await (await fetch('Code.gs', {cache:'no-store'})).text();
+      await navigator.clipboard.writeText(txt); toast('اتنسخ الكود ✔ — الصقه في Apps Script');
+    }catch(e){ window.open('Code.gs', '_blank'); toast('افتح الملف وانسخه يدوي', true); }
+  },
+  icsDaily:() => {
+    const t = ($('#remTime').value || '22:00'); S.settings.remTime = t; persist();
+    downloadIcs('beity-daily.ics', 'بيتي: سجّل مصاريف النهاردة', 'سجّل أي فلوس صرفتها النهاردة', t, 'DAILY');
+  },
+  icsWeekly:() => downloadIcs('beity-weekly.ics', 'بيتي: جرد الفلوس والبيت', 'اعمل جرد للفلوس وبص على الكاش فلو وقائمة الشراء', '11:00', 'WEEKLY;BYDAY=FR'),
+  addYesterday:() => quickAdd({date:addDays(todayS(), -1)}),
+  noSpend:(d) => { S.settings.noSpend = Object.assign({}, S.settings.noSpend, {[d.d]:true}); save(); },
+  undo:() => {
+    if(!UNDO) return;
+    S = migrate(JSON.parse(UNDO)); UNDO = null; $('#undoBar').classList.remove('show'); closeSheet(); save(); toast('رجعت زي ما كانت ✔');
+  },
   wipe:() => {
     if(!confirm('هتمسح كل البيانات من الجهاز ده. متأكد؟')) return;
     if(!confirm('آخر مرة: نزّلت نسخة احتياطية؟ المسح ده مالوش رجوع.')) return;
@@ -2585,6 +2665,33 @@ const ACT = {
     S = fresh(); Object.assign(S.settings, keep); VIEW = periodOf(todayS()); TAB = 'home'; save();
   },
 };
+
+/* تراجع: أي حذف بياخد صورة من البيانات قبله، ويظهر زرار "تراجع" 8 ثواني */
+let UNDO = null, undoT = null;
+function showUndo(snap, msg){
+  UNDO = snap; $('#undoMsg').textContent = msg || 'اتمسح'; $('#undoBar').classList.add('show');
+  clearTimeout(undoT); undoT = setTimeout(() => { $('#undoBar').classList.remove('show'); UNDO = null; }, 8000);
+}
+Object.keys(ACT).filter(k => /^del|^wipe$|^restoreSnap$/.test(k)).forEach(k => {
+  const fn = ACT[k];
+  ACT[k] = (d, el) => {
+    const snap = JSON.stringify(S), before = S.updatedAt;
+    fn(d, el);
+    if(S.updatedAt !== before) setTimeout(() => showUndo(snap, k === 'restoreSnap' ? 'اتسترجعت النسخة' : 'اتمسح'), 30);
+  };
+});
+function downloadIcs(file, title, desc, time, rrule){
+  const [hh, mm] = time.split(':'), d = todayS().replace(/-/g, '');
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//beity//AR', 'BEGIN:VEVENT', 'UID:' + uid() + '@beity',
+    'DTSTAMP:' + new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z',
+    `DTSTART:${d}T${pad(hh)}${pad(mm)}00`, `DTEND:${d}T${pad(hh)}${pad((+mm + 10) % 60)}00`, 'RRULE:FREQ=' + rrule,
+    'SUMMARY:' + title, 'DESCRIPTION:' + desc + ' — ' + location.href.split('#')[0], 'URL:' + location.href.split('#')[0],
+    'BEGIN:VALARM', 'TRIGGER:PT0M', 'ACTION:DISPLAY', 'DESCRIPTION:' + title, 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(ics); a.download = file;
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('افتح الملف ودوس "Add" عشان يتضاف للتقويم');
+}
 
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
@@ -2731,6 +2838,10 @@ document.addEventListener('visibilitychange', () => { if(document.visibilityStat
 load();
 VIEW = periodOf(todayS());
 render();
+// اطلب من المتصفح ما يمسحش بيانات التطبيق من نفسه
+if(navigator.storage && navigator.storage.persist){
+  navigator.storage.persist().then(ok => { PERSISTED = ok; const el = $('#persistInfo'); if(el) el.textContent = ok ? 'التخزين محمي ✅' : 'التخزين مش محمي — اعمل نسخ'; }).catch(() => {});
+}
 setSync('');
 pullRemote(false);
 </script>
