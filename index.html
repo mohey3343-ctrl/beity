@@ -716,15 +716,17 @@ function summary(p){
   o.houseSpent = sum(T.filter(t => t.type === 'exp' && t.cat === 'house'), t => t.amount);
   o.houseReserved = Math.max(o.houseBudget, o.houseSpent);
   // المصروف اليومي (المتغير)
-  const varT = T.filter(t => t.type === 'exp' && t.cat !== 'house');
+  const varT = T.filter(t => t.type === 'exp' && t.cat !== 'house' && !t.dueId);
   o.varSpent = sum(varT, t => t.amount);
+  // مصروف مناسبات (أعياد ميلاد...) — متخطط له ومتشال، فمش بيتحسب على مصروف اليوم
+  o.eventSpent = sum(T.filter(t => t.type === 'exp' && t.dueId), t => t.amount);
   o.varBudget = o.income - o.billPlanned - o.debtPlanned - o.savePlanned - o.reservePlanned - o.houseReserved;
   o.lent = sum(T.filter(t => t.type === 'lend'), t => t.amount);
-  o.varBudget -= o.lent;
+  o.varBudget -= o.lent + o.eventSpent;
   // المتوقع يرجعلك الشهر ده (مش داخل في الخطة لحد ما يوصل فعلًا)
   o.recvExpected = sum(S.recvs || [], rv => sum(recvSchedule(rv).filter(it => it.date >= r.start && it.date <= r.end), it => it.left));
   o.recvGot = sum(T.filter(t => t.type === 'inc' && t.recvId), t => t.amount);
-  o.outActual = o.billPaid + o.debtPaid + o.saved + o.reserveNet + o.lent + o.houseSpent + o.varSpent;
+  o.outActual = o.billPaid + o.debtPaid + o.saved + o.reserveNet + o.lent + o.eventSpent + o.houseSpent + o.varSpent;
   o.cash = o.income - o.outActual;
   o.free = o.varBudget - o.varSpent;
   const td = todayS();
@@ -889,9 +891,10 @@ function alertsHtml(o){
   });
   activeDues().slice().sort((a, b) => a.date < b.date ? -1 : 1).forEach(d => {
     const left = diffDays(td, d.date), res = Math.max(0, dueReserved(d)), short = d.amount - res;
-    const nm = esc(dueName(d));
+    const nm = esc(dueName(d)), ev = d.kind === 'event', ic = ev ? '🎂' : '📅', paidLbl = ev ? 'صرفت' : 'دفعت';
+    if(ev && left < 0){ out.push(['info', ic, `${nm} عدّى من ${-left} يوم — سجّل صرفت كام`, `<button class="btn sm dark" data-act="payDue" data-id="${d.id}">صرفت</button>`]); return; }
     if(left < 0) out.push(['bad', '📅', `ميعاد سداد ${nm} (<span class="num">${fmt(d.amount)}</span>) عدّى من ${-left} يوم`, `<button class="btn sm dark" data-act="payDue" data-id="${d.id}">دفعت</button>`]);
-    else if(left <= 14) out.push([short > 1 ? 'warn' : 'info', '📅', `${nm}: <span class="num">${fmt(d.amount)}</span> ${left === 0 ? 'النهاردة' : 'بعد ' + left + ' يوم'}${short > 1 ? ` — جاهز منه <span class="num">${fmt(res)}</span>، ناقصك <b class="num">${fmt(short)}</b>` : ' — الفلوس جاهزة ✔'}`, `<button class="btn sm dark" data-act="${short > 1 && left > 0 ? 'reserveDue' : 'payDue'}" data-id="${d.id}">${short > 1 && left > 0 ? 'شلت' : 'دفعت'}</button>`]);
+    else if(left <= 14) out.push([short > 1 ? 'warn' : 'info', ic, `${nm}: <span class="num">${fmt(d.amount)}</span> ${left === 0 ? 'النهاردة' : 'بعد ' + left + ' يوم'}${short > 1 ? ` — جاهز منه <span class="num">${fmt(res)}</span>، ناقصك <b class="num">${fmt(short)}</b>` : ' — الفلوس جاهزة ✔'}`, `<button class="btn sm dark" data-act="${short > 1 && left > 0 ? 'reserveDue' : 'payDue'}" data-id="${d.id}">${short > 1 && left > 0 ? 'شلت' : paidLbl}</button>`]);
   });
   activeRecvs().forEach(rv => {
     const nx = recvNext(rv); if(!nx || !nx.date) return;
@@ -920,6 +923,7 @@ function txInfo(t){
   if(t.type === 'reserve'){ const du = byId(S.dues || [], t.dueId); return {ic:t.amount < 0 ? '📤' : '📥', title:(t.amount < 0 ? 'اتدفع من المحجوز: ' : 'شلت لـ: ') + (du ? dueName(du) : '—')}; }
   if(t.type === 'debt'){ const d = byId(S.debts, t.debtId); return {ic:'💳', title:'قسط: ' + (d ? d.name : '—')}; }
   if(t.type === 'save'){ const g = byId(S.goals, t.goalId); return {ic:t.amount < 0 ? '↩️' : '🏦', title:(t.amount < 0 ? 'سحب من: ' : 'تحويش: ') + (g ? g.name : '—')}; }
+  if(t.type === 'exp' && t.dueId){ const du = byId(S.dues || [], t.dueId); return {ic:'🎂', title:du ? du.name : (t.note || 'مناسبة')}; }
   const c = catOf(t.cat), it = t.itemId ? byId(S.items, t.itemId) : null;
   return {ic:c.icon, title:it ? `${it.name} (${qtyPlain(it, t.qty)})` : c.name};
 }
@@ -1098,24 +1102,24 @@ PAGES.bills = function(){
 function duesHtml(){
   const cur = summary(periodOf(todayS())), td = todayS();
   const list = activeDues().slice().sort((a, b) => a.date < b.date ? -1 : 1);
-  if(!list.length) return `<div class="card empty"><div class="e-ic">📅</div>أي مبلغ لازم يتدفع في <b>تاريخ معيّن</b> مش كل شهر:<br>دين يتسد يوم معين، مصاريف المدرسة، التأمين، رخصة العربية، قبض جمعية...<br>البرنامج هيقولك تشيل كام كل شهر عشان يوم الميعاد تبقى الفلوس جاهزة، وينبّهك قبلها.
-    <div style="margin-top:12px"><button class="btn primary" data-act="dueForm">+ ميعاد سداد</button></div></div>`;
+  if(!list.length) return `<div class="card empty"><div class="e-ic">📅</div>أي مبلغ لازم يتدفع في <b>تاريخ معيّن</b> مش كل شهر:<br>دين يتسد يوم معين، مصاريف المدرسة، التأمين، رخصة العربية، أعياد الميلاد والمناسبات...<br>البرنامج هيقولك تشيل كام كل شهر عشان يوم الميعاد تبقى الفلوس جاهزة، وينبّهك قبلها.
+    <div class="btns" style="justify-content:center; margin-top:12px"><button class="btn primary" data-act="dueForm">+ ميعاد سداد</button><button class="btn" data-act="eventForm">🎂 عيد ميلاد / مناسبة</button></div></div>`;
   const needNow = sum(cur.dueLines, l => Math.max(0, l.per - l.resThis));
   let h = `<div class="card"><div class="row"><div><div class="muted">المفروض تشيله الشهر ده</div><div style="font-size:22px">${money(needNow)}</div>
       <div class="muted">محجوز دلوقتي <span class="num">${fmt(totalReserved())}</span> من <span class="num">${fmt(sum(list, d => d.amount))}</span></div></div>
-      <button class="btn dark" data-act="dueForm">+ ميعاد</button></div>
+      <div style="display:flex;flex-direction:column;gap:6px"><button class="btn dark sm" data-act="dueForm">+ ميعاد</button><button class="btn sm" data-act="eventForm">🎂 مناسبة</button></div></div>
     <div class="note">💡 "شلت" = حطيت الفلوس على جنب (ظرف، حساب تاني، محفظة) عشان الميعاد ده. بتتخصم من رصيدك الحر، ولما تدفع بترجع تتحسب من المحجوز.</div></div>
     <div class="card" style="padding-top:4px">`;
   list.forEach(d => {
     const res = Math.max(0, dueReserved(d)), left = diffDays(td, d.date), l = cur.dueLines.find(x => x.d.id === d.id);
     const pct = d.amount ? Math.min(100, res / d.amount * 100) : 0, ready = res >= d.amount - 1;
     const remThis = l ? Math.max(0, l.per - l.resThis) : 0;
-    h += `<div class="list-item" data-act="dueForm" data-id="${d.id}"><div class="li-ic">${left < 0 ? '⏰' : ready ? '✅' : d.debtId ? '💳' : '📅'}</div>
+    h += `<div class="list-item" data-act="dueForm" data-id="${d.id}"><div class="li-ic">${d.kind === 'event' ? '🎂' : left < 0 ? '⏰' : ready ? '✅' : d.debtId ? '💳' : '📅'}</div>
       <div class="li-main"><div class="li-title">${esc(dueName(d))} ${d.repeat ? `<span class="tag blue">${REPEATS[d.repeat] || ''}</span>` : ''}</div>
         <div class="li-sub">${dayLabel(d.date)} ${pd(d.date).getFullYear() !== new Date().getFullYear() ? pd(d.date).getFullYear() : ''} · ${left < 0 ? `<span class="neg">متأخر ${-left} يوم</span>` : left === 0 ? '<b>النهاردة</b>' : 'بعد <b class="num">' + left + '</b> يوم'}</div>
         <div class="bar ${ready ? 'good' : left <= 14 ? 'warn' : ''}" style="margin-top:6px"><i style="width:${pct}%"></i></div>
         <div class="li-sub">جاهز <span class="num">${fmt(res)}</span> من <span class="num">${fmt(d.amount)}</span>${ready ? '' : ` · اشيل <b class="num">${fmt(l ? l.per : d.amount - res)}</b> في الشهر${remThis > 1 && remThis < (l ? l.per : 0) - 1 ? ` (فاضل الشهر ده <span class="num">${fmt(remThis)}</span>)` : ''}`}</div></div>
-      <div class="li-end" style="display:flex;flex-direction:column;gap:5px">${ready ? '' : `<button class="btn sm good" data-act="reserveDue" data-id="${d.id}">شلت</button>`}<button class="btn sm dark" data-act="payDue" data-id="${d.id}">دفعت</button></div></div>`;
+      <div class="li-end" style="display:flex;flex-direction:column;gap:5px">${ready ? '' : `<button class="btn sm good" data-act="reserveDue" data-id="${d.id}">شلت</button>`}<button class="btn sm dark" data-act="payDue" data-id="${d.id}">${d.kind === 'event' ? 'صرفت' : 'دفعت'}</button></div></div>`;
   });
   h += '</div>';
   const done = (S.dues || []).filter(d => d.paidOn).sort((a, b) => a.paidOn < b.paidOn ? 1 : -1).slice(0, 5);
@@ -1738,6 +1742,8 @@ function payDebt(id){
 function dueForm(id, preset){
   const d = id ? byId(S.dues, id) : null, pre = preset || {};
   const debtId = d ? d.debtId : pre.debtId, debt = debtId ? byId(S.debts, debtId) : null;
+  const ev = d ? d.kind === 'event' : pre.kind === 'event';
+  if(ev) return eventForm(id);
   let body = '';
   if(debt) body += `<div class="note" style="margin:0 0 10px">💳 دفعة من دين: <b>${esc(debt.name)}</b> (باقي <span class="num">${fmt(debtRemaining(debt))}</span>)</div>`;
   body += Fd.text('name', debt ? 'وصف (اختياري)' : 'لازم تدفع إيه', d ? d.name : (pre.name || ''), (debt ? '' : 'autofocus ') + 'placeholder="' + (debt ? 'مثلاً: الدفعة الأولى' : 'مثلاً: مصاريف المدرسة، التأمين، رخصة العربية') + '"');
@@ -1767,6 +1773,39 @@ function dueForm(id, preset){
     save(); toast('اتحفظ — هيقولك تشيل كام كل شهر');
   });
 }
+/* أعياد الميلاد والمناسبات: ميعاد بيتكرر كل سنة، والصرف بيتسجل مصروف (هدايا ومناسبات) */
+function eventForm(id){
+  const d = id ? byId(S.dues, id) : null;
+  const expCats = S.cats.filter(c => c.id !== 'house');
+  let body = Fd.text('name', 'المناسبة', d ? d.name : '', 'autofocus placeholder="مثلاً: عيد ميلاد مريم، عيد جوازنا"');
+  body += `<div class="fld2">${Fd.date('date', 'التاريخ', d ? d.date : '')}${Fd.num('amount', 'هتصرف كام تقريبًا', d ? (d.baseAmount || d.amount) : '')}</div>`;
+  body += `<div class="muted" style="margin:-4px 0 10px">ممكن تكتب تاريخ الميلاد نفسه (حتى لو سنة قديمة)، والبرنامج هيجيب الميعاد الجاي لوحده.</div>`;
+  body += `<label class="fld"><span>يتسجل على تصنيف</span><select name="cat">${expCats.map(c => `<option value="${c.id}" ${(d ? d.cat || 'gifts' : 'gifts') === c.id ? 'selected' : ''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></label>`;
+  if(!d) body += Fd.num('reserved', 'شايل له كام لحد دلوقتي (اختياري)', '');
+  if(d){
+    const res = Math.max(0, dueReserved(d));
+    body += `<div class="note">الجاي: <b>${dayLabel(d.date)} ${pd(d.date).getFullYear()}</b> · جاهز <b class="num">${fmt(res)}</b> من <b class="num">${fmt(d.amount)}</b> · اشيل <b class="num">${fmt(duePerMonth(d, periodOf(todayS())))}</b> في الشهر</div>`;
+  }
+  body += Fd.foot(d ? 'حفظ' : 'إضافة', d ? {act:'delDue', id:d.id} : null);
+  openSheet(d ? '🎂 ' + d.name : '🎂 عيد ميلاد / مناسبة', body, v => {
+    if(!need(v.name.trim(), 'اكتب اسم المناسبة')) return false;
+    if(!need(/^\d{4}-\d{2}-\d{2}$/.test(v.date), 'اختار التاريخ')) return false;
+    if(!need(num(v.amount) > 0, 'اكتب هتصرف كام تقريبًا')) return false;
+    let date = v.date;
+    while(date < todayS()) date = addMonthsDate(date, 12);   // أقرب ميعاد جاي
+    const o = d || {id:uid(), createdAt:todayS(), kind:'event'};
+    const oldDate = o.date;
+    Object.assign(o, {name:v.name.trim(), amount:num(v.amount), baseAmount:num(v.amount), date, repeat:12, cat:v.cat || 'gifts'});
+    if(d && oldDate && oldDate !== o.date) S.tx.forEach(t => { if(t.type === 'reserve' && t.dueId === o.id && t.dueDate === oldDate) t.dueDate = o.date; });
+    if(!d){
+      S.dues = S.dues || []; S.dues.push(o);
+      const r0 = num(v.reserved);
+      if(r0 > 0) S.tx.push({id:uid(), ts:Date.now(), type:'reserve', dueId:o.id, dueDate:o.date, amount:r0, note:'اللي كان متشال قبل كده', date:todayS()});
+    }
+    SUB.bills = 'dues';
+    save(); toast(`اتحفظ — ${dayLabel(o.date)}، اشيل ${fmt(duePerMonth(o, periodOf(todayS())))} في الشهر`);
+  });
+}
 function reserveDue(id){
   const d = byId(S.dues, id), l = summary(periodOf(todayS())).dueLines.find(x => x.d.id === id);
   const res = Math.max(0, dueReserved(d)), sug = Math.min(d.amount - res, l ? Math.max(l.per - l.resThis, 0) || l.per : d.amount - res);
@@ -1778,17 +1817,19 @@ function reserveDue(id){
 }
 function payDue(id){
   const d = byId(S.dues, id), res = Math.max(0, dueReserved(d));
-  openSheet('دفعت: ' + dueName(d), `${Fd.num('amount', 'المبلغ اللي اتدفع', d.amount, 'autofocus', res > 0 ? `منهم <b class="num">${fmt(res)}</b> كانوا محجوزين` : '')}${Fd.date('date', 'التاريخ', todayS())}${Fd.foot('سجّل الدفع')}`, v => {
+  const ev = d.kind === 'event';
+  openSheet((ev ? 'صرفت على: ' : 'دفعت: ') + dueName(d), `${Fd.num('amount', ev ? 'صرفت كام' : 'المبلغ اللي اتدفع', d.amount, 'autofocus', res > 0 ? `منهم <b class="num">${fmt(res)}</b> كانوا محجوزين${ev ? ' — ولو صرفت أقل، الباقي يرجع لرصيدك' : ''}` : '')}${Fd.date('date', 'التاريخ', todayS())}${Fd.foot('سجّل')}`, v => {
     const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
-    const date = v.date || todayS(), ts = Date.now(), full = a >= d.amount - 1;
-    S.tx.push({id:uid(), ts, type:d.debtId ? 'debt' : 'bill', debtId:d.debtId, dueId:d.id, amount:a, note:dueName(d), date});
+    const date = v.date || todayS(), ts = Date.now(), full = ev || a >= d.amount - 1;
+    if(ev) S.tx.push({id:uid(), ts, type:'exp', cat:d.cat || 'gifts', dueId:d.id, amount:a, note:d.name, date});
+    else S.tx.push({id:uid(), ts, type:d.debtId ? 'debt' : 'bill', debtId:d.debtId, dueId:d.id, amount:a, note:dueName(d), date});
     const rel = full ? res : Math.min(res, a);
     if(rel > 0) S.tx.push({id:uid(), ts:ts + 1, type:'reserve', dueId:d.id, dueDate:d.date, amount:-rel, note:'', date});
     if(full){
       if(d.repeat > 0){ d.date = addMonthsDate(d.date, d.repeat); d.amount = d.baseAmount || d.amount; }
       else d.paidOn = date;
     }else d.amount = Math.round((d.amount - a) * 100) / 100;
-    save(); toast(full ? (d.repeat > 0 ? 'اتسجّل ✔ — الميعاد الجاي ' + dayLabel(d.date) : '🎉 اتسدد') : `اتسجّل — فاضل ${fmt(d.amount)}`);
+    save(); toast(full ? (d.repeat > 0 ? 'اتسجّل ✔ — الجاي ' + dayLabel(d.date) + ' ' + pd(d.date).getFullYear() : '🎉 اتسدد') : `اتسجّل — فاضل ${fmt(d.amount)}`);
   });
 }
 
@@ -2010,6 +2051,7 @@ const ACT = {
   delBill:(d) => { if(!confirm('تمسح الالتزام ده؟ (المدفوعات القديمة هتفضل)')) return; S.bills = S.bills.filter(b => b.id !== d.id); closeSheet(); save(); },
   debtForm:(d) => debtForm(d.id),
   dueForm:(d) => dueForm(d.id),
+  eventForm:(d) => eventForm(d.id),
   recvForm:(d) => recvForm(d.id),
   recvGet:(d) => recvGet(d.id),
   recvItem:(d) => recvItemForm(d.r, d.i),
