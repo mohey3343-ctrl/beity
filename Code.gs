@@ -57,8 +57,21 @@ function doPost(e) {
   }
 }
 
+/* الشيت اللي السكريبت معمول جواه — ولو السكريبت اتعمل لوحده (من script.google.com)
+   بيعمل شيت جديد اسمه "بيتي — بيانات" مرة واحدة ويفتكره */
+function book() {
+  const active = SpreadsheetApp.getActiveSpreadsheet();
+  if (active) return active;
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('sheetId');
+  if (id) { try { return SpreadsheetApp.openById(id); } catch (e) {} }
+  const ss = SpreadsheetApp.create('بيتي — بيانات');
+  props.setProperty('sheetId', ss.getId());
+  return ss;
+}
+
 function sheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = book();
   return ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME);
 }
 
@@ -88,7 +101,7 @@ function backupIfNeeded() {
   const props = PropertiesService.getScriptProperties();
   const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
   if (props.getProperty('lastBackup') === today) return;
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = book();
   const sh = sheet();
   if (sh.getLastRow() >= 1) {
     const name = 'backup_' + today;
