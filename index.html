@@ -26,6 +26,8 @@
     --purple:#7a5bd6; --purple-bg:#efeafc;
     --radius:16px;
     --shadow:0 4px 18px rgba(30,30,80,.07);
+    /* ألوان الرسوم (باليتة مختبرة لعمى الألوان) */
+    --c1:#2a78d6; --c2:#eb6834; --c3:#1baf7a; --c4:#eda100; --c5:#e87ba4; --c6:#008300; --c-other:#a8a69f;
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
@@ -33,6 +35,7 @@
       --ink:#ecebf7; --soft:#a3a6c2; --line:#302d55;
       --good-bg:#12342a; --bad-bg:#3a1c25; --warn-bg:#3a2c14; --blue-bg:#1a2a4d; --purple-bg:#2a2250;
       --shadow:0 4px 18px rgba(0,0,0,.35);
+      --c1:#3987e5; --c2:#d95926; --c3:#199e70; --c4:#c98500; --c5:#d55181; --c6:#008300; --c-other:#6b6a64;
     }
   }
   *{box-sizing:border-box;}
@@ -234,6 +237,25 @@
   .ring b{width:54px; height:54px; border-radius:50%; background:var(--card); display:grid; place-items:center; font-size:13px;}
   .note{font-size:12.5px; line-height:1.8; color:var(--soft); background:var(--card-2); border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin-top:10px;}
   .note b{color:var(--ink);}
+  .donut-wrap{display:flex; align-items:center; gap:14px; flex-wrap:wrap;}
+  .donut{width:170px; height:170px; flex-shrink:0; margin:0 auto; direction:ltr;}
+  .donut .dn-arc{cursor:pointer; transition:opacity .15s;}
+  .donut .dn-l{font-size:11px; fill:var(--soft); font-family:inherit;}
+  .donut .dn-v{font-size:17px; fill:var(--ink); font-weight:700; font-family:'IBM Plex Mono', monospace;}
+  .legend{flex:1; min-width:180px;}
+  .lg-row{display:flex; align-items:center; gap:8px; padding:6px 4px; border-radius:8px; font-size:13px; cursor:pointer;}
+  .lg-row.on{background:var(--card-2);}
+  .lg-row i{width:12px; height:12px; border-radius:3px; flex-shrink:0;}
+  .lg-row .lg-n{flex:1;}
+  .lg-row .muted{width:36px; text-align:left;}
+  .split{display:flex; height:16px; border-radius:6px; overflow:hidden; gap:2px; margin:10px 0 8px; background:var(--card);}
+  .split > i{display:block; height:100%;}
+  .split-lg{display:flex; flex-wrap:wrap; gap:4px 12px; font-size:12px; color:var(--soft);}
+  .split-lg span{display:inline-flex; align-items:center; gap:5px;}
+  .split-lg i{width:10px; height:10px; border-radius:3px; display:inline-block;}
+  .fc-wrap{position:relative;}
+  .fc-svg{width:100%; height:auto; display:block; touch-action:pan-y; direction:ltr;}
+  .fc-tip{position:absolute; top:0; background:var(--night); color:#fff; border-radius:10px; padding:6px 9px; font-size:11.5px; line-height:1.6; pointer-events:none; display:none; white-space:nowrap; z-index:2;}
   .pre{white-space:pre-wrap; font-size:13px; line-height:1.8; background:var(--card-2); border:1px solid var(--line); border-radius:12px; padding:10px;}
 </style>
 </head>
@@ -473,7 +495,10 @@ function goalRequired(g){
   const before = goalSaved(g, addDays(periodRange(periodOf(todayS())).start, -1));
   return Math.max(0, (g.target || 0) - before) / monthsUntil(g.deadline);
 }
+const curKey = () => { const p = periodOf(todayS()); return p.y + '-' + pad(p.m + 1); };
 function goalPlanMonthly(g){
+  if(g.doneOn) return 0;
+  if(g.kind === 'gameya' && g.start && curKey() < g.start) return 0;   // الجمعية لسه ما بدأتش
   if(goalSaved(g) >= (g.target || 0)) return 0;
   return g.monthly > 0 ? g.monthly : goalRequired(g);
 }
@@ -743,11 +768,12 @@ function summary(p){
 /* ---------------- الحالة والعرض ---------------- */
 let TAB = 'home', VIEW = null, LOGF = 'all';
 const SUB = {stock:'items', bills:'bills'};
-const PAGES = {};
+const PAGES = {}, AFTER = {};
 
 function render(){
   renderHero();
   $('#view').innerHTML = PAGES[TAB]();
+  if(AFTER[TAB]) AFTER[TAB]();
   document.querySelectorAll('.tabbar button').forEach(b => b.classList.toggle('active', b.dataset.tab === TAB));
 }
 function renderHero(){
@@ -775,6 +801,68 @@ function stat(title, icon, planned, done, doneLabel, barCls){
     <div class="v">${money(planned)}</div>
     <div class="bar ${over ? 'bad' : barCls}"><i style="width:${pct}%"></i></div>
     <div class="s" style="margin-top:5px">${doneLabel} <span class="num">${fmt(done)}</span>${over ? ' <span class="tag bad">زيادة</span>' : ''}</div></div>`;
+}
+
+/* ===================== رسوم ===================== */
+const VIZ = ['var(--c1)', 'var(--c2)', 'var(--c3)', 'var(--c4)', 'var(--c5)', 'var(--c6)'];
+/* دايرة: أكبر 6 بنود + "الباقي". الدوس على أي جزء (أو سطره) يوريك تفاصيله في النص */
+function donutHtml(id, rows, centerLbl){
+  rows = rows.filter(r => r.v > 0).sort((a, b) => b.v - a.v);
+  const total = sum(rows, r => r.v); if(total <= 0) return '';
+  const sl = rows.slice(0, 6), rest = rows.slice(6);
+  if(rest.length) sl.push({name:'الباقي (' + rest.length + ')', v:sum(rest, r => r.v), other:true});
+  const R = 68, C = 2 * Math.PI * R, gap = sl.length > 1 ? 2 : 0;
+  let off = 0;
+  const col = (r, i) => r.other ? 'var(--c-other)' : VIZ[i];
+  const arcs = sl.map((r, i) => {
+    const len = r.v / total * C;
+    const a = `<circle cx="90" cy="90" r="${R}" fill="none" stroke="${col(r, i)}" stroke-width="28" stroke-dasharray="${Math.max(0.5, len - gap)} ${C}" stroke-dashoffset="${-off}" class="dn-arc" data-act="donutPick" data-d="${id}" data-i="${i}"><title>${esc(r.name)}: ${fmt(r.v)}</title></circle>`;
+    off += len; return a;
+  }).join('');
+  (window.__donuts = window.__donuts || {})[id] = {sl, total, centerLbl, sel:null};
+  return `<div class="donut-wrap"><svg viewBox="0 0 180 180" class="donut" role="img" aria-label="${esc(centerLbl)}"><g transform="rotate(-90 90 90)">${arcs}</g>
+      <text x="90" y="84" text-anchor="middle" class="dn-l" id="${id}-l">${esc(centerLbl)}</text>
+      <text x="90" y="106" text-anchor="middle" class="dn-v" id="${id}-v">${fmt(total)}</text></svg>
+    <div class="legend">${sl.map((r, i) => `<div class="lg-row" data-act="donutPick" data-d="${id}" data-i="${i}"><i style="background:${col(r, i)}"></i><span class="lg-n">${esc(r.name)}</span><b class="num">${fmt(r.v)}</b><span class="muted num">${Math.round(r.v / total * 100)}%</span></div>`).join('')}</div></div>`;
+}
+function donutPick(d){
+  const D = window.__donuts[d.d]; if(!D) return;
+  const i = +d.i; D.sel = D.sel === i ? null : i;
+  const r = D.sel == null ? null : D.sl[D.sel];
+  const name = r ? r.name.replace(/^\S+\s/, '') : D.centerLbl;
+  document.getElementById(d.d + '-l').textContent = name.length > 16 ? name.slice(0, 15) + '…' : name;
+  document.getElementById(d.d + '-v').textContent = r ? `${fmt(r.v)} · ${Math.round(r.v / D.total * 100)}%` : fmt(D.total);
+  document.querySelectorAll(`.dn-arc[data-d="${d.d}"]`).forEach((c, k) => c.style.opacity = D.sel == null || k === D.sel ? 1 : .3);
+  document.querySelectorAll(`.lg-row[data-d="${d.d}"]`).forEach((c, k) => c.classList.toggle('on', k === D.sel));
+}
+/* صفوف الدايرة: المصروف بالتصنيف، أو كل اللي خرج (التزامات، أقساط، تحويش...) */
+function spendRows(o, mode){
+  if(mode === 'all') return outflowRows(o).map(r => ({name:r.name, v:r.v}));
+  const by = expByCat(o.T);
+  return Object.entries(by).map(([c, v]) => ({name:catOf(c).icon + ' ' + catOf(c).name, v}));
+}
+/* تقسيم الدخل لأجزاء — شريط واحد بنسبة كل جزء */
+function splitBar(o){
+  if(!(o.income > 0)) return '';
+  const parts = [
+    ['📋 التزامات', o.billPlanned], ['💳 ديون', o.debtPlanned], ['🏦 تحويش وجمعيات', o.savePlanned],
+    ['📅 مواعيد', o.reservePlanned], ['🧺 استوك', o.houseReserved], ['🛒 مصروف يومي', Math.max(0, o.varBudget)],
+  ].filter(x => x[1] > 0.5);
+  const tot = Math.max(o.income, sum(parts, x => x[1]));
+  const keep = (o.savePlanned + o.debtPlanned) / o.income;
+  return `<div style="margin-top:12px"><div class="muted">المرتب متقسم كده:</div>
+    <div class="split">${parts.map((x, i) => `<i style="width:${x[1] / tot * 100}%; background:${VIZ[i]}" title="${x[0]}"></i>`).join('')}</div>
+    <div class="split-lg">${parts.map((x, i) => `<span><i style="background:${VIZ[i]}"></i>${x[0]} <b class="num">${Math.round(x[1] / o.income * 100)}%</b></span>`).join('')}</div>
+    <div class="muted" style="margin-top:6px">${keep >= 0.2 ? '💪' : '💡'} التحويش + سداد الديون = <b class="num">${Math.round(keep * 100)}%</b> من الدخل${keep >= 0.2 ? ' — ممتاز.' : '. المستهدف 20% على الأقل (قاعدة 50/30/20).'}</div></div>`;
+}
+function spendCard(o, id){
+  const mode = S.settings.donutMode === 'all' ? 'all' : 'exp', rows = spendRows(o, mode).filter(r => r.v > 0);
+  if(!rows.length) return '';
+  const top = rows.slice().sort((a, b) => b.v - a.v)[0], total = sum(rows, r => r.v);
+  return `<div class="card"><h3>🍩 بتصرف فين</h3>
+    <div class="seg" style="margin-bottom:10px"><button type="button" class="${mode === 'exp' ? 'on' : ''}" data-act="donutMode" data-v="exp">المصروف بالتصنيف</button><button type="button" class="${mode === 'all' ? 'on' : ''}" data-act="donutMode" data-v="all">كل اللي خرج</button></div>
+    ${donutHtml(id, rows, mode === 'all' ? 'كل اللي خرج' : 'المصروف')}
+    <div class="note">أكتر حاجة بتاخد منك: <b>${esc(top.name)}</b> — <b class="num">${Math.round(top.v / total * 100)}%</b> (<span class="num">${fmt(top.v)}</span> ج). دوس على أي جزء في الدايرة تشوف تفاصيله.</div></div>`;
 }
 
 /* ===================== الرئيسية ===================== */
@@ -817,6 +905,7 @@ PAGES.home = function(){
     <div class="plan-line"><span>🧺 استوك البيت</span><b class="num">− ${fmt(o.houseReserved)}</b></div>
     <div class="plan-line total"><span>🛒 متاح للمصروف اليومي</span><b class="num ${o.varBudget < 0 ? 'neg' : 'pos'}">${fmt(o.varBudget)}</b></div>
     <div class="muted" style="margin-top:6px">يعني حوالي <b class="num">${fmt(o.varBudget / o.r.days)}</b> جنيه في اليوم على مدار ${o.r.days} يوم.</div>
+    ${splitBar(o)}
     ${o.recvExpected > 0.5 ? `<div class="note">🤝 متوقع يرجعلك الشهر ده <b class="num">${fmt(o.recvExpected)}</b> ج من فلوس عند الناس — مش محسوبين في الخطة لحد ما يوصلوا فعلًا.</div>` : ''}
     ${o.varBudget < 0 ? `<div class="note">⚠️ الدخل مش مغطي الخطة بـ <b class="num">${fmt(-o.varBudget)}</b> جنيه. قلّل التحويش الشهري للهدف، أو راجع الالتزامات، أو زوّد مصدر دخل.</div>` : ''}
   </div>`;
@@ -827,18 +916,15 @@ PAGES.home = function(){
     h += `<div class="card"><h3>📊 ملخص الشهر ونقاط التحسين <button class="btn sm dark" data-act="tab" data-tab="report">التقرير الكامل</button></h3>
       ${ins.length ? ins.slice(0, 3).map(insightHtml).join('') + (ins.length > 3 ? `<div class="muted">و${ins.length - 3} ملاحظات تانية في التقرير الكامل.</div>` : '') : '<div class="muted">كمّل تسجيل مصاريفك كام يوم، وهتظهر هنا ملاحظات ونقاط تحسين.</div>'}</div>`;
   }
-  // توزيع المصروف على التصنيفات
-  const exp = o.T.filter(t => t.type === 'exp');
-  const total = sum(exp, t => t.amount);
-  if(total > 0){
-    const by = {};
-    exp.forEach(t => by[t.cat] = (by[t.cat] || 0) + t.amount);
-    const rows = Object.entries(by).sort((a, b) => b[1] - a[1]);
-    const max = rows[0][1];
-    h += `<div class="card"><h3>المصروف على إيه <span class="muted num">${fmt(total)} ج</span></h3>` +
-      rows.map(([c, v]) => { const ct = catOf(c); return `<div class="cat-row"><div class="row"><span>${ct.icon} ${esc(ct.name)}</span><span><b class="num">${fmt(v)}</b> <span class="muted num">${Math.round(v / total * 100)}%</span></span></div><div class="bar"><i style="width:${v / max * 100}%"></i></div></div>`; }).join('') +
-      `</div>`;
+  // الكاش فلو
+  if(o.isCurrent && cashBalance().known){
+    const F = forecast(30, !!S.settings.fcRecv);
+    h += `<div class="card"><h3>📈 الكاش فلو <button class="btn sm dark" data-act="tab" data-tab="cash">التفاصيل</button></h3>
+      ${F.firstNeg ? `<div class="alert bad" style="margin:0"><span class="ic">⚠️</span><span class="tx">متوقع عجز ${dayLabel(F.firstNeg.date)} — أقل نقطة <b class="num">${fmt(F.min.bal)}</b>. شوف التفاصيل والحلول.</span></div>`
+        : `<div class="muted">أقل رصيد متوقع في الـ 30 يوم الجاية: <b class="num">${fmt(F.min.bal)}</b> ج يوم ${dayLabel(F.min.date)} ✅</div>`}</div>`;
   }
+  // بتصرف فين (دايرة)
+  h += spendCard(o, 'dnH');
 
   // آخر 6 شهور
   const hist = [];
@@ -1241,9 +1327,10 @@ function debtsHtml(o){
 /* ===================== الأهداف ===================== */
 PAGES.goals = function(){
   if(!S.goals.length) return `<div class="card empty"><div class="e-ic">🚗</div><b>هدف العربية آخر 2027</b><br>حط سعر العربية اللي عاوزها، والبرنامج يقولك محتاج تحوّش كام كل شهر عشان توصل في الميعاد.
-    <div class="btns" style="justify-content:center; margin-top:12px"><button class="btn primary" data-act="carGoal">ابدأ هدف العربية</button><button class="btn" data-act="goalForm">هدف تاني</button></div></div>`;
-  let h = `<div class="row" style="margin-bottom:10px"><h2 style="font-size:19px">أهدافي</h2><button class="btn dark sm" data-act="goalForm">+ هدف</button></div>`;
+    <div class="btns" style="justify-content:center; margin-top:12px"><button class="btn primary" data-act="carGoal">ابدأ هدف العربية</button><button class="btn" data-act="gameyaForm">🪙 جمعية</button><button class="btn" data-act="goalForm">هدف تاني</button></div></div>`;
+  let h = `<div class="row" style="margin-bottom:10px"><h2 style="font-size:19px">أهدافي</h2><div class="btns"><button class="btn sm" data-act="gameyaForm">🪙 + جمعية</button><button class="btn dark sm" data-act="goalForm">+ هدف</button></div></div>`;
   S.goals.forEach(g => {
+    if(g.kind === 'gameya'){ h += gameyaCard(g); return; }
     const pr = goalProjection(g), target = g.target || 0, saved = pr.saved;
     const pct = target ? Math.min(100, saved / target * 100) : 0, req = goalRequired(g);
     const ok = pr.atDeadline >= target - 0.5;
@@ -1403,6 +1490,7 @@ PAGES.report = function(){
   const ins = insights(VIEW);
   h += `<div class="card"><h3>💡 نقاط التحسين</h3>${ins.length ? ins.map(insightHtml).join('') : '<div class="muted">لسه البيانات قليلة. كمّل تسجيل كام يوم كمان وهتظهر هنا ملاحظات.</div>'}</div>`;
 
+  h += spendCard(o, 'dnR');
   if(rows.length){
     h += `<div class="card"><h3>الفلوس راحت فين</h3><div class="muted" style="margin:-6px 0 10px">النسبة الملوّنة = التغيير ${vsTxt}</div>` + rows.map(r => {
       const pv = rowVal(prev, r.k);
@@ -1447,6 +1535,162 @@ function reportText(){
   if(ins.length) t += '\n\nنقاط التحسين:\n' + ins.map(a => `${a[1]} ${strip(a[2])}`).join('\n');
   return t;
 }
+
+/* ===================== توقّع الكاش فلو ===================== */
+/* متوسط صرفك اليومي الحقيقي (آخر 30 يوم) — ولو لسه مفيش تسجيلات، المسموح في اليوم */
+function avgDailySpend(){
+  const td = todayS(), from = addDays(td, -30);
+  const all = S.tx.filter(t => t.type === 'exp' && !t.dueId);
+  if(!all.length){ const o = summary(periodOf(td)); return {v:Math.max(0, o.perDay || 0), src:'budget'}; }
+  const first = all.map(t => t.date).sort()[0];
+  const days = Math.min(30, Math.max(7, diffDays(first, td) + 1));
+  return {v:sum(all.filter(t => t.date > from && t.date <= td), t => t.amount) / days, src:'actual', days};
+}
+/* الرصيد يوم بيوم لـ N يوم قدام:
+   الفلوس كلها دلوقتي (الحر + المحجوز) + المرتبات − الالتزامات − الأقساط − مواعيد السداد
+   − التحويش الشهري − متوسط الصرف اليومي. (فلوس الناس اختياري لأنها مش مضمونة) */
+function forecast(N, withRecv){
+  const td = todayS(), tom = addDays(td, 1), end = addDays(td, N), b = cashBalance();
+  const start = (b.known ? b.value : 0) + totalReserved(), daily = avgDailySpend();
+  const evs = [], paidIn = (pred, r) => S.tx.some(t => pred(t) && t.date >= r.start && t.date <= r.end);
+  const at = d => d < tom ? tom : d;
+  for(let p = periodOf(td); periodRange(p).start <= end; p = addMonths(p, 1)){
+    const r = periodRange(p), isCur = samePeriod(p, periodOf(td));
+    let payday = null;
+    S.incomes.forEach(inc => {
+      const d = at(dueDateIn(r, inc.day || 1));
+      if(!payday || d < payday) payday = d;
+      if(paidIn(t => t.type === 'inc' && t.incomeId === inc.id, r)) return;
+      if(d <= end) evs.push({date:d, n:'💰 ' + inc.name, a:inc.amount || 0});
+    });
+    S.bills.filter(x => !x.off).forEach(x => {
+      if(paidIn(t => t.type === 'bill' && t.billId === x.id, r)) return;
+      const d = at(dueDateIn(r, x.dueDay || 1)); if(d <= end) evs.push({date:d, n:'📋 ' + x.name, a:-(x.amount || 0)});
+    });
+    S.debts.filter(x => x.monthly > 0).forEach(x => {
+      if(paidIn(t => t.type === 'debt' && t.debtId === x.id, r)) return;
+      const d = at(dueDateIn(r, x.dueDay || 1)); if(d <= end) evs.push({date:d, n:'💳 ' + x.name, a:-x.monthly, debt:x.id});
+    });
+    // ادفع لنفسك الأول: التحويش الشهري يوم نزول المرتب
+    S.goals.forEach(g => {
+      let need = goalPlanMonthly(g);
+      if(isCur) need -= sum(S.tx.filter(t => t.type === 'save' && t.goalId === g.id && t.date >= r.start && t.date <= r.end), t => t.amount);
+      if(g.kind === 'gameya' && g.start && (p.y + '-' + pad(p.m + 1)) > g.deadline) need = 0;
+      const d = at(payday || r.start);
+      if(need > 1 && d <= end) evs.push({date:d, n:(g.icon || '🎯') + ' تحويش ' + g.name, a:-need});
+    });
+  }
+  activeDues().forEach(d => {
+    let dt = d.date, first = true;
+    while(dt <= end){
+      evs.push({date:at(dt), n:(d.kind === 'event' ? '🎂 ' : '📅 ') + dueName(d), a:-(first ? d.amount : (d.baseAmount || d.amount))});
+      first = false; if(!(d.repeat > 0)) break; dt = addMonthsDate(dt, d.repeat);
+    }
+  });
+  if(withRecv) activeRecvs().forEach(rv => recvSchedule(rv).forEach(it => { if(it.left > 0.5 && it.date >= tom && it.date <= end) evs.push({date:it.date, n:'🤝 ' + rv.name, a:it.left}); }));
+  evs.sort((x, y) => x.date < y.date ? -1 : x.date > y.date ? 1 : y.a - x.a);
+  const rem = {}; S.debts.forEach(x => rem[x.id] = debtRemaining(x));
+  const pts = [{date:td, bal:start, ev:[]}];
+  let bal = start, k = 0;
+  for(let i = 1; i <= N; i++){
+    const date = addDays(td, i), ev = [];
+    while(k < evs.length && evs[k].date === date){
+      const e = evs[k++];
+      if(e.debt){ e.a = -Math.min(-e.a, rem[e.debt]); rem[e.debt] += e.a; if(e.a > -0.5) continue; }
+      bal += e.a; ev.push(e);
+    }
+    bal -= daily.v;
+    pts.push({date, bal, ev});
+  }
+  const min = pts.reduce((m, x) => x.bal < m.bal ? x : m, pts[0]);
+  const firstNeg = pts.find(x => x.bal < 0) || null;
+  return {pts, min, firstNeg, daily, start, known:b.known};
+}
+function cashSuggestions(F){
+  const out = [], neg = F.firstNeg, days = neg ? Math.max(1, diffDays(todayS(), neg.date)) : 0;
+  const gap = -F.min.bal;
+  if(gap > 0){
+    out.push(`🛒 قلّل الصرف اليومي بحوالي <b class="num">${fmt(gap / Math.max(1, diffDays(todayS(), F.min.date)))}</b> ج (من <span class="num">${fmt(F.daily.v)}</span> لـ <span class="num">${fmt(Math.max(0, F.daily.v - gap / Math.max(1, diffDays(todayS(), F.min.date))))}</span>) لحد ${dayLabel(F.min.date)}.`);
+    const before = F.pts.filter(x => x.date <= F.min.date).flatMap(x => x.ev);
+    const saves = before.filter(e => e.a < 0 && /تحويش/.test(e.n));
+    if(saves.length) out.push(`⏸️ أجّل ${saves.map(e => esc(e.n.replace(/^\S+\s/, ''))).join(' و')} الشهر ده (<b class="num">${fmt(-sum(saves, e => e.a))}</b>) — الأمان قبل التحويش.`);
+    const big = before.filter(e => e.a < 0 && !/تحويش/.test(e.n)).sort((x, y) => x.a - y.a)[0];
+    if(big) out.push(`📆 أكبر حاجة خارجة قبل العجز: ${esc(big.n)} (<span class="num">${fmt(-big.a)}</span>) يوم ${dayLabel(big.date)} — حاول تأجّلها لبعد المرتب أو تقسّمها.`);
+    const rv = activeRecvs().map(x => ({x, nx:recvNext(x)})).filter(y => y.nx);
+    if(rv.length) out.push(`🤝 ليك فلوس عند ${rv.map(y => esc(y.x.name) + ' (' + fmt(y.nx.left) + ')').join('، ')} — اطلبها بدري.`);
+  }
+  return out;
+}
+function emergencyCard(){
+  const ess = sum(S.bills.filter(x => !x.off), x => x.amount || 0) + sum(S.debts.filter(x => debtRemaining(x) > 0.5), x => x.monthly || 0) + houseMonthlyCost() + avgDailySpend().v * 30;
+  if(ess < 1) return '';
+  const target = Math.round(ess * 3 / 100) * 100, g = S.goals.find(x => x.kind === 'emergency' || /طوارئ/.test(x.name));
+  return `<div class="card"><h3>🛟 صندوق الطوارئ</h3>
+    <div class="muted" style="line-height:1.8">أهم حماية من العجز: مبلغ على جنب يغطي <b>3 شهور</b> من مصاريفك الأساسية (التزامات + أقساط + بيت + مصروف) — حوالي <b class="num">${fmt(target)}</b> ج.</div>
+    ${g ? `<div class="kv"><span>معاك فيه</span><b>${money(goalSaved(g))}</b></div><div class="bar good"><i style="width:${Math.min(100, goalSaved(g) / target * 100)}%"></i></div>`
+        : `<button class="btn dark" style="margin-top:10px" data-act="emergencyGoal" data-t="${target}">ابدأ صندوق طوارئ</button>`}</div>`;
+}
+function cashChart(F){
+  const W = 340, H = 170, L = 8, Rr = 8, T = 14, B = 24, N = F.pts.length - 1;
+  const vals = F.pts.map(x => x.bal), lo = Math.min(0, ...vals), hi = Math.max(0, ...vals) || 1, span = (hi - lo) || 1;
+  const x = i => L + i * (W - L - Rr) / N, y = v => T + (hi - v) / span * (H - T - B);
+  const line = F.pts.map((pt, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(pt.bal).toFixed(1)).join(' ');
+  const area = line + ` L ${x(N).toFixed(1)} ${y(0).toFixed(1)} L ${x(0).toFixed(1)} ${y(0).toFixed(1)} Z`;
+  const ticks = F.pts.map((pt, i) => ({i, d:pd(pt.date)})).filter(t => t.d.getDate() === 1 && t.i > 0)
+    .map(t => `<line x1="${x(t.i)}" x2="${x(t.i)}" y1="${T}" y2="${H - B}" stroke="var(--line)" stroke-width="1"/><text x="${x(t.i)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--soft)">1 ${MONTHS[t.d.getMonth()]}</text>`).join('');
+  const mi = F.pts.indexOf(F.min);
+  window.__fc = {F, x, y, W, H, T, B};
+  return `<div class="fc-wrap" id="fcWrap"><svg class="fc-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="توقّع الرصيد">
+    ${lo < 0 ? `<rect x="${L}" y="${y(0)}" width="${W - L - Rr}" height="${H - B - y(0)}" fill="var(--bad)" opacity=".08"/>` : ''}
+    ${ticks}
+    <path d="${area}" fill="var(--c1)" opacity=".12"/>
+    <line x1="${L}" x2="${W - Rr}" y1="${y(0)}" y2="${y(0)}" stroke="var(--soft)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text x="${W - Rr}" y="${y(0) - 4}" text-anchor="end" font-size="10" fill="var(--soft)">صفر</text>
+    <path d="${line}" fill="none" stroke="var(--c1)" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="${x(mi)}" cy="${y(F.min.bal)}" r="4.5" fill="${F.min.bal < 0 ? 'var(--bad)' : 'var(--c1)'}" stroke="var(--card)" stroke-width="2"/>
+    <line id="fcCross" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="var(--ink)" stroke-width="1" opacity="0"/>
+    <circle id="fcDot" r="4" fill="var(--c1)" stroke="var(--card)" stroke-width="2" opacity="0"/>
+    <rect id="fcHit" x="0" y="0" width="${W}" height="${H}" fill="transparent"/></svg><div class="fc-tip" id="fcTip"></div></div>`;
+}
+AFTER.cash = () => {
+  const hit = document.getElementById('fcHit'); if(!hit || !window.__fc) return;
+  const {F, x, y} = window.__fc, svg = hit.ownerSVGElement, tip = $('#fcTip'), N = F.pts.length - 1;
+  const show = ev => {
+    const pt = ev.touches ? ev.touches[0] : ev, rc = svg.getBoundingClientRect();
+    const vx = (pt.clientX - rc.left) / rc.width * window.__fc.W;
+    let i = Math.round((vx - 8) / ((window.__fc.W - 16) / N)); i = Math.max(0, Math.min(N, i));
+    const p_ = F.pts[i];
+    $('#fcCross').setAttribute('x1', x(i)); $('#fcCross').setAttribute('x2', x(i)); $('#fcCross').setAttribute('opacity', .35);
+    $('#fcDot').setAttribute('cx', x(i)); $('#fcDot').setAttribute('cy', y(p_.bal)); $('#fcDot').setAttribute('opacity', 1);
+    tip.innerHTML = `<b>${dayLabel(p_.date)}</b><br>الرصيد: <b class="num">${fmt(p_.bal)}</b>${p_.ev.map(e => `<br>${esc(e.n)} <span class="num">${e.a > 0 ? '+' : '−'}${fmt(Math.abs(e.a))}</span>`).join('')}`;
+    tip.style.display = 'block';
+    const px = x(i) / window.__fc.W * rc.width, tw = tip.offsetWidth;
+    tip.style.left = Math.max(0, Math.min(rc.width - tw, px - tw / 2)) + 'px';
+  };
+  const hide = () => { tip.style.display = 'none'; $('#fcCross').setAttribute('opacity', 0); $('#fcDot').setAttribute('opacity', 0); };
+  hit.addEventListener('mousemove', show); hit.addEventListener('mouseleave', hide);
+  hit.addEventListener('touchstart', show, {passive:true}); hit.addEventListener('touchmove', show, {passive:true}); hit.addEventListener('touchend', () => setTimeout(hide, 1800));
+};
+PAGES.cash = function(){
+  const N = S.settings.fcDays === 30 ? 30 : 60, withRecv = !!S.settings.fcRecv;
+  let h = `<div class="row" style="margin-bottom:10px"><h2 style="font-size:19px">📈 الكاش فلو</h2><button class="btn sm" data-act="tab" data-tab="home">رجوع</button></div>`;
+  if(!cashBalance().known) return h + `<div class="card empty"><div class="e-ic">💵</div>عشان نتوقع رصيدك الأيام الجاية، محتاجين نعرف معاك كام دلوقتي.<div style="margin-top:12px"><button class="btn primary" data-act="cashCount">اكتب رصيدك الحالي</button></div></div>`;
+  const F = forecast(N, withRecv), neg = F.firstNeg;
+  h += `<div class="card">
+    <div class="seg" style="margin-bottom:10px"><button type="button" class="${N === 30 ? 'on' : ''}" data-act="fcDays" data-v="30">30 يوم</button><button type="button" class="${N === 60 ? 'on' : ''}" data-act="fcDays" data-v="60">60 يوم</button></div>
+    ${neg ? `<div class="alert bad"><span class="ic">⚠️</span><span class="tx">متوقع رصيدك يقع تحت الصفر <b>${dayLabel(neg.date)}</b> (بعد <b class="num">${diffDays(todayS(), neg.date)}</b> يوم). أقل نقطة <b class="num">${fmt(F.min.bal)}</b> يوم ${dayLabel(F.min.date)}.</span></div>`
+      : `<div class="alert ${F.min.bal < F.daily.v * 7 ? 'warn' : 'good'}"><span class="ic">${F.min.bal < F.daily.v * 7 ? '🟡' : '✅'}</span><span class="tx">رصيدك هيفضل موجب. أقل نقطة <b class="num">${fmt(F.min.bal)}</b> يوم ${dayLabel(F.min.date)}${F.min.bal < F.daily.v * 7 ? ' — ده أقل من مصروف أسبوع، خلي بالك.' : '.'}</span></div>`}
+    ${cashChart(F)}
+    <div class="muted" style="line-height:1.8; margin-top:6px">حرّك صباعك على الرسم تشوف رصيد كل يوم. بنفترض إنك بتصرف حوالي <b class="num">${fmt(F.daily.v)}</b> ج في اليوم (${F.daily.src === 'actual' ? 'متوسط آخر ' + F.daily.days + ' يوم من تسجيلاتك' : 'المسموح في اليوم حسب الخطة'})، وإن المرتب والالتزامات والأقساط والمواعيد والتحويش هيمشوا في ميعادهم.</div>
+    <label class="switch" style="margin-top:8px"><input type="checkbox" data-act="fcRecv" ${withRecv ? 'checked' : ''}> احسب الفلوس اللي هترجعلي من الناس</label></div>`;
+  const sug = cashSuggestions(F);
+  if(sug.length) h += `<div class="card"><h3>💡 تتجنب العجز إزاي</h3>${sug.map(t => `<div class="alert info"><span class="tx">${t}</span></div>`).join('')}</div>`;
+  const evs = F.pts.slice(1).filter(x => x.ev.length);
+  if(evs.length) h += `<div class="card"><h3>اللي جاي <span class="muted">والرصيد بعده</span></h3>` + evs.map(x => x.ev.map(e => `<div class="kv"><span>${dayLabel(x.date)} · ${esc(e.n)}</span><b class="num ${e.a > 0 ? 'pos' : ''}">${e.a > 0 ? '+' : '−'}${fmt(Math.abs(e.a))}</b></div>`).join('') + `<div class="kv" style="border-bottom:1px dashed var(--line); padding-bottom:6px; margin-bottom:4px"><span class="muted">الرصيد آخر اليوم</span><b class="num ${x.bal < 0 ? 'neg' : ''}">${fmt(x.bal)}</b></div>`).join('') + `</div>`;
+  h += emergencyCard();
+  h += `<div class="note">💡 قواعد بسيطة ضد العجز: خلّي أول ما المرتب ينزل تحوّش وتشيل للمواعيد (ادفع لنفسك الأول)، وحط الالتزامات الكبيرة بعد المرتب بيومين مش قبله، وخلّي في الحساب دايمًا مصروف أسبوع على الأقل.</div>`;
+  return h;
+};
 
 /* ===================== الإعدادات ===================== */
 PAGES.settings = function(){
@@ -1836,6 +2080,7 @@ function payDue(id){
 /* ---- الأهداف ---- */
 function goalForm(id, preset){
   const g = id ? byId(S.goals, id) : (preset || null);
+  if(g && g.kind === 'gameya') return gameyaForm(id);
   let body = `<div class="fld2">${Fd.text('name', 'الهدف', g ? g.name : '', 'autofocus')}${Fd.text('icon', 'أيقونة', g ? g.icon : '🎯')}</div>`;
   body += `<div class="fld2">${Fd.num('target', 'المبلغ المطلوب', g ? g.target : '')}${Fd.month('deadline', 'الميعاد', g ? g.deadline : '2027-12')}</div>`;
   if(!id) body += Fd.num('initial', 'محوّش كام لحد دلوقتي', g ? g.initial : '');
@@ -1846,11 +2091,59 @@ function goalForm(id, preset){
     if(!need(v.name.trim(), 'اكتب اسم الهدف')) return false;
     if(!need(num(v.target) > 0, 'اكتب المبلغ المطلوب')) return false;
     if(!need(/^\d{4}-\d{2}$/.test(v.deadline), 'اختار الميعاد')) return false;
-    const o = id ? g : {id:uid(), createdAt:todayS(), rollDebts:true};
+    const o = id ? g : {id:uid(), createdAt:todayS(), rollDebts:!(g && g.kind === 'emergency'), kind:g && g.kind || undefined};
     Object.assign(o, {name:v.name.trim(), icon:v.icon.trim() || '🎯', target:num(v.target), deadline:v.deadline, monthly:num(v.monthly), note:v.note.trim()});
     if(!id){ o.initial = num(v.initial); S.goals.push(o); }
     save(); toast('اتحفظ');
   });
+}
+/* جمعية مع نفسك: قسط ثابت كل شهر لعدد شهور، وتقبض المبلغ كله في الآخر */
+function gameyaForm(id){
+  const g = id ? byId(S.goals, id) : null, cp = periodOf(todayS());
+  let body = Fd.text('name', 'اسم الجمعية', g ? g.name : 'جمعية', 'autofocus');
+  body += `<div class="fld2">${Fd.num('monthly', 'القسط الشهري', g ? g.monthly : '')}${Fd.num('months', 'عدد الشهور', g ? g.months : 10)}</div>`;
+  body += `<div class="fld2">${Fd.month('start', 'أول قسط شهر', g ? g.start : cp.y + '-' + pad(cp.m + 1))}${g ? '' : Fd.num('paidBefore', 'دفعت كام قسط قبل كده', '')}</div>`;
+  body += `<div class="muted" data-gm style="margin:-4px 0 10px"></div>`;
+  body += Fd.text('note', 'ملاحظة', g ? g.note : '', 'placeholder="مثلاً: هقبضها لمقدّم العربية"');
+  body += Fd.foot(g ? 'حفظ' : 'إضافة', g ? {act:'delGoal', id:g.id} : null);
+  openSheet(g ? '🪙 ' + g.name : '🪙 جمعية جديدة', body, v => {
+    const m = num(v.monthly), n = Math.round(num(v.months));
+    if(!need(m > 0, 'اكتب القسط')) return false;
+    if(!need(n >= 2 && n <= 60, 'عدد الشهور من 2 لـ 60')) return false;
+    if(!need(/^\d{4}-\d{2}$/.test(v.start), 'اختار شهر البداية')) return false;
+    const sp = v.start.split('-').map(Number), endP = addMonths({y:sp[0], m:sp[1] - 1}, n - 1);
+    const o = g || {id:uid(), createdAt:todayS(), kind:'gameya', icon:'🪙', rollDebts:false};
+    Object.assign(o, {name:v.name.trim() || 'جمعية', monthly:m, months:n, start:v.start, target:m * n, deadline:endP.y + '-' + pad(endP.m + 1), note:v.note.trim()});
+    if(!g){ o.initial = Math.max(0, Math.round(num(v.paidBefore))) * m; S.goals.push(o); }
+    save(); toast(`اتحفظ — هتقبض ${fmt(m * n)} في ${monthName(o.deadline)}`);
+  });
+  const upd = () => {
+    const m = num($('#sheetBody [name="monthly"]').value), n = Math.round(num($('#sheetBody [name="months"]').value)), st = $('#sheetBody [name="start"]').value;
+    const el = $('#sheetBody [data-gm]'); if(!el) return;
+    if(m > 0 && n > 1 && /^\d{4}-\d{2}$/.test(st)){ const sp = st.split('-').map(Number), e = addMonths({y:sp[0], m:sp[1] - 1}, n - 1); el.innerHTML = `هتقبض <b class="num">${fmt(m * n)}</b> ج في <b>${MONTHS[e.m]} ${e.y}</b>`; }
+    else el.textContent = '';
+  };
+  document.querySelectorAll('#sheetBody input').forEach(x => x.addEventListener('input', upd)); upd();
+}
+function gameyaCard(g){
+  const saved = goalSaved(g), target = g.target || 0, k = Math.min(g.months, Math.floor(saved / g.monthly + 0.01));
+  const r = periodRange(periodOf(todayS())), thisM = sum(S.tx.filter(t => t.type === 'save' && t.goalId === g.id && t.date >= r.start && t.date <= r.end), t => t.amount);
+  const started = curKey() >= g.start, full = saved >= target - 0.5;
+  const pct = target ? Math.min(100, saved / target * 100) : 0;
+  let status;
+  if(g.doneOn) status = `🎉 قبضت الجمعية ${dayLabel(g.doneOn)}.`;
+  else if(full) status = `✅ كملت الأقساط كلها — فلوسك جاهزة <b class="num">${fmt(saved)}</b> ج.`;
+  else if(!started) status = `⏳ هتبدأ ${monthName(g.start)}.`;
+  else if(thisM >= g.monthly - 0.5) status = `✅ قسط الشهر ده اتدفع.`;
+  else status = `⏳ قسط الشهر ده لسه (<b class="num">${fmt(g.monthly - Math.max(0, thisM))}</b> ج).`;
+  return `<div class="card"><div class="goal-hero"><div class="ring" style="--p:${pct}"><b class="num">${k}/${g.months}</b></div>
+      <div style="flex:1"><h3 style="margin:0">🪙 ${esc(g.name)}</h3>
+        <div class="muted">قسط <b class="num">${fmt(g.monthly)}</b> × <b class="num">${g.months}</b> شهر · من ${monthName(g.start)} لـ ${monthName(g.deadline)}</div></div>
+      <button class="btn sm" data-act="goalForm" data-id="${g.id}">تعديل</button></div>
+    <div class="kv"><span>هتقبض</span><b>${money(target)}</b></div>
+    <div class="kv"><span>دفعت لحد دلوقتي</span><b>${money(saved, 'pos')}</b></div>
+    <div class="note">${status}${g.note ? '<br>📝 ' + esc(g.note) : ''}</div>
+    ${g.doneOn ? '' : `<div class="btns" style="margin-top:10px">${full ? `<button class="btn primary" style="flex:1" data-act="gameyaPayout" data-id="${g.id}">قبضت الجمعية</button>` : `<button class="btn primary" style="flex:1" data-act="goalMove" data-id="${g.id}" data-s="1">دفعت القسط</button>`}</div>`}</div>`;
 }
 function goalMove(id, sign){
   const g = byId(S.goals, id);
@@ -1885,6 +2178,7 @@ function receiveIncome(id){
     const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
     S.tx.push({id:uid(), ts:Date.now(), type:'inc', incomeId:id, amount:a, note:'', date:v.date || todayS()});
     save(); toast('💰 اتسجّل');
+    setTimeout(() => allocateSalary(a, v.date || todayS()), 60);
   });
 }
 /* ---- توزيع دخل إضافي (مكافأة، شغل زيادة...) ----
@@ -1900,31 +2194,50 @@ function allocateExtra(amount, date){
     rows.push({k:'due', id:d.id, label:`📅 ${esc(dueName(d))} <span class="muted">(${dayLabel(d.date)} — ناقصه ${fmt(short)})</span>`, v:a});
   });
   const debt = S.debts.filter(d => debtRemaining(d) > 0.5).sort((a, b) => debtRemaining(a) - debtRemaining(b))[0];
-  const goal = S.goals.find(g => goalSaved(g) < (g.target || 0));
+  const goal = S.goals.find(g => g.kind !== 'gameya' && !g.doneOn && goalSaved(g) < (g.target || 0));
   const base = left;
   if(debt){ const a = Math.min(debtRemaining(debt), Math.round(base * (goal ? 0.3 : 0.6))); left -= a; rows.push({k:'debt', id:debt.id, label:`💳 سداد زيادة من دين: ${esc(debt.name)} <span class="muted">(باقي ${fmt(debtRemaining(debt))})</span>`, v:a}); }
   if(goal){ const a = Math.round(base * (debt ? 0.5 : 0.7)); left -= a; rows.push({k:'goal', id:goal.id, label:`${esc(goal.icon || "🎯")} تحويش للهدف: ${esc(goal.name)}`, v:a}); }
+  allocSheet({title:'توزّع الدخل الإضافي إزاي؟', amount, date, rows, ok:'وزّع كده', skip:'سيبه كله للصرف', leftLbl:'الباقي للصرف',
+    intro:`جالك <b class="num">${fmt(amount)}</b> ج زيادة 🎉 الفلوس الزيادة لو اتسابت في الجيب بتتصرف من غير ما تحس. ده اقتراح للتوزيع، وتقدر تعدّل أي رقم:`});
+}
+/* تقسيم المرتب أول ما ينزل (ادفع لنفسك الأول): الجمعيات والأهداف + المواعيد، والباقي للالتزامات والمصروف */
+function allocateSalary(amount, date){
+  const r = periodRange(periodOf(date)), rows = [];
+  S.goals.filter(g => !g.doneOn).forEach(g => {
+    const need = goalPlanMonthly(g) - sum(S.tx.filter(t => t.type === 'save' && t.goalId === g.id && t.date >= r.start && t.date <= r.end), t => t.amount);
+    if(need > 1) rows.push({k:'goal', id:g.id, label:`${esc(g.icon || '🎯')} ${g.kind === 'gameya' ? 'قسط ' : 'تحويش '}${esc(g.name)}`, v:Math.round(need)});
+  });
+  const o = summary(periodOf(date));
+  o.dueLines.forEach(l => { const need = l.per - l.resThis; if(need > 1) rows.push({k:'due', id:l.d.id, label:`${l.d.kind === 'event' ? '🎂' : '📅'} شيل لـ ${esc(dueName(l.d))} <span class="muted">(${dayLabel(l.d.date)})</span>`, v:Math.round(need)}); });
+  const fixed = Math.max(0, o.billPlanned - o.billPaid) + Math.max(0, o.debtPlanned - o.debtPaid) + Math.max(0, o.houseBudget - o.houseSpent);
+  allocSheet({title:'🧮 قسّم المرتب', amount, date, rows, ok:'قسّم كده', skip:'بعدين', leftLbl:'يفضل للالتزامات والمصروف',
+    intro:`نزل <b class="num">${fmt(amount)}</b> ج. أحسن وقت تحوّش فيه هو <b>أول ما المرتب ينزل</b> — قبل ما يتصرف. ده التقسيم حسب خطتك (تقدر تعدّل):`,
+    extra:used => { const rest = amount - used; return `<br><span class="muted">منهم التزامات وأقساط واستوك لسه: <b class="num">${fmt(fixed)}</b> · ويفضل للمصروف اليومي: <b class="num ${rest - fixed < 0 ? 'neg' : ''}">${fmt(rest - fixed)}</b> (حوالي <span class="num">${fmt((rest - fixed) / Math.max(1, diffDays(date, r.end) + 1))}</span> في اليوم)</span>`; }});
+}
+function allocSheet(cfg){
+  const {amount, date, rows} = cfg;
   if(!rows.length) return;
-  const body = `<div class="muted" style="line-height:1.8; margin-bottom:10px">جالك <b class="num">${fmt(amount)}</b> ج زيادة 🎉 الفلوس الزيادة لو اتسابت في الجيب بتتصرف من غير ما تحس. ده اقتراح للتوزيع، وتقدر تعدّل أي رقم:</div>
+  const body = `<div class="muted" style="line-height:1.8; margin-bottom:10px">${cfg.intro}</div>
     ${rows.map((r, i) => `<label class="fld"><span>${r.label}</span><input name="a${i}" inputmode="decimal" value="${Math.round(r.v)}" data-alloc></label>`).join('')}
     <div class="note" id="allocLeft"></div>
-    <div class="sheet-foot"><button type="submit" class="btn primary">وزّع كده</button><button type="button" class="btn" data-act="closeSheet">سيبه كله للصرف</button></div>`;
-  openSheet('توزّع الدخل الإضافي إزاي؟', body, v => {
+    <div class="sheet-foot"><button type="submit" class="btn primary">${cfg.ok}</button><button type="button" class="btn" data-act="closeSheet">${cfg.skip}</button></div>`;
+  openSheet(cfg.title, body, v => {
     let n = 0; const ts = Date.now();
     rows.forEach((r, i) => {
       const a = num(v['a' + i]); if(!(a > 0)) return;
-      if(r.k === 'due'){ const d = byId(S.dues, r.id); S.tx.push({id:uid(), ts:ts + i, type:'reserve', dueId:d.id, dueDate:d.date, amount:a, note:'من دخل إضافي', date}); }
-      if(r.k === 'debt') S.tx.push({id:uid(), ts:ts + i, type:'debt', debtId:r.id, amount:Math.min(a, debtRemaining(byId(S.debts, r.id))), note:'سداد زيادة من دخل إضافي', date});
-      if(r.k === 'goal') S.tx.push({id:uid(), ts:ts + i, type:'save', goalId:r.id, amount:a, note:'من دخل إضافي', date});
+      if(r.k === 'due'){ const d = byId(S.dues, r.id); S.tx.push({id:uid(), ts:ts + i, type:'reserve', dueId:d.id, dueDate:d.date, amount:a, note:'', date}); }
+      if(r.k === 'debt') S.tx.push({id:uid(), ts:ts + i, type:'debt', debtId:r.id, amount:Math.min(a, debtRemaining(byId(S.debts, r.id))), note:'سداد زيادة', date});
+      if(r.k === 'goal') S.tx.push({id:uid(), ts:ts + i, type:'save', goalId:r.id, amount:a, note:'', date});
       n++;
     });
     if(!n) return;
-    save(); toast('اتوزّع ✔');
+    save(); toast('اتسجّل ✔');
   });
   const upd = () => {
     const used = sum([...document.querySelectorAll('#sheetBody [data-alloc]')], x => num(x.value));
     const el = $('#allocLeft');
-    if(el) el.innerHTML = used > amount ? `<span class="neg">الأرقام أكبر من الدخل بـ <b class="num">${fmt(used - amount)}</b></span>` : `الباقي للصرف: <b class="num">${fmt(amount - used)}</b> ج`;
+    if(el) el.innerHTML = used > amount ? `<span class="neg">الأرقام أكبر من المبلغ بـ <b class="num">${fmt(used - amount)}</b></span>` : `${cfg.leftLbl}: <b class="num">${fmt(amount - used)}</b> ج${cfg.extra ? cfg.extra(used) : ''}`;
   };
   document.querySelectorAll('#sheetBody [data-alloc]').forEach(x => x.addEventListener('input', upd));
   upd();
@@ -2018,6 +2331,18 @@ const ACT = {
     else if(navigator.clipboard) navigator.clipboard.writeText(txt).then(() => toast('اتنسخ الملخص'));
     else openSheet('الملخص', `<div class="pre">${esc(txt)}</div>`);
   },
+  donutPick,
+  gameyaForm:(d) => gameyaForm(d.id),
+  gameyaPayout:(d) => {
+    const g = byId(S.goals, d.id), amt = goalSaved(g);
+    if(!confirm(`قبضت ${fmt(amt)} ج؟ هيرجعوا لرصيدك.`)) return;
+    S.tx.push({id:uid(), ts:Date.now(), type:'save', goalId:g.id, amount:-amt, note:'قبض الجمعية', date:todayS()});
+    g.doneOn = todayS(); save(); toast('🎉 مبروك');
+    if(amt >= 100) setTimeout(() => allocateExtra(amt, todayS()), 60);
+  },
+  fcDays:(d) => { S.settings.fcDays = +d.v; save(); },
+  emergencyGoal:(d) => { TAB = 'goals'; render(); const dl = addMonths(periodOf(todayS()), 12); goalForm(null, {name:'صندوق الطوارئ', icon:'🛟', target:+d.t, deadline:dl.y + '-' + pad(dl.m + 1), kind:'emergency'}); },
+  donutMode:(d) => { S.settings.donutMode = d.v; save(); },
   goShop:() => { TAB = 'stock'; SUB.stock = 'shop'; render(); window.scrollTo(0, 0); },
   saveJard:() => {
     let n = 0; const ts = Date.now();
@@ -2154,6 +2479,7 @@ document.addEventListener('change', e => {
   if(el.hasAttribute('data-bl')){ buyLabels(); return; }
   if(el.hasAttribute('data-junit')){ jardUnitChanged(el, el.dataset.prev || (el.value === 'pack' ? 'base' : 'pack')); return; }
   if(el.dataset.act === 'cycleDay'){ setCycleDay(+el.value); save(); toast('اتغيّر بداية الشهر'); }
+  if(el.dataset.act === 'fcRecv'){ S.settings.fcRecv = el.checked; save(); return; }
   if(el.dataset.act === 'rollDebts'){ const g = byId(S.goals, el.dataset.id); if(g){ g.rollDebts = el.checked; save(); } }
 });
 document.addEventListener('input', e => { if(e.target.hasAttribute && e.target.hasAttribute('data-bl')) buyLabels(); });
