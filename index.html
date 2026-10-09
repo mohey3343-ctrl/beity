@@ -1012,6 +1012,13 @@ function jardHtml(){
   });
   return h + `</div><button class="btn primary block" data-act="saveJard" style="padding:13px; margin-bottom:12px">احفظ الجرد وطلّعلي قائمة الشراء</button>`;
 }
+/* عرض كمية في قائمة الشراء: بالعبوة (كيس…) أو بالمقياس (KG/L/PCS) */
+function shopQty(it, q, view, html){
+  const en = BASES[baseOf(it)].en;
+  const baseTxt = html ? `<span dir="ltr" style="unicode-bidi:isolate">${fmtQ(q)} ${en}</span>` : `${fmtQ(q)} ${en}`;
+  if(view === 'base' || !hasPack(it)) return baseTxt;
+  return `${fmtQ(q / it.pf)} ${html ? esc(it.pu) : it.pu}`;
+}
 function shopHtml(){
   const L = shopList(), need = L.filter(x => x.qty > 0).sort((a, b) => (daysLeft(a.it) || 0) - (daysLeft(b.it) || 0));
   const total = sum(need, x => x.cost), cover = coverDays();
@@ -1022,16 +1029,21 @@ function shopHtml(){
       <button type="button" class="${S.settings.coverMode === 'period' ? 'on' : ''}" data-act="cover" data-v="period">لحد آخر الشهر المالي</button></div>
     <div class="row muted"><span>بنحسب على <b class="num">${cover}</b> يوم + احتياطي <b class="num">${S.settings.bufferDays || 0}</b> يوم</span>
       <span class="btns"><button class="btn sm" data-act="buffer" data-d="-1">−</button><button class="btn sm" data-act="buffer" data-d="1">+</button></span></div>
+    <div class="row" style="margin-top:10px"><span class="muted">اعرض الكميات بـ</span>
+      <div class="seg" style="margin:0; flex:1; max-width:250px">
+        <button type="button" class="${S.settings.shopView !== 'base' ? 'on' : ''}" data-act="shopView" data-v="pack">العبوة (كيس…)</button>
+        <button type="button" class="${S.settings.shopView === 'base' ? 'on' : ''}" data-act="shopView" data-v="base">KG / L / PCS</button></div></div>
     ${unknown ? `<div class="note">⚠️ <b>${unknown}</b> صنف ما اتعملهمش جرد، فبنعتبر الموجود منهم صفر. <a href="#" data-act="sub" data-k="stock" data-v="jard">اعمل جرد</a></div>` : ''}
   </div>`;
   if(!need.length) return h + `<div class="card empty"><div class="e-ic">✅</div>البيت مكفي للمدة دي — مش محتاج تشتري حاجة.</div>`;
   h += `<div class="card"><div class="row" style="margin-bottom:8px"><div><div class="muted">التكلفة المتوقعة</div><div style="font-size:22px">${money(total)}</div></div>
     <div class="btns"><button class="btn" data-act="shareList">مشاركة</button><button class="btn primary" data-act="buyMany">اشتريتهم</button></div></div>
     <table class="tbl"><tr><th>الصنف</th><th>عندي</th><th>محتاج</th><th>اشتري</th><th>التكلفة</th></tr>
-    <tr><td colspan="5" class="muted" style="font-size:11px">"عندي" و"محتاج" بالعبوة (كيس/زجاجة...) أو بالمقياس لو مفيش عبوة</td></tr>
-    ${need.map(x => `<tr data-act="buyItem" data-id="${x.it.id}" style="cursor:pointer"><td><b>${esc(x.it.name)}</b></td>
-      <td class="num">${x.est == null ? '؟' : fmtQ(x.have / packF(x.it))}</td><td class="num">${fmtQ(x.rate.v * (cover + (S.settings.bufferDays || 0)) / packF(x.it))}</td>
-      <td><b>${qtyTxt(x.it, x.qty)}</b></td><td class="num">${x.it.price > 0 ? fmt(x.cost) : '<span class="neg">؟</span>'}</td></tr>`).join('')}
+    ${need.map(x => { const sv = S.settings.shopView, alt = sv === 'base' ? (hasPack(x.it) ? shopQty(x.it, x.qty, 'pack', true) : '') : (hasPack(x.it) ? shopQty(x.it, x.qty, 'base', true) : '');
+      return `<tr data-act="buyItem" data-id="${x.it.id}" style="cursor:pointer"><td><b>${esc(x.it.name)}</b></td>
+      <td>${x.est == null ? '؟' : shopQty(x.it, x.have, sv, true)}</td><td>${shopQty(x.it, x.rate.v * (cover + (S.settings.bufferDays || 0)), sv, true)}</td>
+      <td><b>${shopQty(x.it, x.qty, sv, true)}</b>${alt ? `<div class="muted" style="font-size:11px">${alt}</div>` : ''}</td>
+      <td class="num">${x.it.price > 0 ? fmt(x.cost) : '<span class="neg">؟</span>'}</td></tr>`; }).join('')}
     </table><div class="muted" style="margin-top:8px">دوس على أي صنف عشان تسجّل إنك اشتريته بالسعر الفعلي.</div></div>`;
   return h;
 }
@@ -1955,11 +1967,12 @@ const ACT = {
     SUB.stock = 'shop'; save(); window.scrollTo(0, 0); toast(`اتسجّل جرد ${n} صنف`);
   },
   cover:(d) => { S.settings.coverMode = d.v; save(); },
+  shopView:(d) => { S.settings.shopView = d.v; save(); },
   buffer:(d) => { S.settings.bufferDays = Math.max(0, Math.min(30, (S.settings.bufferDays || 0) + (+d.d))); save(); },
   shareList:() => {
     const cover = coverDays();
     const L = shopList().filter(x => x.qty > 0);
-    const txt = `🛒 قائمة مشتريات البيت (تكفي ${cover} يوم)\n\n` + L.map(x => `• ${x.it.name}: ${qtyPlain(x.it, x.qty)}${x.cost ? ` (~${fmt(x.cost)} ج)` : ''}`).join('\n') + `\n\nالإجمالي التقريبي: ${fmt(sum(L, x => x.cost))} ج`;
+    const txt = `🛒 قائمة مشتريات البيت (تكفي ${cover} يوم)\n\n` + L.map(x => `• ${x.it.name}: ${shopQty(x.it, x.qty, S.settings.shopView)}${hasPack(x.it) ? ` (${shopQty(x.it, x.qty, S.settings.shopView === 'base' ? 'pack' : 'base')})` : ''}${x.cost ? ` (~${fmt(x.cost)} ج)` : ''}`).join('\n') + `\n\nالإجمالي التقريبي: ${fmt(sum(L, x => x.cost))} ج`;
     if(navigator.share) navigator.share({text:txt}).catch(() => {});
     else if(navigator.clipboard) navigator.clipboard.writeText(txt).then(() => toast('اتنسخت القائمة'));
     else openSheet('القائمة', `<div class="pre">${esc(txt)}</div>`);
