@@ -685,6 +685,18 @@ function recvNext(r){
 }
 const activeRecvs = () => (S.recvs || []).filter(r => recvRemaining(r) > 0.5);
 
+/* ---- تاريخ أسعار الصنف (سعر العبوة في كل مرة اشتريته) ---- */
+function priceHistory(it){
+  return itemBuys(it).filter(t => t.amount > 0 && t.qty > 0).sort((a, b) => evKey(a) < evKey(b) ? -1 : 1)
+    .map(t => ({date:t.date, p:t.amount / t.qty * packF(it)}));
+}
+/* التغيير في آخر سعر مقارنة باللي قبله (نسبة) */
+function priceChange(it){
+  const h = priceHistory(it); if(h.length < 2) return null;
+  const a = h[h.length - 2].p, b = h[h.length - 1].p;
+  return {from:a, to:b, pct:(b / a - 1) * 100, date:h[h.length - 1].date};
+}
+
 /* ---- الديون: خطة السداد (كرة التلج — الأصغر الأول) ---- */
 function debtPaidIn(d, r){ return S.tx.some(t => t.type === 'debt' && t.debtId === d.id && t.date >= r.start && t.date <= r.end); }
 function debtPlan(extra){
@@ -853,7 +865,7 @@ function summaryRaw(p){
 }
 
 /* ---------------- الحالة والعرض ---------------- */
-let TAB = 'home', VIEW = null, LOGF = 'all';
+let TAB = 'home', VIEW = null, LOGF = 'all', LOGQ = '', LOGCAT = '', LOGALL = false;
 const SUB = {stock:'items', bills:'bills'};
 const PAGES = {}, AFTER = {};
 
@@ -1120,41 +1132,60 @@ function txInfo(t){
   if(t.type === 'save'){ const g = byId(S.goals, t.goalId); return {ic:t.amount < 0 ? '↩️' : '🏦', title:(t.amount < 0 ? 'سحب من: ' : 'تحويش: ') + (g ? g.name : '—')}; }
   if(t.type === 'exp' && t.dueId){ const du = byId(S.dues || [], t.dueId); return {ic:'🎂', title:du ? du.name : (t.note || 'مناسبة')}; }
   const c = catOf(t.cat), it = t.itemId ? byId(S.items, t.itemId) : null;
-  return {ic:c.icon, title:it ? `${it.name} (${qtyPlain(it, t.qty)})` : c.name};
+  return {ic:c.icon, title:it ? `${it.name} · ${qtyPlain(it, t.qty)}` : c.name};
 }
 function txRow(t){
   if(t.type === 'xfer'){ const i = txInfo(t); return `<div class="list-item" data-act="editTx" data-id="${t.id}"><div class="li-ic">⇄</div><div class="li-main"><div class="li-title">${esc(i.title)}</div>${t.note ? `<div class="li-sub">${esc(t.note)}</div>` : ''}</div><div class="li-end"><b class="num muted">${fmt(t.amount)}</b></div></div>`; }
   const i = txInfo(t), plus = t.type === 'inc' || ((t.type === 'save' || t.type === 'reserve') && t.amount < 0);
   return `<div class="list-item" data-act="editTx" data-id="${t.id}">
     <div class="li-ic">${i.ic}</div>
-    <div class="li-main"><div class="li-title">${esc(i.title)}</div>${t.note && t.note !== i.title ? `<div class="li-sub">${esc(t.note)}</div>` : ''}</div>
+    <div class="li-main"><div class="li-title">${esc(i.title)}${t.grp ? ' <span class="tag">🧾</span>' : ''}</div>${t.note && t.note !== i.title ? `<div class="li-sub">${esc(t.note)}</div>` : ''}</div>
     <div class="li-end"><b class="num ${plus ? 'pos' : ''}">${plus ? '+' : '−'}${fmt(Math.abs(t.amount))}</b></div></div>`;
 }
-PAGES.log = function(){
-  const o = summary(VIEW);
-  const F = {all:'الكل', exp:'مصروف', bill:'التزامات', debt:'ديون', save:'تحويش', reserve:'محجوز', lend:'سلف', inc:'دخل'};
-  if(S.wallets.length > 1) F.xfer = 'تحويلات';
-  let list = o.T.slice();
+/* نص البحث لكل حركة: العنوان والملاحظة والمبلغ والتصنيف والمحفظة */
+function txSearchText(t){
+  const w = S.wallets.length > 1 ? (byId(S.wallets, walletOf(t)) || {}).name : '';
+  return [txInfo(t).title, t.note, t.amount, t.cat ? catOf(t.cat).name : '', w].join(' ').toLowerCase();
+}
+function logFiltered(o){
+  let list = LOGALL ? S.tx.slice() : o.T.slice();
   if(LOGF !== 'all') list = list.filter(t => t.type === LOGF);
-  list.sort((a, b) => evKey(a) < evKey(b) ? 1 : -1);
-  let h = `<div class="grid2">
-    <div class="stat"><div class="t">💰 دخل اتسجل</div><div class="v">${money(o.incReceived, 'pos')}</div></div>
-    <div class="stat"><div class="t">📤 خارج</div><div class="v">${money(o.outActual)}</div></div></div>`;
-  h += `<div class="chips">${Object.entries(F).map(([k, v]) => `<button class="chip ${LOGF === k ? 'on' : ''}" data-act="logf" data-f="${k}">${v}</button>`).join('')}</div>`;
-  if(!list.length){
-    return h + `<div class="card empty"><div class="e-ic">🧾</div>مفيش حاجة متسجلة في الشهر ده.<br>دوس على <b>+</b> وسجّل أول مصروف.</div>`;
-  }
+  if(LOGCAT) list = list.filter(t => t.cat === LOGCAT);
+  const q = normNum(LOGQ).toLowerCase() || LOGQ.trim().toLowerCase();
+  if(LOGQ.trim()) list = list.filter(t => txSearchText(t).includes(LOGQ.trim().toLowerCase()) || (q && String(t.amount).includes(q)));
+  return list.sort((a, b) => evKey(a) < evKey(b) ? 1 : -1);
+}
+function logListHtml(o){
+  const all = logFiltered(o), list = all.slice(0, 400), filtered = LOGQ.trim() || LOGCAT || LOGALL;
+  if(!list.length) return `<div class="card empty"><div class="e-ic">🧾</div>${filtered ? 'مفيش نتايج.' : 'مفيش حاجة متسجلة في الشهر ده.<br>دوس على <b>+</b> وسجّل أول مصروف.'}</div>`;
+  let h = filtered ? `<div class="muted" style="margin:0 2px 8px">النتيجة: <b class="num">${all.length}</b> حركة · خارج <b class="num">${fmt(sum(all.filter(t => !['inc', 'xfer'].includes(t.type)), t => t.amount))}</b>${all.length > 400 ? ' (معروض أحدث 400)' : ''}</div>` : '';
   h += '<div class="card" style="padding-top:4px">';
   let cur = null;
   list.forEach(t => {
     if(t.date !== cur){
       cur = t.date;
       const dayOut = sum(list.filter(x => x.date === cur && x.type !== 'inc' && x.type !== 'xfer'), x => x.amount);
-      h += `<div class="day-h"><span>${dayLabel(cur)}</span><span class="num">${dayOut ? '−' + fmt(dayOut) : ''}</span></div>`;
+      h += `<div class="day-h"><span>${dayLabel(cur)}${LOGALL && pd(cur).getFullYear() !== new Date().getFullYear() ? ' ' + pd(cur).getFullYear() : ''}</span><span class="num">${dayOut ? '−' + fmt(dayOut) : ''}</span></div>`;
     }
     h += txRow(t);
   });
   return h + '</div>';
+}
+PAGES.log = function(){
+  const o = summary(VIEW);
+  const F = {all:'الكل', exp:'مصروف', bill:'التزامات', debt:'ديون', save:'تحويش', reserve:'محجوز', lend:'سلف', inc:'دخل'};
+  if(S.wallets.length > 1) F.xfer = 'تحويلات';
+  let h = `<div class="grid2">
+    <div class="stat"><div class="t">💰 دخل اتسجل</div><div class="v">${money(o.incReceived, 'pos')}</div></div>
+    <div class="stat"><div class="t">📤 خارج</div><div class="v">${money(o.outActual)}</div></div></div>`;
+  h += `<div class="card" style="padding:10px">
+    <input id="logQ" type="search" placeholder="🔍 دوّر: بنزين، 150، كارفور..." value="${esc(LOGQ)}" style="width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:12px; background:var(--card-2); color:var(--ink); font-size:16px;">
+    <div class="row" style="margin-top:8px; gap:8px">
+      <select id="logCat" style="flex:1; padding:8px; border:1px solid var(--line); border-radius:10px; background:var(--card-2); color:var(--ink); font-size:14px;">
+        <option value="">كل التصنيفات</option>${S.cats.map(c => `<option value="${c.id}" ${LOGCAT === c.id ? 'selected' : ''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select>
+      <label class="switch" style="margin:0; font-size:13px"><input type="checkbox" id="logAll" ${LOGALL ? 'checked' : ''}> كل الشهور</label></div></div>`;
+  h += `<div class="chips">${Object.entries(F).map(([k, v]) => `<button class="chip ${LOGF === k ? 'on' : ''}" data-act="logf" data-f="${k}">${v}</button>`).join('')}</div>`;
+  return h + `<div id="logList">${logListHtml(o)}</div>`;
 };
 
 /* ===================== استوك البيت ===================== */
@@ -1188,7 +1219,9 @@ function itemsHtml(){
       const r = dailyRate(it), e = estStock(it), d = daysLeft(it);
       const pct = d == null ? 0 : Math.min(100, d / 30 * 100);
       const cls = d == null ? '' : d <= 5 ? 'bad' : d <= 12 ? 'warn' : 'good';
-      const srcTag = r.src === 'learned' ? '<span class="tag good">محسوب من الجرد</span>' : r.src === 'manual' ? '<span class="tag">تقديري</span>' : '<span class="tag bad">ناقص الاستهلاك</span>';
+      const pc = priceChange(it);
+      const priceTag = pc && Math.abs(pc.pct) >= 5 ? ` <span class="tag ${pc.pct > 0 ? 'bad' : 'good'}">${pc.pct > 0 ? '▲' : '▼'} ${Math.abs(Math.round(pc.pct))}%</span>` : '';
+      const srcTag = priceTag + ' ' + (r.src === 'learned' ? '<span class="tag good">محسوب من الجرد</span>' : r.src === 'manual' ? '<span class="tag">تقديري</span>' : '<span class="tag bad">ناقص الاستهلاك</span>');
       h += `<div class="list-item" data-act="itemForm" data-id="${it.id}">
         <div class="li-main"><div class="li-title">${esc(it.name)} ${srcTag}</div>
           <div class="li-sub">بتستهلك ${qtyTxt(it, r.v * 30)}/شهر${it.price > 0 ? ` · <span class="num">${fmt(it.price * packF(it))}</span> ج لل${esc(entryUnit(it))}` : ' · <span class="neg">من غير سعر</span>'}</div>
@@ -1519,6 +1552,9 @@ function insights(p){
     if(l.pct >= 1) out.push(['bad', '🎯', `${esc(l.c.name)} عدّى الحد بـ <b class="num">${fmt(l.spent - l.c.limit)}</b> (${fmt(l.spent)} من ${fmt(l.c.limit)}).`]);
     else if(o.isCurrent && l.pace > l.c.limit * 1.05 && el >= 5) out.push(['warn', '🎯', `${esc(l.c.name)} ماشي بمعدل هيوصل <b class="num">${fmt(l.pace)}</b> والحد <span class="num">${fmt(l.c.limit)}</span> — هدّي شوية.`]);
   });
+  // غلا الأسعار: أصناف آخر سعر ليها زاد 10% أو أكتر (اشتريتها الشهر ده)
+  const ups = S.items.map(it => ({it, pc:priceChange(it)})).filter(x => x.pc && x.pc.pct >= 10 && x.pc.date >= o.r.start && x.pc.date <= o.r.end);
+  if(ups.length) out.push(['warn', '💲', `أسعار زادت: ${ups.slice(0, 4).map(x => `${esc(x.it.name)} <b class="num">+${Math.round(x.pc.pct)}%</b> (${fmtQ(x.pc.from)} ← ${fmtQ(x.pc.to)} لل${esc(entryUnit(x.it))})`).join('، ')}. قارن أماكن الشراء أو اشتري بالجملة.`]);
   // ٣) المصاريف الصغيرة المتكررة
   FLEX_CATS.forEach(c => {
     const ts = o.T.filter(t => t.type === 'exp' && t.cat === c);
@@ -1920,6 +1956,11 @@ function quickAdd(preset){
   body += `<label class="fld"><input class="amount" name="amount" inputmode="decimal" placeholder="0" value="${t ? Math.abs(t.amount) : ''}" autofocus></label>`;
   if(type === 'exp' && !(t && t.itemId)) body += `<div class="catpick">${cats}</div>`;
   if(t && t.itemId) body += Fd.num('qty', 'الكمية', t.qty);
+  if(t && t.grp){
+    const g = S.tx.filter(x => x.grp === t.grp);
+    if(g.length > 1) body += `<div class="note">🧾 جزء من فاتورة فيها <b class="num">${g.length}</b> حاجة بإجمالي <b class="num">${fmt(sum(g, x => x.amount))}</b> ج
+      <div style="margin-top:8px"><button type="button" class="btn sm danger" data-act="delGroup" data-id="${t.grp}">امسح الفاتورة كلها</button></div></div>`;
+  }
   body += Fd.text('note', 'ملاحظة (اختياري)', t ? t.note : '', 'placeholder="مثلاً: خضار من السوق"');
   body += Fd.date('date', 'التاريخ', t ? t.date : (preset.date || todayS()));
   body += Fd.foot(t ? 'حفظ التعديل' : 'سجّل', t ? {act:'delTx', id:t.id} : null);
@@ -1981,7 +2022,9 @@ function itemForm(id){
     body += `<div class="note">📊 المعدل المستخدم: <b>${qtyTxt(it, r.v * 30)}</b>/شهر ${r.src === 'learned' ? '(محسوب من الجرد)' : '(تقديري)'}
       ${learned == null ? '<br>اعمل جردين بينهم أسبوع على الأقل عشان نحسب استهلاكك الحقيقي.' : ''}
       ${cs.length ? '<br><b>آخر جرد:</b> ' + cs.map(c => `${dayLabel(c.date)}: ${esc(qtyPlain(it, c.qty))}`).join(' · ') : ''}
-      ${bs.length ? '<br><b>آخر شراء:</b> ' + bs.map(b => `${dayLabel(b.date)}: ${esc(qtyPlain(it, b.qty))} بـ ${fmt(b.amount)}ج`).join(' · ') : ''}</div>
+      ${bs.length ? '<br><b>آخر شراء:</b> ' + bs.map(b => `${dayLabel(b.date)}: ${esc(qtyPlain(it, b.qty))} بـ ${fmt(b.amount)}ج`).join(' · ') : ''}
+      ${(() => { const ph = priceHistory(it); if(ph.length < 2) return ''; const ch = (ph[ph.length - 1].p / ph[0].p - 1) * 100;
+        return `<br><b>💲 سعر الـ${esc(entryUnit(it))}:</b> ` + ph.slice(-6).map(x => `<span class="num">${fmtQ(x.p)}</span>`).join(' ← ') + ` <span class="tag ${ch > 3 ? 'bad' : ch < -3 ? 'good' : ''}">${ch > 0 ? '▲' : '▼'} ${Math.abs(Math.round(ch))}% من أول مرة</span>`; })()}</div>
       <div class="btns" style="margin-top:10px"><button type="button" class="btn good" data-act="buyItem" data-id="${it.id}">سجّل شراء</button><button type="button" class="btn" data-act="countItem" data-id="${it.id}">جرد الصنف ده</button></div>`;
   }
   body += Fd.foot(it ? 'حفظ' : 'إضافة', it ? {act:'delItem', id:it.id} : null);
@@ -2636,6 +2679,11 @@ const ACT = {
   perNow:() => { VIEW = periodOf(todayS()); render(); },
   sub:(d) => { SUB[d.k] = d.v; render(); },
   logf:(d) => { LOGF = d.f; render(); },
+  delGroup:(d) => {
+    const n = S.tx.filter(t => t.grp === d.id).length;
+    if(!confirm(`تمسح الفاتورة كلها (${n} حاجة)؟`)) return;
+    S.tx = S.tx.filter(t => t.grp !== d.id); closeSheet(); save();
+  },
   closeSheet,
   quickAdd:() => quickAdd({date:defaultDate()}),
   qaType:(d) => quickAdd({type:d.v, date:defaultDate()}),
@@ -2884,6 +2932,8 @@ document.addEventListener('change', e => {
   if(el.hasAttribute('data-ilbl')){ itemLabels(); return; }
   if(el.hasAttribute('data-bl')){ buyLabels(); return; }
   if(el.hasAttribute('data-ml')){ mlRead(); mlRender(); return; }
+  if(el.id === 'logCat'){ LOGCAT = el.value; $('#logList').innerHTML = logListHtml(summary(VIEW)); return; }
+  if(el.id === 'logAll'){ LOGALL = el.checked; $('#logList').innerHTML = logListHtml(summary(VIEW)); return; }
   if(el.hasAttribute('data-junit')){ jardUnitChanged(el, el.dataset.prev || (el.value === 'pack' ? 'base' : 'pack')); return; }
   if(el.dataset.act === 'cycleDay'){ setCycleDay(+el.value); save(); toast('اتغيّر بداية الشهر'); }
   if(el.dataset.act === 'fcRecv'){ S.settings.fcRecv = el.checked; save(); return; }
@@ -2892,6 +2942,7 @@ document.addEventListener('change', e => {
 document.addEventListener('input', e => {
   if(e.target.hasAttribute && e.target.hasAttribute('data-bl')) buyLabels();
   if(e.target.matches && e.target.matches('input[inputmode="decimal"]')) markField(e.target);
+  if(e.target.id === 'logQ'){ LOGQ = e.target.value; $('#logList').innerHTML = logListHtml(summary(VIEW)); }
   if(e.target.matches && e.target.matches('#mlines [data-f="amount"]')){
     const rows = document.querySelectorAll('#mlines .ml-row'), row = e.target.closest('.ml-row');
     if(row === rows[rows.length - 1] && e.target.value.trim() !== ''){
