@@ -305,18 +305,21 @@ const DEFAULT_CATS = [
   {id:'other',    name:'متنوع',              icon:'🧾'},
 ];
 
-/* أصناف شائعة في البيت المصري — بتتضاف فاضية وانت بتكمّل الكميات والأسعار */
+/* أصناف شائعة في البيت المصري — بتتضاف فاضية وانت بتكمّل الاستهلاك والأسعار
+   [المجموعة، الاسم، المقياس الأساسي، العبوة، العبوة فيها كام من المقياس] */
 const SEED_ITEMS = [
-  ['تموين','رز','كيلو'],['تموين','سكر','كيلو'],['تموين','زيت','لتر'],['تموين','مكرونة','كيس'],
-  ['تموين','شاي','علبة'],['تموين','عدس','كيلو'],['تموين','فول','كيلو'],['تموين','دقيق','كيلو'],
-  ['تموين','سمنة','كيلو'],['تموين','صلصة','علبة'],['تموين','بُن / نسكافيه','علبة'],
-  ['ألبان وبروتين','بيض','طبق'],['ألبان وبروتين','لبن','لتر'],['ألبان وبروتين','جبنة','كيلو'],
-  ['ألبان وبروتين','فراخ','كيلو'],['ألبان وبروتين','لحمة','كيلو'],
-  ['منظفات','مسحوق غسيل','كيلو'],['منظفات','سائل أطباق','زجاجة'],['منظفات','كلور','زجاجة'],
-  ['منظفات','مناديل','باكو'],['منظفات','ورق تواليت','رول'],['منظفات','أكياس زبالة','لفة'],
-  ['عناية شخصية','صابون','قطعة'],['عناية شخصية','شامبو','زجاجة'],['عناية شخصية','معجون أسنان','أنبوبة'],
+  ['تموين','رز','KG','كيس',1],['تموين','سكر','KG','كيس',1],['تموين','زيت','L','زجاجة',0.8],['تموين','مكرونة','KG','كيس',0.45],
+  ['تموين','شاي','KG','علبة',0.25],['تموين','عدس','KG','كيس',0.5],['تموين','فول','KG','',0],['تموين','دقيق','KG','كيس',1],
+  ['تموين','سمنة','KG','علبة',0.7],['تموين','صلصة','PCS','علبة',1],['تموين','بُن / نسكافيه','KG','علبة',0.2],
+  ['ألبان وبروتين','بيض','PCS','طبق',30],['ألبان وبروتين','لبن','L','علبة',1],['ألبان وبروتين','جبنة','KG','',0],
+  ['ألبان وبروتين','فراخ','KG','',0],['ألبان وبروتين','لحمة','KG','',0],
+  ['منظفات','مسحوق غسيل','KG','كيس',1],['منظفات','سائل أطباق','L','زجاجة',0.6],['منظفات','كلور','L','زجاجة',1],
+  ['منظفات','مناديل','PCS','باكو',1],['منظفات','ورق تواليت','PCS','باكو',6],['منظفات','أكياس زبالة','PCS','لفة',1],
+  ['عناية شخصية','صابون','PCS','',0],['عناية شخصية','شامبو','PCS','زجاجة',1],['عناية شخصية','معجون أسنان','PCS','أنبوبة',1],
 ];
-const UNITS = ['كيلو','لتر','علبة','كيس','زجاجة','قطعة','باكو','طبق','رول','لفة','كرتونة','أنبوبة','جرام'];
+/* المقاييس الأساسية — كل الكميات بتتخزن بيها. والعبوة (كيس/زجاجة...) ليها معامل تحويل */
+const BASES = {PCS:{ar:'قطعة', en:'PCS'}, KG:{ar:'كيلو', en:'KG'}, L:{ar:'لتر', en:'L'}};
+const PACKS = ['كيس','علبة','زجاجة','كرتونة','باكو','طبق','شكارة','جركن','برطمان','رول','لفة','أنبوبة'];
 
 /* ---------------- أدوات صغيرة ---------------- */
 const $ = s => document.querySelector(s);
@@ -334,7 +337,22 @@ function num(v){
   return isFinite(n) ? n : 0;
 }
 const fmt = n => Math.round(n || 0).toLocaleString('en-US');
-const fmtQ = n => (Math.round((n || 0) * 10) / 10).toLocaleString('en-US');
+const fmtQ = n => (n || 0).toLocaleString('en-US', {maximumFractionDigits:Math.abs(n || 0) < 10 ? 2 : 1});
+/* الصنف: base = PCS/KG/L، و pu = اسم العبوة، و pf = العبوة فيها كام من الـ base */
+const baseOf = it => BASES[it.base] ? it.base : 'PCS';
+const hasPack = it => !!(it.pu && it.pf > 0);
+const packF = it => hasPack(it) ? it.pf : 1;
+const entryUnit = it => hasPack(it) ? it.pu : BASES[baseOf(it)].en;
+function qtyPlain(it, q){
+  const en = BASES[baseOf(it)].en;
+  if(!hasPack(it)) return `${fmtQ(q)} ${en}`;
+  return `${fmtQ(q / it.pf)} ${it.pu}` + (baseOf(it) === 'PCS' && it.pf === 1 ? '' : ` (${fmtQ(q)} ${en})`);
+}
+function qtyTxt(it, q){
+  const en = BASES[baseOf(it)].en, ltr = x => `<span dir="ltr" style="unicode-bidi:isolate">${fmtQ(x)} ${en}</span>`;
+  if(!hasPack(it)) return ltr(q);
+  return `${fmtQ(q / it.pf)} ${esc(it.pu)}` + (baseOf(it) === 'PCS' && it.pf === 1 ? '' : ` <small class="muted">(${ltr(q)})</small>`);
+}
 const money = (n, cls) => `<span class="num ${cls || ''}">${fmt(n)}</span> <small>ج</small>`;
 function ds(d){ return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
 function pd(s){ const p = String(s).split('-').map(Number); return new Date(p[0], p[1] - 1, p[2] || 1); }
@@ -365,6 +383,16 @@ function migrate(o){
   o.settings = Object.assign(f.settings, o.settings || {});
   if(!Array.isArray(o.cats) || !o.cats.length) o.cats = f.cats;
   if(!o.cats.some(c => c.id === 'house')) o.cats.splice(1, 0, Object.assign({}, DEFAULT_CATS[1]));
+  // الأصناف القديمة كان ليها "وحدة" نص حر — نحوّلها لمقياس أساسي + عبوة
+  (o.items || []).forEach(it => {
+    if(it.base) return;
+    const u = String(it.unit || '').trim();
+    if(['كيلو', 'كجم', 'kg', 'KG'].includes(u)) it.base = 'KG';
+    else if(['لتر', 'l', 'L'].includes(u)) it.base = 'L';
+    else { it.base = 'PCS'; if(u && u !== 'قطعة'){ it.pu = u; it.pf = 1; } }
+    if(it.pack > 0 && !it.pu){ it.pu = 'عبوة'; it.pf = it.pack; }
+    delete it.pack; delete it.unit;
+  });
   return o;
 }
 let S;
@@ -501,7 +529,8 @@ function shopList(){
     const rate = dailyRate(it), est = estStock(it), have = est == null ? 0 : est;
     const need = rate.v * cover - have;
     let qty = 0;
-    if(need > 0.001){ const pack = it.pack > 0 ? it.pack : 1; qty = Math.ceil(need / pack - 1e-9) * pack; }
+    // بنقرّب لعدد عبوات كامل (أو لربع كيلو/لتر لو مفيش عبوة)
+    if(need > 0.001){ const step = hasPack(it) ? it.pf : baseOf(it) === 'PCS' ? 1 : 0.25; qty = Math.ceil(need / step - 1e-9) * step; }
     return {it, rate, est, have, need, qty, cost:qty * (it.price || 0)};
   });
 }
@@ -883,7 +912,7 @@ function txInfo(t){
   if(t.type === 'debt'){ const d = byId(S.debts, t.debtId); return {ic:'💳', title:'قسط: ' + (d ? d.name : '—')}; }
   if(t.type === 'save'){ const g = byId(S.goals, t.goalId); return {ic:t.amount < 0 ? '↩️' : '🏦', title:(t.amount < 0 ? 'سحب من: ' : 'تحويش: ') + (g ? g.name : '—')}; }
   const c = catOf(t.cat), it = t.itemId ? byId(S.items, t.itemId) : null;
-  return {ic:c.icon, title:it ? `${it.name} (${fmtQ(t.qty)} ${it.unit})` : c.name};
+  return {ic:c.icon, title:it ? `${it.name} (${qtyPlain(it, t.qty)})` : c.name};
 }
 function txRow(t){
   const i = txInfo(t), plus = t.type === 'inc' || ((t.type === 'save' || t.type === 'reserve') && t.amount < 0);
@@ -952,9 +981,9 @@ function itemsHtml(){
       const srcTag = r.src === 'learned' ? '<span class="tag good">محسوب من الجرد</span>' : r.src === 'manual' ? '<span class="tag">تقديري</span>' : '<span class="tag bad">ناقص الاستهلاك</span>';
       h += `<div class="list-item" data-act="itemForm" data-id="${it.id}">
         <div class="li-main"><div class="li-title">${esc(it.name)} ${srcTag}</div>
-          <div class="li-sub">بتستهلك <span class="num">${fmtQ(r.v * 30)}</span> ${esc(it.unit)}/شهر${it.price > 0 ? ` · <span class="num">${fmt(it.price)}</span> ج لل${esc(it.unit)}` : ' · <span class="neg">من غير سعر</span>'}</div>
+          <div class="li-sub">بتستهلك ${qtyTxt(it, r.v * 30)}/شهر${it.price > 0 ? ` · <span class="num">${fmt(it.price * packF(it))}</span> ج لل${esc(entryUnit(it))}` : ' · <span class="neg">من غير سعر</span>'}</div>
           <div class="bar ${cls}" style="margin-top:6px"><i style="width:${pct}%"></i></div></div>
-        <div class="li-end">${e == null ? '<span class="tag warn">ما اتجردش</span>' : `<b class="num">${fmtQ(e)}</b> <small>${esc(it.unit)}</small><div class="li-sub">${d == null ? '' : d >= 60 ? 'يكفي +60 يوم' : 'يكفي ' + Math.floor(d) + ' يوم'}</div>`}</div></div>`;
+        <div class="li-end">${e == null ? '<span class="tag warn">ما اتجردش</span>' : `<b>${qtyTxt(it, e)}</b><div class="li-sub">${d == null ? '' : d >= 60 ? 'يكفي +60 يوم' : 'يكفي ' + Math.floor(d) + ' يوم'}</div>`}</div></div>`;
     });
     h += '</div>';
   });
@@ -968,8 +997,9 @@ function jardHtml(){
     h += `<div class="group-h">${esc(g)}</div>`;
     S.items.filter(it => (it.group || 'تاني') === g).forEach(it => {
       const e = estStock(it);
-      h += `<div class="jard-row"><div class="nm">${esc(it.name)}<small>${esc(it.unit)}${e != null ? ' · متوقع ' + fmtQ(e) : ''}</small></div>
-        <input data-item="${it.id}" inputmode="decimal" placeholder="${e != null ? fmtQ(e) : '—'}"></div>`;
+      const f = packF(it);
+      h += `<div class="jard-row"><div class="nm">${esc(it.name)}<small>بالـ${esc(entryUnit(it))}${hasPack(it) && !(baseOf(it) === 'PCS' && f === 1) ? ` (الواحد = ${fmtQ(f)} ${BASES[baseOf(it)].en})` : ''}${e != null ? ' · متوقع ' + fmtQ(e / f) : ''}</small></div>
+        <input data-item="${it.id}" inputmode="decimal" placeholder="${e != null ? fmtQ(e / f) : '—'}"></div>`;
     });
   });
   return h + `</div><button class="btn primary block" data-act="saveJard" style="padding:13px; margin-bottom:12px">احفظ الجرد وطلّعلي قائمة الشراء</button>`;
@@ -990,9 +1020,10 @@ function shopHtml(){
   h += `<div class="card"><div class="row" style="margin-bottom:8px"><div><div class="muted">التكلفة المتوقعة</div><div style="font-size:22px">${money(total)}</div></div>
     <div class="btns"><button class="btn" data-act="shareList">مشاركة</button><button class="btn primary" data-act="buyMany">اشتريتهم</button></div></div>
     <table class="tbl"><tr><th>الصنف</th><th>عندي</th><th>محتاج</th><th>اشتري</th><th>التكلفة</th></tr>
+    <tr><td colspan="5" class="muted" style="font-size:11px">"عندي" و"محتاج" بالعبوة (كيس/زجاجة...) أو بالمقياس لو مفيش عبوة</td></tr>
     ${need.map(x => `<tr data-act="buyItem" data-id="${x.it.id}" style="cursor:pointer"><td><b>${esc(x.it.name)}</b></td>
-      <td class="num">${x.est == null ? '؟' : fmtQ(x.have)}</td><td class="num">${fmtQ(x.rate.v * (cover + (S.settings.bufferDays || 0)))}</td>
-      <td><b class="num">${fmtQ(x.qty)}</b> <small>${esc(x.it.unit)}</small></td><td class="num">${x.it.price > 0 ? fmt(x.cost) : '<span class="neg">؟</span>'}</td></tr>`).join('')}
+      <td class="num">${x.est == null ? '؟' : fmtQ(x.have / packF(x.it))}</td><td class="num">${fmtQ(x.rate.v * (cover + (S.settings.bufferDays || 0)) / packF(x.it))}</td>
+      <td><b>${qtyTxt(x.it, x.qty)}</b></td><td class="num">${x.it.price > 0 ? fmt(x.cost) : '<span class="neg">؟</span>'}</td></tr>`).join('')}
     </table><div class="muted" style="margin-top:8px">دوس على أي صنف عشان تسجّل إنك اشتريته بالسعر الفعلي.</div></div>`;
   return h;
 }
@@ -1472,43 +1503,65 @@ function quickAdd(preset){
 function itemForm(id){
   const it = id ? byId(S.items, id) : null;
   const groups = Array.from(new Set(['تموين','ألبان وبروتين','خضار وفاكهة','منظفات','عناية شخصية', ...(S.settings.groups || []), ...groupsOf()]));
-  const units = Array.from(new Set([...UNITS, ...(S.settings.units || []), ...S.items.map(x => x.unit).filter(Boolean)]));
+  const packs = Array.from(new Set([...PACKS, ...(S.settings.packs || []), ...S.items.map(x => x.pu).filter(Boolean)]));
   const r = it ? dailyRate(it) : null, learned = it ? learnedDaily(it) : null;
-  let body = Fd.text('name', 'اسم الصنف', it ? it.name : '', 'autofocus placeholder="مثلاً: رز"');
-  body += `<div class="fld2">${Fd.pick('unit', 'الوحدة', units, it ? it.unit : 'كيلو', 'units')}${Fd.pick('group', 'المجموعة', groups, it ? it.group : 'تموين', 'groups')}</div>`;
-  body += `<div class="fld2">${Fd.num('monthly', 'بتستهلك كام في الشهر (تقديري)', it ? it.monthly : '')}${Fd.num('price', 'سعر الوحدة (جنيه)', it ? it.price : '')}</div>`;
-  body += Fd.num('pack', 'أقل كمية بتشتريها / حجم العبوة', it ? it.pack : '', '', 'مثلاً لو الزيت بيتباع زجاجة 0.8 لتر اكتب 0.8 — والقائمة هتقرّب لمضاعفاتها. سيبها فاضية = 1');
-  if(!it) body += Fd.num('stock', 'الموجود عندك دلوقتي (اختياري)', '');
+  const base = it ? baseOf(it) : 'KG', pu = it ? (it.pu || '') : 'كيس', f = it ? packF(it) : 1;
+  let body = Fd.text('name', 'اسم الصنف', it ? it.name : '', 'autofocus placeholder="مثلاً: مكرونة"');
+  body += `<div class="fld2">${Fd.pick('group', 'المجموعة', groups, it ? it.group : 'تموين', 'groups')}
+    <label class="fld"><span>المقياس الأساسي</span><select name="base" data-ilbl>${Object.entries(BASES).map(([k, v]) => `<option value="${k}" ${k === base ? 'selected' : ''}>${v.en} — ${v.ar}</option>`).join('')}</select></label></div>`;
+  body += `<div class="fld2"><label class="fld"><span>بتشتريه في (العبوة)</span><select name="pu" data-ilbl data-pick="packs" data-label="العبوة" data-prev="${esc(pu)}">
+      <option value="" ${!pu ? 'selected' : ''}>— من غير عبوة —</option>${packs.map(o => `<option value="${esc(o)}" ${o === pu ? 'selected' : ''}>${esc(o)}</option>`).join('')}<option value="__new">➕ إضافة جديد…</option></select></label>
+    <label class="fld" data-l="pfWrap"><span data-l="pf">العبوة فيها كام</span><input name="pf" inputmode="decimal" value="${it && hasPack(it) ? it.pf : (it ? '' : 1)}" data-ilbl></label></div>`;
+  body += `<div class="fld2">${Fd.num('monthly', '<span data-l="monthly">بتستهلك كام في الشهر</span>', it && it.monthly ? +(it.monthly / f).toFixed(3) : '')}${Fd.num('price', '<span data-l="price">السعر</span>', it && it.price ? +(it.price * f).toFixed(2) : '')}</div>`;
+  body += `<div class="muted" data-l="conv" style="margin:-4px 0 10px"></div>`;
+  if(!it) body += Fd.num('stock', '<span data-l="stock">الموجود عندك دلوقتي (اختياري)</span>', '');
   if(it){
     const cs = itemCounts(it).slice(-4).reverse(), bs = itemBuys(it).sort((a, b) => evKey(a) < evKey(b) ? 1 : -1).slice(0, 4);
-    body += `<div class="note">📊 المعدل المستخدم: <b class="num">${fmtQ(r.v * 30)}</b> ${esc(it.unit)}/شهر ${r.src === 'learned' ? '(محسوب من الجرد)' : '(تقديري)'}
+    body += `<div class="note">📊 المعدل المستخدم: <b>${qtyTxt(it, r.v * 30)}</b>/شهر ${r.src === 'learned' ? '(محسوب من الجرد)' : '(تقديري)'}
       ${learned == null ? '<br>اعمل جردين بينهم أسبوع على الأقل عشان نحسب استهلاكك الحقيقي.' : ''}
-      ${cs.length ? '<br><b>آخر جرد:</b> ' + cs.map(c => `${dayLabel(c.date)}: ${fmtQ(c.qty)}`).join(' · ') : ''}
-      ${bs.length ? '<br><b>آخر شراء:</b> ' + bs.map(b => `${dayLabel(b.date)}: ${fmtQ(b.qty)} بـ ${fmt(b.amount)}ج`).join(' · ') : ''}</div>
+      ${cs.length ? '<br><b>آخر جرد:</b> ' + cs.map(c => `${dayLabel(c.date)}: ${esc(qtyPlain(it, c.qty))}`).join(' · ') : ''}
+      ${bs.length ? '<br><b>آخر شراء:</b> ' + bs.map(b => `${dayLabel(b.date)}: ${esc(qtyPlain(it, b.qty))} بـ ${fmt(b.amount)}ج`).join(' · ') : ''}</div>
       <div class="btns" style="margin-top:10px"><button type="button" class="btn good" data-act="buyItem" data-id="${it.id}">سجّل شراء</button><button type="button" class="btn" data-act="countItem" data-id="${it.id}">جرد الصنف ده</button></div>`;
   }
   body += Fd.foot(it ? 'حفظ' : 'إضافة', it ? {act:'delItem', id:it.id} : null);
   openSheet(it ? it.name : 'صنف جديد', body, v => {
     if(!need(v.name.trim(), 'اكتب اسم الصنف')) return false;
+    const pu = v.pu && v.pu !== '__new' ? v.pu.trim() : '';
+    const pf = pu ? (num(v.pf) > 0 ? num(v.pf) : 1) : 0, f = pu ? pf : 1;
     const o = it || {id:uid(), createdAt:todayS()};
-    Object.assign(o, {name:v.name.trim(), unit:v.unit.trim() || 'قطعة', group:v.group.trim() || 'تاني', monthly:num(v.monthly), price:num(v.price), pack:num(v.pack)});
+    Object.assign(o, {name:v.name.trim(), group:v.group.trim() || 'تاني', base:v.base || 'PCS', pu:pu || undefined, pf:pu ? pf : undefined,
+      monthly:num(v.monthly) * f, price:Math.round(num(v.price) / f * 1000) / 1000});
     if(!it){
       S.items.push(o);
-      if(String(v.stock || '').trim() !== '') S.counts.push({id:uid(), ts:Date.now(), itemId:o.id, date:todayS(), qty:num(v.stock)});
+      if(String(v.stock || '').trim() !== '') S.counts.push({id:uid(), ts:Date.now(), itemId:o.id, date:todayS(), qty:num(v.stock) * f});
     }
     save(); toast('اتحفظ');
   });
+  itemLabels();
+}
+/* بيحدّث عناوين خانات الصنف حسب المقياس والعبوة المختارين */
+function itemLabels(){
+  const q = n => document.querySelector(`#sheetBody [name="${n}"]`), L = k => document.querySelector(`#sheetBody [data-l="${k}"]`);
+  if(!q('base')) return;
+  const base = BASES[q('base').value] || BASES.PCS, pu = q('pu').value && q('pu').value !== '__new' ? q('pu').value : '';
+  const unit = pu || base.en, pf = num(q('pf').value) || 1;
+  L('pfWrap').style.display = pu ? '' : 'none';
+  L('pf').textContent = pu ? `الـ${pu} فيه كام ${base.en}` : '';
+  L('monthly').textContent = `بتستهلك كام ${unit} في الشهر`;
+  L('price').textContent = `سعر الـ${unit} (جنيه)`;
+  if(L('stock')) L('stock').textContent = `الموجود عندك دلوقتي بالـ${unit} (اختياري)`;
+  L('conv').innerHTML = pu ? `يعني: 1 ${esc(pu)} = <b class="num">${fmtQ(pf)}</b> ${base.en}` : `الكميات هتتكتب بالـ${base.en} (${base.ar})`;
 }
 function buyItem(id){
   const it = byId(S.items, id); if(!it) return;
   const x = shopList().find(s => s.it.id === id);
-  const qty = x && x.qty > 0 ? x.qty : (it.pack || 1);
-  const body = `<div class="fld2">${Fd.num('qty', 'الكمية (' + esc(it.unit) + ')', qty, 'autofocus')}${Fd.num('amount', 'دفعت كام إجمالي', it.price ? Math.round(qty * it.price) : '')}</div>
+  const f = packF(it), qty = x && x.qty > 0 ? +(x.qty / f).toFixed(2) : 1;
+  const body = `<div class="fld2">${Fd.num('qty', 'الكمية (بالـ' + esc(entryUnit(it)) + ')', qty, 'autofocus')}${Fd.num('amount', 'دفعت كام إجمالي', it.price ? Math.round(qty * f * it.price) : '')}</div>
     ${Fd.date('date', 'التاريخ', todayS())}<div class="muted">هيتسجّل كمصروف "استوك البيت"، والكمية هتتضاف للموجود، والسعر هيتحدّث.</div>${Fd.foot('سجّل الشراء')}`;
   openSheet('اشتريت ' + it.name, body, v => {
     const q = num(v.qty), a = num(v.amount);
     if(!need(q > 0, 'اكتب الكمية')) return false;
-    recordBuy(it, q, a, v.date || todayS());
+    recordBuy(it, q * f, a, v.date || todayS());
     save(); toast('اتسجّل الشراء');
   });
 }
@@ -1525,8 +1578,8 @@ function buyMany(){
   const L = shopList().filter(x => x.qty > 0);
   let body = `<div class="muted" style="margin-bottom:8px">عدّل الكمية والسعر الفعلي، وشيل علامة ✓ من اللي ما اشترتهوش.</div><table class="tbl"><tr><th></th><th>الصنف</th><th>الكمية</th><th>دفعت</th></tr>`;
   L.forEach(x => {
-    body += `<tr><td><input type="checkbox" name="k_${x.it.id}" checked style="width:20px;height:20px;accent-color:var(--gold)"></td><td><b>${esc(x.it.name)}</b><div class="muted">${esc(x.it.unit)}</div></td>
-      <td><input name="q_${x.it.id}" inputmode="decimal" value="${fmtQ(x.qty)}" style="width:64px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center"></td>
+    body += `<tr><td><input type="checkbox" name="k_${x.it.id}" checked style="width:20px;height:20px;accent-color:var(--gold)"></td><td><b>${esc(x.it.name)}</b><div class="muted">بالـ${esc(entryUnit(x.it))}</div></td>
+      <td><input name="q_${x.it.id}" inputmode="decimal" value="${+(x.qty / packF(x.it)).toFixed(2)}" style="width:64px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center"></td>
       <td><input name="c_${x.it.id}" inputmode="decimal" value="${x.cost ? Math.round(x.cost) : ''}" style="width:78px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center"></td></tr>`;
   });
   body += `</table>${Fd.date('date', 'التاريخ', todayS())}${Fd.foot('سجّل كل ده')}`;
@@ -1535,7 +1588,7 @@ function buyMany(){
     L.forEach(x => {
       if(!v['k_' + x.it.id]) return;
       const q = num(v['q_' + x.it.id]), a = num(v['c_' + x.it.id]);
-      if(q > 0){ recordBuy(x.it, q, a, v.date || todayS()); n++; tot += a; }
+      if(q > 0){ recordBuy(x.it, q * packF(x.it), a, v.date || todayS()); n++; tot += a; }
     });
     if(!n){ toast('مفيش حاجة متعلّمة', true); return false; }
     save(); toast(`اتسجّل ${n} صنف بـ ${fmt(tot)} ج`);
@@ -1543,9 +1596,10 @@ function buyMany(){
 }
 function countItem(id){
   const it = byId(S.items, id), e = estStock(it);
-  openSheet('جرد ' + it.name, Fd.num('qty', `الموجود دلوقتي (${esc(it.unit)})`, '', `autofocus placeholder="${e != null ? fmtQ(e) : ''}"`) + Fd.foot('حفظ'), v => {
+  const f = packF(it);
+  openSheet('جرد ' + it.name, Fd.num('qty', `الموجود دلوقتي (بالـ${esc(entryUnit(it))})`, '', `autofocus placeholder="${e != null ? fmtQ(e / f) : ''}"`) + Fd.foot('حفظ'), v => {
     if(!need(String(v.qty).trim() !== '', 'اكتب الكمية')) return false;
-    S.counts.push({id:uid(), ts:Date.now(), itemId:id, date:todayS(), qty:num(v.qty)});
+    S.counts.push({id:uid(), ts:Date.now(), itemId:id, date:todayS(), qty:num(v.qty) * f});
     save(); toast('اتسجّل الجرد');
   });
 }
@@ -1832,7 +1886,7 @@ const ACT = {
   carGoal:() => { TAB = 'goals'; render(); goalForm(null, {name:'العربية', icon:'🚗', deadline:'2027-12', target:'', monthly:''}); },
   seedItems:() => {
     const have = new Set(S.items.map(i => i.name));
-    SEED_ITEMS.forEach(([g, n, u]) => { if(!have.has(n)) S.items.push({id:uid(), createdAt:todayS(), group:g, name:n, unit:u, monthly:0, price:0, pack:0}); });
+    SEED_ITEMS.forEach(([g, n, base, pu, pf]) => { if(!have.has(n)) S.items.push({id:uid(), createdAt:todayS(), group:g, name:n, base, pu:pu || undefined, pf:pu ? pf : undefined, monthly:0, price:0}); });
     TAB = 'stock'; SUB.stock = 'items'; save();
     toast('اتضافوا — احذف اللي مش بتستخدمه وكمّل الباقي');
   },
@@ -1857,7 +1911,8 @@ const ACT = {
     let n = 0; const ts = Date.now();
     document.querySelectorAll('#jardForm input[data-item]').forEach((inp, i) => {
       if(inp.value.trim() === '') return;
-      S.counts.push({id:uid(), ts:ts + i, itemId:inp.dataset.item, date:todayS(), qty:num(inp.value)}); n++;
+      const it = byId(S.items, inp.dataset.item);
+      S.counts.push({id:uid(), ts:ts + i, itemId:inp.dataset.item, date:todayS(), qty:num(inp.value) * packF(it)}); n++;
     });
     if(!n){ toast('ما كتبتش أي كمية', true); return; }
     SUB.stock = 'shop'; save(); window.scrollTo(0, 0); toast(`اتسجّل جرد ${n} صنف`);
@@ -1867,7 +1922,7 @@ const ACT = {
   shareList:() => {
     const cover = coverDays();
     const L = shopList().filter(x => x.qty > 0);
-    const txt = `🛒 قائمة مشتريات البيت (تكفي ${cover} يوم)\n\n` + L.map(x => `• ${x.it.name}: ${fmtQ(x.qty)} ${x.it.unit}${x.cost ? ` (~${fmt(x.cost)} ج)` : ''}`).join('\n') + `\n\nالإجمالي التقريبي: ${fmt(sum(L, x => x.cost))} ج`;
+    const txt = `🛒 قائمة مشتريات البيت (تكفي ${cover} يوم)\n\n` + L.map(x => `• ${x.it.name}: ${qtyPlain(x.it, x.qty)}${x.cost ? ` (~${fmt(x.cost)} ج)` : ''}`).join('\n') + `\n\nالإجمالي التقريبي: ${fmt(sum(L, x => x.cost))} ج`;
     if(navigator.share) navigator.share({text:txt}).catch(() => {});
     else if(navigator.clipboard) navigator.clipboard.writeText(txt).then(() => toast('اتنسخت القائمة'));
     else openSheet('القائمة', `<div class="pre">${esc(txt)}</div>`);
@@ -1963,7 +2018,7 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => {
   const el = e.target;
   if(el.dataset.pick){
-    if(el.value !== '__new'){ el.dataset.prev = el.value; return; }
+    if(el.value !== '__new'){ el.dataset.prev = el.value; if(el.hasAttribute('data-ilbl')) itemLabels(); return; }
     const v = (prompt('اكتب ' + el.dataset.label + ' الجديدة') || '').trim();
     if(!v){ el.value = el.dataset.prev; return; }
     if(![...el.options].some(o => o.value === v)){
@@ -1972,8 +2027,10 @@ document.addEventListener('change', e => {
       const key = el.dataset.pick; S.settings[key] = Array.from(new Set([...(S.settings[key] || []), v])); persist();
     }
     el.value = v; el.dataset.prev = v;
+    if(el.hasAttribute('data-ilbl')) itemLabels();
     return;
   }
+  if(el.hasAttribute('data-ilbl')){ itemLabels(); return; }
   if(el.dataset.act === 'cycleDay'){ setCycleDay(+el.value); save(); toast('اتغيّر بداية الشهر'); }
   if(el.dataset.act === 'rollDebts'){ const g = byId(S.goals, el.dataset.id); if(g){ g.rollDebts = el.checked; save(); } }
 });
