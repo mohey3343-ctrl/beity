@@ -1423,6 +1423,11 @@ const Fd = {
   date:(n, l, v) => `<label class="fld"><span>${l}</span><input type="date" name="${n}" value="${esc(v)}"></label>`,
   month:(n, l, v) => `<label class="fld"><span>${l}</span><input type="month" name="${n}" value="${esc(v)}"></label>`,
   day:(n, l, v) => `<label class="fld"><span>${l}</span><select name="${n}">${Array.from({length:31}, (_, i) => `<option ${(v || 1) === i + 1 ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></label>`,
+  /* قايمة اختيار + "إضافة جديد" — الجديد بيتحفظ في الإعدادات عشان يفضل موجود */
+  pick:(n, l, opts, v, store) => {
+    const list = opts.slice(); if(v && !list.includes(v)) list.push(v);
+    return `<label class="fld"><span>${l}</span><select name="${n}" data-pick="${store}" data-label="${l}" data-prev="${esc(v || list[0] || '')}">${list.map(o => `<option value="${esc(o)}" ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}<option value="__new">➕ إضافة جديد…</option></select></label>`;
+  },
   foot:(save, del) => `<div class="sheet-foot"><button type="submit" class="btn primary">${save || 'حفظ'}</button>${del ? `<button type="button" class="btn danger" data-act="${del.act}" data-id="${del.id}">${del.label || 'حذف'}</button>` : ''}</div>`,
 };
 function need(v, msg){ if(!v){ toast(msg, true); return false; } return true; }
@@ -1466,13 +1471,11 @@ function quickAdd(preset){
 /* ---- الأصناف ---- */
 function itemForm(id){
   const it = id ? byId(S.items, id) : null;
-  const groups = Array.from(new Set(['تموين','ألبان وبروتين','خضار وفاكهة','منظفات','عناية شخصية', ...groupsOf()]));
+  const groups = Array.from(new Set(['تموين','ألبان وبروتين','خضار وفاكهة','منظفات','عناية شخصية', ...(S.settings.groups || []), ...groupsOf()]));
+  const units = Array.from(new Set([...UNITS, ...(S.settings.units || []), ...S.items.map(x => x.unit).filter(Boolean)]));
   const r = it ? dailyRate(it) : null, learned = it ? learnedDaily(it) : null;
   let body = Fd.text('name', 'اسم الصنف', it ? it.name : '', 'autofocus placeholder="مثلاً: رز"');
-  body += `<div class="fld2"><label class="fld"><span>الوحدة</span><input name="unit" list="unitsList" value="${esc(it ? it.unit : 'كيلو')}"></label>
-    <label class="fld"><span>المجموعة</span><input name="group" list="groupsList" value="${esc(it ? it.group : 'تموين')}"></label></div>
-    <datalist id="unitsList">${UNITS.map(u => `<option value="${u}">`).join('')}</datalist>
-    <datalist id="groupsList">${groups.map(u => `<option value="${esc(u)}">`).join('')}</datalist>`;
+  body += `<div class="fld2">${Fd.pick('unit', 'الوحدة', units, it ? it.unit : 'كيلو', 'units')}${Fd.pick('group', 'المجموعة', groups, it ? it.group : 'تموين', 'groups')}</div>`;
   body += `<div class="fld2">${Fd.num('monthly', 'بتستهلك كام في الشهر (تقديري)', it ? it.monthly : '')}${Fd.num('price', 'سعر الوحدة (جنيه)', it ? it.price : '')}</div>`;
   body += Fd.num('pack', 'أقل كمية بتشتريها / حجم العبوة', it ? it.pack : '', '', 'مثلاً لو الزيت بيتباع زجاجة 0.8 لتر اكتب 0.8 — والقائمة هتقرّب لمضاعفاتها. سيبها فاضية = 1');
   if(!it) body += Fd.num('stock', 'الموجود عندك دلوقتي (اختياري)', '');
@@ -1959,6 +1962,18 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const el = e.target;
+  if(el.dataset.pick){
+    if(el.value !== '__new'){ el.dataset.prev = el.value; return; }
+    const v = (prompt('اكتب ' + el.dataset.label + ' الجديدة') || '').trim();
+    if(!v){ el.value = el.dataset.prev; return; }
+    if(![...el.options].some(o => o.value === v)){
+      const o = document.createElement('option'); o.value = v; o.textContent = v;
+      el.insertBefore(o, el.lastElementChild);
+      const key = el.dataset.pick; S.settings[key] = Array.from(new Set([...(S.settings[key] || []), v])); persist();
+    }
+    el.value = v; el.dataset.prev = v;
+    return;
+  }
   if(el.dataset.act === 'cycleDay'){ setCycleDay(+el.value); save(); toast('اتغيّر بداية الشهر'); }
   if(el.dataset.act === 'rollDebts'){ const g = byId(S.goals, el.dataset.id); if(g){ g.rollDebts = el.checked; save(); } }
 });
