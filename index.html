@@ -354,7 +354,7 @@ function fresh(){
   return {
     v:1, updatedAt:0,
     settings:{cycleDay:1, coverMode:'month', bufferDays:3, debtExtra:0, syncUrl:'', syncSecret:''},
-    incomes:[], bills:[], debts:[], goals:[], items:[], counts:[], tx:[], cashCounts:[],
+    incomes:[], bills:[], debts:[], goals:[], items:[], counts:[], tx:[], cashCounts:[], dues:[],
     cats: DEFAULT_CATS.map(c => Object.assign({}, c)),
   };
 }
@@ -505,12 +505,44 @@ function shopList(){
   });
 }
 
+/* ---- مواعيد السداد (مبلغ في تاريخ معيّن، مرة واحدة أو بيتكرر) ----
+   بنحسب تشيل كام كل شهر عشان يوم الميعاد تبقى الفلوس جاهزة:
+   (المبلغ − اللي شلته قبل الشهر ده) ÷ عدد الشهور الباقية لحد الميعاد (شامل الشهر ده). */
+const REPEATS = {0:'مرة واحدة', 1:'كل شهر', 3:'كل 3 شهور', 6:'كل 6 شهور', 12:'كل سنة'};
+function addMonthsDate(s_, n){
+  const d = pd(s_), day = d.getDate(), x = new Date(d.getFullYear(), d.getMonth() + n, 1);
+  x.setDate(Math.min(day, new Date(x.getFullYear(), x.getMonth() + 1, 0).getDate()));
+  return ds(x);
+}
+function periodsBetween(a, b){ return (b.y - a.y) * 12 + (b.m - a.m); }
+const activeDues = () => (S.dues || []).filter(d => !d.paidOn);
+const dueName = d => d.debtId && byId(S.debts, d.debtId) ? byId(S.debts, d.debtId).name + (d.name && d.name !== byId(S.debts, d.debtId).name ? ' — ' + d.name : '') : d.name;
+/* اللي اتشال للدورة الحالية من الميعاد ده */
+function dueReserved(d, upto, from){
+  return sum(S.tx.filter(t => t.type === 'reserve' && t.dueId === d.id && t.dueDate === d.date && (!upto || t.date <= upto) && (!from || t.date >= from)), t => t.amount);
+}
+function duePerMonth(d, p){
+  const r = periodRange(p), before = dueReserved(d, addDays(r.start, -1));
+  const n = Math.max(1, periodsBetween(p, periodOf(d.date)) + 1);
+  return Math.max(0, d.amount - before) / n;
+}
+function totalReserved(){ return sum(activeDues(), d => Math.max(0, dueReserved(d))); }
+function nextDueOfDebt(debt){ return activeDues().filter(d => d.debtId === debt.id).sort((a, b) => a.date < b.date ? -1 : 1)[0] || null; }
+
 /* ---- الديون: خطة السداد (كرة التلج — الأصغر الأول) ---- */
 function debtPaidIn(d, r){ return S.tx.some(t => t.type === 'debt' && t.debtId === d.id && t.date >= r.start && t.date <= r.end); }
 function debtPlan(extra){
   const r0 = periodRange(periodOf(todayS()));
-  const ds_ = S.debts.map(d => ({d, rem:debtRemaining(d), m:d.monthly || 0, paid0:debtPaidIn(d, r0), end:null}))
-    .filter(x => x.rem > 0.5).sort((a, b) => a.rem - b.rem);
+  const cur = periodOf(todayS());
+  const ds_ = S.debts.map(d => {
+    // دفعات بمواعيد محددة: كل دفعة في رقم الشهر بتاعها من دلوقتي
+    const sched = {};
+    activeDues().filter(x => x.debtId === d.id).forEach(x => {
+      const i = Math.max(0, periodsBetween(cur, periodOf(x.date)));
+      sched[i] = (sched[i] || 0) + x.amount;
+    });
+    return {d, rem:debtRemaining(d), m:d.monthly || 0, paid0:debtPaidIn(d, r0), sched, end:null};
+  }).filter(x => x.rem > 0.5).sort((a, b) => a.rem - b.rem);
   let freed = 0, month = 0;
   const freedAt = [];
   while(ds_.some(x => x.end == null) && month < 360){
@@ -518,7 +550,8 @@ function debtPlan(extra){
     let progress = 0;
     for(const x of ds_){
       if(x.end != null) continue;
-      const pay = (month === 0 && x.paid0) ? 0 : Math.min(x.m, x.rem);
+      let pay = (month === 0 && x.paid0) ? 0 : Math.min(x.m, x.rem);
+      pay += Math.min(x.sched[month] || 0, x.rem - pay);
       x.rem -= pay; progress += pay;
     }
     let pool = (extra || 0) + freed;
@@ -530,7 +563,8 @@ function debtPlan(extra){
     let newlyFreed = 0;
     for(const x of ds_) if(x.end == null && x.rem <= 0.5){ x.end = month; newlyFreed += x.m; }
     freed += newlyFreed;
-    if(progress <= 0) break;
+    const pendingSched = ds_.some(x => x.end == null && Object.keys(x.sched).some(k => +k > month));
+    if(progress <= 0 && !pendingSched) break;
     month++;
   }
   const stuck = ds_.some(x => x.end == null);
@@ -611,6 +645,14 @@ function summary(p){
   });
   o.saved = sum(T.filter(t => t.type === 'save'), t => t.amount);
   o.savePlanned = sum(o.goalLines, l => l.planned) + (o.saved - sum(o.goalLines, l => l.saved));
+  // مواعيد السداد: اللي المفروض يتشال الشهر ده
+  const isCur = todayS() >= r.start && todayS() <= r.end;
+  o.dueLines = activeDues().filter(d => d.date >= r.start || isCur).map(d => {
+    const resThis = dueReserved(d, r.end, r.start), per = duePerMonth(d, p);
+    return {d, resThis, per, planned:Math.max(resThis, per), reserved:dueReserved(d)};
+  });
+  o.reserveNet = sum(T.filter(t => t.type === 'reserve'), t => t.amount);
+  o.reservePlanned = sum(o.dueLines, l => l.planned) + (o.reserveNet - sum(o.dueLines, l => l.resThis));
   // استوك البيت
   o.houseBudget = houseMonthlyCost();
   o.houseSpent = sum(T.filter(t => t.type === 'exp' && t.cat === 'house'), t => t.amount);
@@ -618,8 +660,8 @@ function summary(p){
   // المصروف اليومي (المتغير)
   const varT = T.filter(t => t.type === 'exp' && t.cat !== 'house');
   o.varSpent = sum(varT, t => t.amount);
-  o.varBudget = o.income - o.billPlanned - o.debtPlanned - o.savePlanned - o.houseReserved;
-  o.outActual = o.billPaid + o.debtPaid + o.saved + o.houseSpent + o.varSpent;
+  o.varBudget = o.income - o.billPlanned - o.debtPlanned - o.savePlanned - o.reservePlanned - o.houseReserved;
+  o.outActual = o.billPaid + o.debtPaid + o.saved + o.reserveNet + o.houseSpent + o.varSpent;
   o.cash = o.income - o.outActual;
   o.free = o.varBudget - o.varSpent;
   const td = todayS();
@@ -657,6 +699,7 @@ function renderHero(){
       <span>دخل نزل <b class="num">${fmt(o.incReceived)}</b></span>
       <span>اتصرف <b class="num">${fmt(o.outActual)}</b></span>
       <span>حر للصرف <b class="num">${fmt(o.free)}</b></span>
+      ${totalReserved() > 0 ? `<span>محجوز للمواعيد <b class="num">${fmt(totalReserved())}</b></span>` : ''}
     </div>`;
 }
 
@@ -705,6 +748,7 @@ PAGES.home = function(){
     <div class="plan-line"><span>📋 الالتزامات الثابتة</span><b class="num">− ${fmt(o.billPlanned)}</b></div>
     <div class="plan-line"><span>💳 أقساط الديون</span><b class="num">− ${fmt(o.debtPlanned)}</b></div>
     <div class="plan-line"><span>🚗 التحويش للأهداف</span><b class="num">− ${fmt(o.savePlanned)}</b></div>
+    ${o.reservePlanned ? `<div class="plan-line"><span>📅 تتشال لمواعيد السداد</span><b class="num">− ${fmt(o.reservePlanned)}</b></div>` : ''}
     <div class="plan-line"><span>🧺 استوك البيت</span><b class="num">− ${fmt(o.houseReserved)}</b></div>
     <div class="plan-line total"><span>🛒 متاح للمصروف اليومي</span><b class="num ${o.varBudget < 0 ? 'neg' : 'pos'}">${fmt(o.varBudget)}</b></div>
     <div class="muted" style="margin-top:6px">يعني حوالي <b class="num">${fmt(o.varBudget / o.r.days)}</b> جنيه في اليوم على مدار ${o.r.days} يوم.</div>
@@ -779,6 +823,14 @@ function alertsHtml(o){
     if(d < 0) out.push(['bad', '💳', `قسط ${esc(l.d.name)} متأخر ${-d} يوم`, `<button class="btn sm dark" data-act="payDebt" data-id="${l.d.id}">سددت</button>`]);
     else if(d <= 4) out.push(['warn', '💳', `قسط ${esc(l.d.name)} ${d === 0 ? 'النهاردة' : 'كمان ' + d + ' يوم'}`, `<button class="btn sm dark" data-act="payDebt" data-id="${l.d.id}">سددت</button>`]);
   });
+  activeDues().slice().sort((a, b) => a.date < b.date ? -1 : 1).forEach(d => {
+    const left = diffDays(td, d.date), res = Math.max(0, dueReserved(d)), short = d.amount - res;
+    const nm = esc(dueName(d));
+    if(left < 0) out.push(['bad', '📅', `ميعاد سداد ${nm} (<span class="num">${fmt(d.amount)}</span>) عدّى من ${-left} يوم`, `<button class="btn sm dark" data-act="payDue" data-id="${d.id}">دفعت</button>`]);
+    else if(left <= 14) out.push([short > 1 ? 'warn' : 'info', '📅', `${nm}: <span class="num">${fmt(d.amount)}</span> ${left === 0 ? 'النهاردة' : 'بعد ' + left + ' يوم'}${short > 1 ? ` — جاهز منه <span class="num">${fmt(res)}</span>، ناقصك <b class="num">${fmt(short)}</b>` : ' — الفلوس جاهزة ✔'}`, `<button class="btn sm dark" data-act="${short > 1 && left > 0 ? 'reserveDue' : 'payDue'}" data-id="${d.id}">${short > 1 && left > 0 ? 'شلت' : 'دفعت'}</button>`]);
+  });
+  const toSet = sum(o.dueLines.filter(l => diffDays(td, l.d.date) > 14), l => Math.max(0, l.per - l.resThis));
+  if(toSet > 1) out.push(['info', '📥', `الشهر ده المفروض تشيل <b class="num">${fmt(toSet)}</b> للمواعيد الجاية`, `<button class="btn sm dark" data-act="goDues">التفاصيل</button>`]);
   const low = S.items.map(it => ({it, d:daysLeft(it)})).filter(x => x.d != null && x.d <= 5).sort((a, b) => a.d - b.d);
   if(low.length) out.push(['warn', '🧺', `هيخلصوا قريب: ${low.slice(0, 4).map(x => esc(x.it.name) + ' (' + Math.max(0, Math.floor(x.d)) + ' يوم)').join('، ')}${low.length > 4 ? '…' : ''}`, `<button class="btn sm dark" data-act="goShop">قائمة الشراء</button>`]);
   if(!S.settings.syncUrl && S.tx.length >= 10){
@@ -792,14 +844,15 @@ function alertsHtml(o){
 /* ===================== اليومية ===================== */
 function txInfo(t){
   if(t.type === 'inc'){ const i = byId(S.incomes, t.incomeId); return {ic:'💰', title:i ? i.name : 'دخل إضافي'}; }
-  if(t.type === 'bill'){ const b = byId(S.bills, t.billId); return {ic:'📋', title:'التزام: ' + (b ? b.name : '—')}; }
+  if(t.type === 'bill'){ const b = byId(S.bills, t.billId), du = byId(S.dues || [], t.dueId); return {ic:'📋', title:'التزام: ' + (b ? b.name : du ? du.name : (t.note || '—'))}; }
+  if(t.type === 'reserve'){ const du = byId(S.dues || [], t.dueId); return {ic:t.amount < 0 ? '📤' : '📥', title:(t.amount < 0 ? 'اتدفع من المحجوز: ' : 'شلت لـ: ') + (du ? dueName(du) : '—')}; }
   if(t.type === 'debt'){ const d = byId(S.debts, t.debtId); return {ic:'💳', title:'قسط: ' + (d ? d.name : '—')}; }
   if(t.type === 'save'){ const g = byId(S.goals, t.goalId); return {ic:t.amount < 0 ? '↩️' : '🏦', title:(t.amount < 0 ? 'سحب من: ' : 'تحويش: ') + (g ? g.name : '—')}; }
   const c = catOf(t.cat), it = t.itemId ? byId(S.items, t.itemId) : null;
   return {ic:c.icon, title:it ? `${it.name} (${fmtQ(t.qty)} ${it.unit})` : c.name};
 }
 function txRow(t){
-  const i = txInfo(t), plus = t.type === 'inc' || (t.type === 'save' && t.amount < 0);
+  const i = txInfo(t), plus = t.type === 'inc' || ((t.type === 'save' || t.type === 'reserve') && t.amount < 0);
   return `<div class="list-item" data-act="editTx" data-id="${t.id}">
     <div class="li-ic">${i.ic}</div>
     <div class="li-main"><div class="li-title">${esc(i.title)}</div>${t.note && t.note !== i.title ? `<div class="li-sub">${esc(t.note)}</div>` : ''}</div>
@@ -807,7 +860,7 @@ function txRow(t){
 }
 PAGES.log = function(){
   const o = summary(VIEW);
-  const F = {all:'الكل', exp:'مصروف', bill:'التزامات', debt:'ديون', save:'تحويش', inc:'دخل'};
+  const F = {all:'الكل', exp:'مصروف', bill:'التزامات', debt:'ديون', save:'تحويش', reserve:'محجوز', inc:'دخل'};
   let list = o.T.slice();
   if(LOGF !== 'all') list = list.filter(t => t.type === LOGF);
   list.sort((a, b) => evKey(a) < evKey(b) ? 1 : -1);
@@ -915,8 +968,10 @@ PAGES.bills = function(){
   const sub = SUB.bills, o = summary(VIEW);
   let h = `<div class="seg">
     <button class="${sub === 'bills' ? 'on' : ''}" data-act="sub" data-k="bills" data-v="bills">الالتزامات الشهرية</button>
+    <button class="${sub === 'dues' ? 'on' : ''}" data-act="sub" data-k="bills" data-v="dues">مواعيد سداد</button>
     <button class="${sub === 'debts' ? 'on' : ''}" data-act="sub" data-k="bills" data-v="debts">الديون</button></div>`;
   if(sub === 'debts') return h + debtsHtml(o);
+  if(sub === 'dues') return h + duesHtml();
   if(!S.bills.length) return h + `<div class="card empty"><div class="e-ic">📋</div>سجّل الحاجات اللي بتدفعها كل شهر:<br>إيجار، كهربا، مية، غاز، نت، مدارس، جمعية...<div style="margin-top:12px"><button class="btn primary" data-act="billForm">+ التزام جديد</button></div></div>`;
   const td = todayS();
   h += `<div class="card"><div class="row"><div><div class="muted">إجمالي الالتزامات الشهر ده</div><div style="font-size:22px">${money(o.billPlanned)}</div>
@@ -932,6 +987,33 @@ PAGES.bills = function(){
   if(off.length) h += `<div class="day-h"><span>متوقفة</span></div>` + off.map(b => `<div class="list-item" data-act="billForm" data-id="${b.id}"><div class="li-ic">⏸</div><div class="li-main"><div class="li-title">${esc(b.name)}</div></div><div class="li-end num">${fmt(b.amount)}</div></div>`).join('');
   return h + '</div>';
 };
+function duesHtml(){
+  const cur = summary(periodOf(todayS())), td = todayS();
+  const list = activeDues().slice().sort((a, b) => a.date < b.date ? -1 : 1);
+  if(!list.length) return `<div class="card empty"><div class="e-ic">📅</div>أي مبلغ لازم يتدفع في <b>تاريخ معيّن</b> مش كل شهر:<br>دين يتسد يوم معين، مصاريف المدرسة، التأمين، رخصة العربية، قبض جمعية...<br>البرنامج هيقولك تشيل كام كل شهر عشان يوم الميعاد تبقى الفلوس جاهزة، وينبّهك قبلها.
+    <div style="margin-top:12px"><button class="btn primary" data-act="dueForm">+ ميعاد سداد</button></div></div>`;
+  const needNow = sum(cur.dueLines, l => Math.max(0, l.per - l.resThis));
+  let h = `<div class="card"><div class="row"><div><div class="muted">المفروض تشيله الشهر ده</div><div style="font-size:22px">${money(needNow)}</div>
+      <div class="muted">محجوز دلوقتي <span class="num">${fmt(totalReserved())}</span> من <span class="num">${fmt(sum(list, d => d.amount))}</span></div></div>
+      <button class="btn dark" data-act="dueForm">+ ميعاد</button></div>
+    <div class="note">💡 "شلت" = حطيت الفلوس على جنب (ظرف، حساب تاني، محفظة) عشان الميعاد ده. بتتخصم من رصيدك الحر، ولما تدفع بترجع تتحسب من المحجوز.</div></div>
+    <div class="card" style="padding-top:4px">`;
+  list.forEach(d => {
+    const res = Math.max(0, dueReserved(d)), left = diffDays(td, d.date), l = cur.dueLines.find(x => x.d.id === d.id);
+    const pct = d.amount ? Math.min(100, res / d.amount * 100) : 0, ready = res >= d.amount - 1;
+    const remThis = l ? Math.max(0, l.per - l.resThis) : 0;
+    h += `<div class="list-item" data-act="dueForm" data-id="${d.id}"><div class="li-ic">${left < 0 ? '⏰' : ready ? '✅' : d.debtId ? '💳' : '📅'}</div>
+      <div class="li-main"><div class="li-title">${esc(dueName(d))} ${d.repeat ? `<span class="tag blue">${REPEATS[d.repeat] || ''}</span>` : ''}</div>
+        <div class="li-sub">${dayLabel(d.date)} ${pd(d.date).getFullYear() !== new Date().getFullYear() ? pd(d.date).getFullYear() : ''} · ${left < 0 ? `<span class="neg">متأخر ${-left} يوم</span>` : left === 0 ? '<b>النهاردة</b>' : 'بعد <b class="num">' + left + '</b> يوم'}</div>
+        <div class="bar ${ready ? 'good' : left <= 14 ? 'warn' : ''}" style="margin-top:6px"><i style="width:${pct}%"></i></div>
+        <div class="li-sub">جاهز <span class="num">${fmt(res)}</span> من <span class="num">${fmt(d.amount)}</span>${ready ? '' : ` · اشيل <b class="num">${fmt(l ? l.per : d.amount - res)}</b> في الشهر${remThis > 1 && remThis < (l ? l.per : 0) - 1 ? ` (فاضل الشهر ده <span class="num">${fmt(remThis)}</span>)` : ''}`}</div></div>
+      <div class="li-end" style="display:flex;flex-direction:column;gap:5px">${ready ? '' : `<button class="btn sm good" data-act="reserveDue" data-id="${d.id}">شلت</button>`}<button class="btn sm dark" data-act="payDue" data-id="${d.id}">دفعت</button></div></div>`;
+  });
+  h += '</div>';
+  const done = (S.dues || []).filter(d => d.paidOn).sort((a, b) => a.paidOn < b.paidOn ? 1 : -1).slice(0, 5);
+  if(done.length) h += `<div class="card" style="padding-top:4px"><div class="day-h"><span>اتسددت</span></div>${done.map(d => `<div class="list-item" data-act="dueForm" data-id="${d.id}"><div class="li-ic">🎉</div><div class="li-main"><div class="li-title">${esc(dueName(d))}</div><div class="li-sub">اتدفع ${dayLabel(d.paidOn)}</div></div><div class="li-end num">${fmt(d.amount)}</div></div>`).join('')}</div>`;
+  return h;
+}
 function debtsHtml(o){
   if(!S.debts.length) return `<div class="card empty"><div class="e-ic">💳</div>سجّل كل دين عليك: لمين، المبلغ الكلي، والقسط اللي بتدفعه في الشهر.<br>البرنامج هيعملك خطة سداد ويقولك هتخلص امتى.
     <div class="btns" style="justify-content:center; margin-top:12px"><button class="btn primary" data-act="debtForm">+ دين جديد</button>${S.settings.noDebts ? '' : '<button class="btn" data-act="noDebts">مفيش عليا ديون</button>'}</div></div>`;
@@ -946,13 +1028,13 @@ function debtsHtml(o){
   h += '<div class="card" style="padding-top:4px">';
   S.debts.slice().sort((a, b) => debtRemaining(a) - debtRemaining(b)).forEach(d => {
     const rem = debtRemaining(d), l = o.debtLines.find(x => x.d.id === d.id);
-    const paidNow = l && l.paidT.length > 0, done = rem <= 0.5;
-    const pr = plan.rows.find(x => x.d.id === d.id);
+    const paidNow = l && l.paidT.length > 0 && d.monthly > 0, done = rem <= 0.5;
+    const pr = plan.rows.find(x => x.d.id === d.id), nd = nextDueOfDebt(d);
     h += `<div class="list-item" data-act="debtForm" data-id="${d.id}"><div class="li-ic">${done ? '🎉' : paidNow ? '✅' : '💳'}</div>
       <div class="li-main"><div class="li-title">${esc(d.name)}</div>
-        <div class="li-sub">${done ? 'خلص' : `باقي <b class="num">${fmt(rem)}</b> من <span class="num">${fmt(d.total)}</span> · قسط <span class="num">${fmt(d.monthly || 0)}</span>${pr && pr.end != null ? ' · يخلص ' + monthLabelFromNow(pr.end) : ''}`}</div>
+        <div class="li-sub">${done ? 'خلص' : `باقي <b class="num">${fmt(rem)}</b> من <span class="num">${fmt(d.total)}</span> ${d.monthly > 0 ? ` · قسط <span class="num">${fmt(d.monthly)}</span>` : ''}${nd ? ` · الدفعة الجاية <span class="num">${fmt(nd.amount)}</span> ${dayLabel(nd.date)}` : ''}${pr && pr.end != null ? ' · يخلص ' + monthLabelFromNow(pr.end) : ''}`}</div>
         <div class="bar purple" style="margin-top:6px"><i style="width:${d.total ? (d.total - rem) / d.total * 100 : 0}%"></i></div></div>
-      <div class="li-end">${done ? '<span class="tag good">مسدد</span>' : paidNow ? '<span class="tag good">اتسدد الشهر ده</span>' : `<button class="btn sm good" data-act="payDebt" data-id="${d.id}">سدد</button>`}</div></div>`;
+      <div class="li-end">${done ? '<span class="tag good">مسدد</span>' : paidNow ? '<span class="tag good">اتسدد الشهر ده</span>' : nd && !(d.monthly > 0) ? `<button class="btn sm good" data-act="payDue" data-id="${nd.id}">سدد</button>` : `<button class="btn sm good" data-act="payDebt" data-id="${d.id}">سدد</button>`}</div></div>`;
   });
   h += '</div>';
   if(totalRem > 0.5){
@@ -961,7 +1043,7 @@ function debtsHtml(o){
       <label class="fld" style="margin-top:10px"><span>مبلغ زيادة تقدر تحطه على الديون كل شهر</span>
         <input inputmode="decimal" id="debtExtraIn" value="${extra || ''}" placeholder="0"></label>
       <button class="btn sm dark" data-act="saveDebtExtra">احسب</button>
-      <div style="margin-top:10px">${plan.rows.map((x, i) => `<div class="kv"><span>${i + 1}. ${esc(x.d.name)}</span><b>${x.end == null ? '<span class="neg">مش هيخلص — حدد قسط</span>' : monthLabelFromNow(x.end)}</b></div>`).join('')}</div>
+      <div style="margin-top:10px">${plan.rows.map((x, i) => `<div class="kv"><span>${i + 1}. ${esc(x.d.name)}</span><b>${x.end == null ? '<span class="neg">مش هيخلص — حدد قسط أو مواعيد سداد</span>' : monthLabelFromNow(x.end)}</b></div>`).join('')}</div>
       ${plan.stuck ? '' : `<div class="note">🎯 هتخلص كل ديونك في <b>${monthLabelFromNow(plan.months - 1)}</b> (بعد <b class="num">${plan.months}</b> شهر)${extra > 0 && !base.stuck && base.months > plan.months ? `، يعني أسرع بـ <b class="num">${base.months - plan.months}</b> شهر من غير المبلغ الزيادة` : ''}. بعدها هيبقى معاك <b class="num">${fmt(plan.freedFinal)}</b> جنيه في الشهر ممكن تحوّلهم للعربية.</div>`}
     </div>`;
   }
@@ -1092,6 +1174,7 @@ function outflowRows(o){
   if(o.billPaid) rows.push({k:'bill', name:'📋 الالتزامات', v:o.billPaid});
   if(o.debtPaid) rows.push({k:'debt', name:'💳 أقساط الديون', v:o.debtPaid});
   if(o.saved > 0) rows.push({k:'save', name:'🏦 التحويش', v:o.saved});
+  if(o.reserveNet > 0) rows.push({k:'reserve', name:'📥 اتشال لمواعيد السداد', v:o.reserveNet});
   const by = expByCat(o.T);
   for(const c in by) if(by[c] > 0) rows.push({k:c, name:catOf(c).icon + ' ' + catOf(c).name, v:by[c]});
   return rows.sort((a, b) => b.v - a.v);
@@ -1100,12 +1183,13 @@ function outflowRows(o){
 function firstDays(o, n){
   const end = addDays(o.r.start, n - 1), T = o.T.filter(t => t.date <= end);
   const s_ = type => sum(T.filter(t => t.type === type), t => t.amount);
-  return {T, billPaid:s_('bill'), debtPaid:s_('debt'), saved:s_('save'), outActual:s_('bill') + s_('debt') + s_('save') + s_('exp')};
+  return {T, billPaid:s_('bill'), debtPaid:s_('debt'), saved:s_('save'), reserveNet:s_('reserve'), outActual:s_('bill') + s_('debt') + s_('save') + s_('reserve') + s_('exp')};
 }
 function rowVal(o, k){
   if(k === 'bill') return o.billPaid;
   if(k === 'debt') return o.debtPaid;
   if(k === 'save') return Math.max(0, o.saved);
+  if(k === 'reserve') return Math.max(0, o.reserveNet || 0);
   return expByCat(o.T)[k] || 0;
 }
 
@@ -1132,7 +1216,7 @@ PAGES.report = function(){
   if(rows.length){
     h += `<div class="card"><h3>الفلوس راحت فين</h3><div class="muted" style="margin:-6px 0 10px">النسبة الملوّنة = التغيير ${vsTxt}</div>` + rows.map(r => {
       const pv = rowVal(prev, r.k);
-      return `<div class="cat-row"><div class="row"><span>${esc(r.name)}</span><span><b class="num">${fmt(r.v)}</b> <span class="muted num">${Math.round(r.v / totalOut * 100)}%</span> ${pv ? deltaTag(r.v, pv, r.k !== 'save' && r.k !== 'debt') : ''}</span></div>
+      return `<div class="cat-row"><div class="row"><span>${esc(r.name)}</span><span><b class="num">${fmt(r.v)}</b> <span class="muted num">${Math.round(r.v / totalOut * 100)}%</span> ${pv ? deltaTag(r.v, pv, !['save', 'debt', 'reserve'].includes(r.k)) : ''}</span></div>
         <div class="bar"><i style="width:${r.v / rows[0].v * 100}%"></i></div></div>`;
     }).join('') + `</div>`;
   }
@@ -1252,7 +1336,7 @@ function quickAdd(preset){
     const amount = num(v.amount);
     if(!need(amount > 0, 'اكتب المبلغ')) return false;
     if(t){
-      t.amount = t.type === 'save' && t.amount < 0 ? -amount : amount;
+      t.amount = (t.type === 'save' || t.type === 'reserve') && t.amount < 0 ? -amount : amount;
       t.note = v.note.trim(); t.date = v.date || t.date;
       if(v.cat) t.cat = v.cat;
       if(t.itemId && v.qty !== undefined) t.qty = num(v.qty);
@@ -1376,12 +1460,15 @@ function payBill(id){
 function debtForm(id){
   const d = id ? byId(S.debts, id) : null;
   let body = Fd.text('name', 'الدين لمين / اسمه', d ? d.name : '', 'autofocus placeholder="مثلاً: قسط الموبايل، فلوس أخويا، كارت الائتمان"');
-  body += `<div class="fld2">${Fd.num('total', d ? 'المبلغ الكلي للدين' : 'الباقي عليك حاليًا', d ? d.total : '')}${Fd.num('monthly', 'القسط الشهري', d ? d.monthly : '')}</div>`;
-  body += Fd.day('dueDay', 'بيتدفع يوم', d ? d.dueDay : 1);
+  body += `<div class="fld2">${Fd.num('total', d ? 'المبلغ الكلي للدين' : 'الباقي عليك حاليًا', d ? d.total : '')}${Fd.num('monthly', 'القسط الشهري', d ? d.monthly : '', '', 'سيبه فاضي لو بتسدد في تواريخ معينة')}</div>`;
+  body += Fd.day('dueDay', 'القسط بيتدفع يوم', d ? d.dueDay : 1);
   body += Fd.text('note', 'ملاحظة', d ? d.note : '');
   if(d){
     const pays = S.tx.filter(t => t.type === 'debt' && t.debtId === d.id).sort((a, b) => a.date < b.date ? 1 : -1);
     body += `<div class="note">اتسدد <b class="num">${fmt(debtPaidTotal(d))}</b> · باقي <b class="num">${fmt(debtRemaining(d))}</b>${pays.length ? '<br>' + pays.slice(0, 6).map(t => `${dayLabel(t.date)}: ${fmt(t.amount)}`).join(' · ') : ''}</div>`;
+    const dd = activeDues().filter(x => x.debtId === d.id).sort((a, b) => a.date < b.date ? -1 : 1);
+    body += `<div class="note"><b>📅 مواعيد سداد محددة:</b> ${dd.length ? dd.map(x => `${dayLabel(x.date)} ${pd(x.date).getFullYear()}: <span class="num">${fmt(x.amount)}</span>`).join(' · ') : 'مفيش'}
+      <div style="margin-top:8px"><button type="button" class="btn sm dark" data-act="dueForDebt" data-id="${d.id}">+ ميعاد سداد للدين ده</button></div></div>`;
   }
   body += Fd.foot(d ? 'حفظ' : 'إضافة', d ? {act:'delDebt', id:d.id} : null);
   openSheet(d ? d.name : 'دين جديد', body, v => {
@@ -1391,6 +1478,8 @@ function debtForm(id){
     Object.assign(o, {name:v.name.trim(), total:num(v.total), monthly:num(v.monthly), dueDay:+v.dueDay || 1, note:v.note.trim()});
     if(!d) S.debts.push(o);
     save(); toast('اتحفظ');
+    // دين جديد من غير قسط شهري = بيتسد في ميعاد معيّن
+    if(!d && !(o.monthly > 0)) setTimeout(() => dueForm(null, {debtId:o.id, amount:o.total}), 50);
   });
 }
 function payDebt(id){
@@ -1399,6 +1488,64 @@ function payDebt(id){
     const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
     S.tx.push({id:uid(), ts:Date.now(), type:'debt', debtId:id, amount:Math.min(a, rem || a), note:v.note.trim(), date:v.date || todayS()});
     save(); toast(debtRemaining(d) <= 0.5 ? '🎉 الدين ده خلص!' : 'اتسجّل ✔');
+  });
+}
+
+/* ---- مواعيد السداد ---- */
+function dueForm(id, preset){
+  const d = id ? byId(S.dues, id) : null, pre = preset || {};
+  const debtId = d ? d.debtId : pre.debtId, debt = debtId ? byId(S.debts, debtId) : null;
+  let body = '';
+  if(debt) body += `<div class="note" style="margin:0 0 10px">💳 دفعة من دين: <b>${esc(debt.name)}</b> (باقي <span class="num">${fmt(debtRemaining(debt))}</span>)</div>`;
+  body += Fd.text('name', debt ? 'وصف (اختياري)' : 'لازم تدفع إيه', d ? d.name : (pre.name || ''), (debt ? '' : 'autofocus ') + 'placeholder="' + (debt ? 'مثلاً: الدفعة الأولى' : 'مثلاً: مصاريف المدرسة، التأمين، رخصة العربية') + '"');
+  body += `<div class="fld2">${Fd.num('amount', 'المبلغ', d ? (d.baseAmount || d.amount) : (pre.amount || ''), debt ? 'autofocus' : '')}${Fd.date('date', 'الميعاد', d ? d.date : (pre.date || addDays(todayS(), 30)))}</div>`;
+  body += `<label class="fld"><span>بيتكرر؟</span><select name="repeat">${Object.entries(REPEATS).map(([k, v]) => `<option value="${k}" ${(d ? d.repeat || 0 : (pre.repeat || 0)) == k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>`;
+  if(!d) body += Fd.num('reserved', 'شايل له كام لحد دلوقتي (اختياري)', '');
+  if(d){
+    const res = Math.max(0, dueReserved(d));
+    body += `<div class="note">جاهز <b class="num">${fmt(res)}</b> من <b class="num">${fmt(d.amount)}</b> · المفروض تشيل <b class="num">${fmt(duePerMonth(d, periodOf(todayS())))}</b> في الشهر</div>`;
+  }
+  body += Fd.foot(d ? 'حفظ' : 'إضافة', d ? {act:'delDue', id:d.id} : null);
+  openSheet(d ? dueName(d) : debt ? 'ميعاد سداد: ' + debt.name : 'ميعاد سداد جديد', body, v => {
+    if(!debt && !need(v.name.trim(), 'اكتب اسم الحاجة')) return false;
+    if(!need(num(v.amount) > 0, 'اكتب المبلغ')) return false;
+    if(!need(/^\d{4}-\d{2}-\d{2}$/.test(v.date), 'اختار الميعاد')) return false;
+    const o = d || {id:uid(), createdAt:todayS(), debtId:debtId || undefined};
+    const oldDate = o.date;
+    Object.assign(o, {name:v.name.trim(), amount:num(v.amount), baseAmount:num(v.amount), date:v.date, repeat:+v.repeat || 0});
+    // لو الميعاد اتغيّر، اللي اتشال يفضل محسوب للميعاد الجديد
+    if(d && oldDate && oldDate !== o.date) S.tx.forEach(t => { if(t.type === 'reserve' && t.dueId === o.id && t.dueDate === oldDate) t.dueDate = o.date; });
+    if(!d){
+      S.dues = S.dues || []; S.dues.push(o);
+      const r0 = num(v.reserved);
+      if(r0 > 0) S.tx.push({id:uid(), ts:Date.now(), type:'reserve', dueId:o.id, dueDate:o.date, amount:r0, note:'اللي كان متشال قبل كده', date:todayS()});
+    }
+    if(!SUB.bills || !debt) SUB.bills = 'dues';
+    save(); toast('اتحفظ — هيقولك تشيل كام كل شهر');
+  });
+}
+function reserveDue(id){
+  const d = byId(S.dues, id), l = summary(periodOf(todayS())).dueLines.find(x => x.d.id === id);
+  const res = Math.max(0, dueReserved(d)), sug = Math.min(d.amount - res, l ? Math.max(l.per - l.resThis, 0) || l.per : d.amount - res);
+  openSheet('شلت لـ ' + dueName(d), `${Fd.num('amount', 'حطيت على جنب كام', Math.round(sug), 'autofocus', `جاهز <b class="num">${fmt(res)}</b> من <b class="num">${fmt(d.amount)}</b>`)}${Fd.date('date', 'التاريخ', todayS())}${Fd.foot('سجّل')}`, v => {
+    const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
+    S.tx.push({id:uid(), ts:Date.now(), type:'reserve', dueId:id, dueDate:d.date, amount:a, note:'', date:v.date || todayS()});
+    save(); toast(dueReserved(d) >= d.amount - 1 ? '✅ فلوس الميعاد ده بقت جاهزة' : 'اتسجّل ✔');
+  });
+}
+function payDue(id){
+  const d = byId(S.dues, id), res = Math.max(0, dueReserved(d));
+  openSheet('دفعت: ' + dueName(d), `${Fd.num('amount', 'المبلغ اللي اتدفع', d.amount, 'autofocus', res > 0 ? `منهم <b class="num">${fmt(res)}</b> كانوا محجوزين` : '')}${Fd.date('date', 'التاريخ', todayS())}${Fd.foot('سجّل الدفع')}`, v => {
+    const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
+    const date = v.date || todayS(), ts = Date.now(), full = a >= d.amount - 1;
+    S.tx.push({id:uid(), ts, type:d.debtId ? 'debt' : 'bill', debtId:d.debtId, dueId:d.id, amount:a, note:dueName(d), date});
+    const rel = full ? res : Math.min(res, a);
+    if(rel > 0) S.tx.push({id:uid(), ts:ts + 1, type:'reserve', dueId:d.id, dueDate:d.date, amount:-rel, note:'', date});
+    if(full){
+      if(d.repeat > 0){ d.date = addMonthsDate(d.date, d.repeat); d.amount = d.baseAmount || d.amount; }
+      else d.paidOn = date;
+    }else d.amount = Math.round((d.amount - a) * 100) / 100;
+    save(); toast(full ? (d.repeat > 0 ? 'اتسجّل ✔ — الميعاد الجاي ' + dayLabel(d.date) : '🎉 اتسدد') : `اتسجّل — فاضل ${fmt(d.amount)}`);
   });
 }
 
@@ -1468,7 +1615,8 @@ function cashCount(){
   const hint = b.known
     ? `حسب اللي متسجل المفروض معاك <b class="num">${fmt(b.value)}</b> ج.`
     : 'اجمع الكاش اللي معاك + اللي في البنك أو المحفظة (من غير فلوس التحويش لو حاططها لوحدها).';
-  openSheet('جرد الفلوس', Fd.num('amount', 'معاك كام فلوس دلوقتي؟', '', 'autofocus', hint) + Fd.text('note', 'ملاحظة (اختياري)', '') + Fd.foot('حفظ الرصيد'), v => {
+  const resNote = totalReserved() > 0 ? `<br>⚠️ من غير الـ <b class="num">${fmt(totalReserved())}</b> اللي شايلهم لمواعيد السداد.` : '';
+  openSheet('جرد الفلوس', Fd.num('amount', 'معاك كام فلوس دلوقتي؟', '', 'autofocus', hint + resNote) + Fd.text('note', 'ملاحظة (اختياري)', '') + Fd.foot('حفظ الرصيد'), v => {
     if(!need(String(v.amount).trim() !== '', 'اكتب المبلغ')) return false;
     const amount = num(v.amount), ts = Date.now();
     if(b.known){
@@ -1567,11 +1715,25 @@ const ACT = {
   payBill:(d) => payBill(d.id),
   delBill:(d) => { if(!confirm('تمسح الالتزام ده؟ (المدفوعات القديمة هتفضل)')) return; S.bills = S.bills.filter(b => b.id !== d.id); closeSheet(); save(); },
   debtForm:(d) => debtForm(d.id),
+  dueForm:(d) => dueForm(d.id),
+  dueForDebt:(d) => dueForm(null, {debtId:d.id, amount:Math.max(0, debtRemaining(byId(S.debts, d.id)) - sum(activeDues().filter(x => x.debtId === d.id), x => x.amount))}),
+  reserveDue:(d) => reserveDue(d.id),
+  payDue:(d) => payDue(d.id),
+  goDues:() => { TAB = 'bills'; SUB.bills = 'dues'; render(); window.scrollTo(0, 0); },
+  delDue:(d) => {
+    const du = byId(S.dues, d.id), res = Math.max(0, dueReserved(du));
+    if(!confirm(res > 0 ? `تمسح الميعاد ده؟ الـ ${fmt(res)} المحجوزين هيرجعوا لرصيدك.` : 'تمسح الميعاد ده؟')) return;
+    if(res > 0) S.tx.push({id:uid(), ts:Date.now(), type:'reserve', dueId:du.id, dueDate:du.date, amount:-res, note:'إلغاء الحجز', date:todayS()});
+    S.dues = S.dues.filter(x => x.id !== d.id); closeSheet(); save();
+  },
   payDebt:(d) => payDebt(d.id),
   delDebt:(d) => {
     const has = S.tx.some(t => t.type === 'debt' && t.debtId === d.id);
     if(!confirm(has ? 'تمسح الدين ده وكل سداداته؟' : 'تمسح الدين ده؟')) return;
-    S.debts = S.debts.filter(x => x.id !== d.id); S.tx = S.tx.filter(t => !(t.type === 'debt' && t.debtId === d.id)); closeSheet(); save();
+    const dueIds = (S.dues || []).filter(x => x.debtId === d.id).map(x => x.id);
+    S.debts = S.debts.filter(x => x.id !== d.id);
+    S.tx = S.tx.filter(t => !(t.type === 'debt' && t.debtId === d.id) && !(t.type === 'reserve' && dueIds.includes(t.dueId)));
+    S.dues = (S.dues || []).filter(x => !dueIds.includes(x.id)); closeSheet(); save();
   },
   saveDebtExtra:() => { S.settings.debtExtra = num($('#debtExtraIn').value); save(); },
   goalForm:(d) => goalForm(d.id),
