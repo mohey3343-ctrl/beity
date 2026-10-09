@@ -215,6 +215,14 @@
   .jard-row{flex-wrap:wrap;} .jard-row .fld-err{width:100%; text-align:left;}
   .fld input.amount{font-size:28px; text-align:center; font-family:'IBM Plex Mono', monospace; font-weight:600; padding:12px;}
   .fld2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .ml-row{border:1px solid var(--line); border-radius:12px; padding:8px; margin-bottom:8px; background:var(--card-2);}
+  .ml-top, .ml-sub{display:flex; gap:6px; align-items:center;}
+  .ml-sub{margin-top:6px;}
+  .ml-row select, .ml-row input{min-width:0; padding:9px 8px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--ink); font-size:15px;}
+  .ml-top select{flex:1.4;} .ml-top input{flex:1; text-align:center; font-family:'IBM Plex Mono', monospace; font-weight:600;}
+  .ml-sub select, .ml-sub input{flex:1;} .ml-sub input[data-f="qty"]{flex:.6; text-align:center;}
+  .ml-u{font-size:12px; min-width:34px;}
+  .ml-x{border:none; background:none; color:var(--bad); font-size:16px; width:28px; flex-shrink:0;}
   .catpick{display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-bottom:12px;}
   .catpick label{display:block;}
   .catpick input{position:absolute; opacity:0; pointer-events:none;}
@@ -1808,7 +1816,7 @@ function quickAdd(preset){
   const isExp = type === 'exp', isInc = type === 'inc';
   let body = '';
   if(!t){
-    body += `<div class="seg"><button type="button" class="${isExp ? 'on' : ''}" data-act="qaType" data-v="exp">مصروف</button><button type="button" class="${isInc ? 'on' : ''}" data-act="qaType" data-v="inc">دخل إضافي</button></div>`;
+    body += `<div class="seg"><button type="button" class="${isExp ? 'on' : ''}" data-act="qaType" data-v="exp">مصروف</button><button type="button" data-act="qaMulti">🧾 كذا حاجة</button><button type="button" class="${isInc ? 'on' : ''}" data-act="qaType" data-v="inc">دخل إضافي</button></div>`;
   }
   body += `<label class="fld"><input class="amount" name="amount" inputmode="decimal" placeholder="0" value="${t ? Math.abs(t.amount) : ''}" autofocus></label>`;
   if(type === 'exp' && !(t && t.itemId)) body += `<div class="catpick">${cats}</div>`;
@@ -1948,6 +1956,63 @@ function buyLabels(it){
   const qty = num(q('qty').value);
   L('conv').innerHTML = f > 0 && !BASES[bu] ? `${fmtQ(qty)} ${esc(unit)} = <b class="num">${fmtQ(qty * f)}</b> ${base.en}` : '';
 }
+/* ---- تسجيل كذا حاجة مع بعض (فاتورة) ----
+   كل حاجة سطر: تصنيف + مبلغ. لو التصنيف "استوك البيت" تختار الصنف والكمية فتتضاف للمخزون.
+   سطر جديد بيتفتح لوحده أول ما تكتب مبلغ في آخر سطر. */
+let ML = [];
+function mlRowHtml(o, i){
+  const it = o.item ? byId(S.items, o.item) : null;
+  return `<div class="ml-row" data-i="${i}">
+    <div class="ml-top"><select data-f="cat" data-ml>${S.cats.map(c => `<option value="${c.id}" ${c.id === o.cat ? 'selected' : ''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select>
+      <input data-f="amount" inputmode="decimal" placeholder="المبلغ" value="${esc(o.amount || '')}">
+      <button type="button" class="ml-x" data-act="mlDel" data-i="${i}" aria-label="شيل السطر">✕</button></div>
+    ${o.cat === 'house' && S.items.length
+      ? `<div class="ml-sub"><select data-f="item" data-ml><option value="">— الصنف —</option>${S.items.map(x => `<option value="${x.id}" ${x.id === o.item ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>
+         <input data-f="qty" inputmode="decimal" placeholder="كام" value="${esc(o.qty || '')}"><span class="muted ml-u">${it ? esc(entryUnit(it)) : ''}</span></div>`
+      : `<div class="ml-sub"><input data-f="label" placeholder="إيه هي؟ (اختياري)" value="${esc(o.label || '')}"></div>`}</div>`;
+}
+function mlRead(){
+  document.querySelectorAll('#mlines .ml-row').forEach((r, i) => {
+    const g = f => { const el = r.querySelector(`[data-f="${f}"]`); return el ? el.value : ''; };
+    Object.assign(ML[i], {cat:g('cat'), amount:g('amount'), item:g('item'), qty:g('qty'), label:g('label')});
+  });
+}
+function mlRender(){ $('#mlines').innerHTML = ML.map(mlRowHtml).join(''); mlTotal(); }
+function mlTotal(){
+  const a = [...document.querySelectorAll('#mlines [data-f="amount"]')].map(x => num(x.value));
+  const el = $('#mlTotal'); if(el) el.innerHTML = `الإجمالي: <b class="num">${fmt(sum(a))}</b> ج · <span class="num">${a.filter(x => x > 0).length}</span> حاجة`;
+}
+function multiAdd(preset){
+  preset = preset || {};
+  ML = [{cat:'market'}, {cat:'market'}];
+  const body = `<div class="seg"><button type="button" data-act="qaType" data-v="exp">مصروف</button><button type="button" class="on">🧾 كذا حاجة</button><button type="button" data-act="qaType" data-v="inc">دخل إضافي</button></div>
+    <div class="muted" style="margin-bottom:8px; line-height:1.7">كل حاجة في سطر: التصنيف والمبلغ. لو حاجة من أصناف البيت اختار "استوك البيت" والصنف والكمية — هتتضاف للمخزون.</div>
+    <div id="mlines"></div>
+    <button type="button" class="btn sm" data-act="mlAdd">+ سطر</button>
+    <div class="note" id="mlTotal"></div>
+    ${Fd.text('note', 'المكان / ملاحظة للكل (اختياري)', '', 'placeholder="مثلاً: كارفور، السوق"')}
+    ${Fd.date('date', 'التاريخ', preset.date || todayS())}
+    ${Fd.foot('سجّل الكل')}`;
+  openSheet('🧾 كذا حاجة مع بعض', body, v => {
+    mlRead();
+    const lines = ML.filter(o => num(o.amount) > 0);
+    if(!need(lines.length, 'اكتب مبلغ حاجة واحدة على الأقل')) return false;
+    const badItem = lines.find(o => o.cat === 'house' && o.item && !(num(o.qty) > 0));
+    if(badItem){ toast(`اكتب الكمية لـ ${byId(S.items, badItem.item).name}`, true); return false; }
+    const total = sum(lines, o => num(o.amount)), date = v.date || todayS(), place = v.note.trim();
+    if(!sane(total, date, 'exp', null, null)) return false;
+    const ts = Date.now(), grp = uid();
+    lines.forEach((o, i) => {
+      const a = num(o.amount), it = o.cat === 'house' && o.item ? byId(S.items, o.item) : null;
+      if(it){ recordBuy(it, num(o.qty) * packF(it), a, date); Object.assign(S.tx[S.tx.length - 1], {ts:ts + i, grp, note:it.name + (place ? ' — ' + place : '')}); }
+      else S.tx.push({id:uid(), ts:ts + i, grp, type:'exp', cat:o.cat || 'other', amount:a, note:[o.label.trim(), place].filter(Boolean).join(' — '), date});
+    });
+    save(); toast(`اتسجّل ${lines.length} حاجة بـ ${fmt(total)} ج ✔`);
+  });
+  mlRender();
+  setTimeout(() => { const f = document.querySelector('#mlines [data-f="amount"]'); if(f) f.focus(); }, 80);
+}
+
 function recordBuy(it, q, a, date){
   if(a > 0){
     S.tx.push({id:uid(), ts:Date.now(), type:'exp', cat:'house', itemId:it.id, qty:q, amount:a, note:it.name, date});
@@ -2369,6 +2434,9 @@ const ACT = {
   closeSheet,
   quickAdd:() => quickAdd({date:defaultDate()}),
   qaType:(d) => quickAdd({type:d.v, date:defaultDate()}),
+  qaMulti:() => multiAdd({date:defaultDate()}),
+  mlAdd:() => { mlRead(); ML.push({cat:(ML[ML.length - 1] || {}).cat || 'market'}); mlRender(); const a = document.querySelectorAll('#mlines [data-f="amount"]'); a[a.length - 1].focus(); },
+  mlDel:(d) => { mlRead(); ML.splice(+d.i, 1); if(!ML.length) ML.push({cat:'market'}); mlRender(); },
   editTx:(d) => { const t = byId(S.tx, d.id); if(t) quickAdd({tx:t}); },
   delTx:(d) => { if(!confirm('تمسح الحركة دي؟')) return; S.tx = S.tx.filter(t => t.id !== d.id); closeSheet(); save(); toast('اتمسحت'); },
   hideOnboarding:() => { S.settings.hideOnboarding = true; save(); },
@@ -2543,6 +2611,7 @@ document.addEventListener('change', e => {
   }
   if(el.hasAttribute('data-ilbl')){ itemLabels(); return; }
   if(el.hasAttribute('data-bl')){ buyLabels(); return; }
+  if(el.hasAttribute('data-ml')){ mlRead(); mlRender(); return; }
   if(el.hasAttribute('data-junit')){ jardUnitChanged(el, el.dataset.prev || (el.value === 'pack' ? 'base' : 'pack')); return; }
   if(el.dataset.act === 'cycleDay'){ setCycleDay(+el.value); save(); toast('اتغيّر بداية الشهر'); }
   if(el.dataset.act === 'fcRecv'){ S.settings.fcRecv = el.checked; save(); return; }
@@ -2551,6 +2620,14 @@ document.addEventListener('change', e => {
 document.addEventListener('input', e => {
   if(e.target.hasAttribute && e.target.hasAttribute('data-bl')) buyLabels();
   if(e.target.matches && e.target.matches('input[inputmode="decimal"]')) markField(e.target);
+  if(e.target.matches && e.target.matches('#mlines [data-f="amount"]')){
+    const rows = document.querySelectorAll('#mlines .ml-row'), row = e.target.closest('.ml-row');
+    if(row === rows[rows.length - 1] && e.target.value.trim() !== ''){
+      mlRead(); const o = {cat:ML[ML.length - 1].cat}; ML.push(o);
+      $('#mlines').insertAdjacentHTML('beforeend', mlRowHtml(o, ML.length - 1));
+    }
+    mlTotal();
+  }
 });
 $('#importFile').addEventListener('change', async e => {
   const f = e.target.files[0]; e.target.value = '';
