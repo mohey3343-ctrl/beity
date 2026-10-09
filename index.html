@@ -207,6 +207,12 @@
   .fld input, .fld select, .fld textarea{width:100%; padding:11px 12px; border:1px solid var(--line); border-radius:12px; background:var(--card-2); color:var(--ink);}
   .fld input:focus, .fld select:focus{outline:2px solid var(--gold); outline-offset:0; border-color:transparent;}
   .fld .hint{font-size:11.5px; color:var(--soft); margin-top:4px; line-height:1.6;}
+  /* الأرقام دايمًا من الشمال لليمين عشان 0.5 ما تتعرضش "5." */
+  input[inputmode="decimal"]{direction:ltr;}
+  .fld input[inputmode="decimal"]:not(.amount){text-align:right;}
+  .fld.err input, input.err{border-color:var(--bad) !important; background:var(--bad-bg) !important;}
+  .fld-err{color:var(--bad); font-size:11.5px; margin-top:4px; font-weight:600;}
+  .jard-row{flex-wrap:wrap;} .jard-row .fld-err{width:100%; text-align:left;}
   .fld input.amount{font-size:28px; text-align:center; font-family:'IBM Plex Mono', monospace; font-weight:600; padding:12px;}
   .fld2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
   .catpick{display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-bottom:12px;}
@@ -350,14 +356,41 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const sum = (a, f) => a.reduce((s, x) => s + (f ? f(x) : x), 0);
 const pad = n => String(n).padStart(2, '0');
-function num(v){
-  if(typeof v === 'number') return isFinite(v) ? v : 0;
-  v = String(v == null ? '' : v).trim()
+/* بيقبل أرقام عربي/إنجليزي، والفاصلة العشرية (. أو ٫)، وبيشيل فواصل الآلاف */
+function normNum(v){
+  return String(v == null ? '' : v).trim()
     .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
     .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
     .replace(/٫/g, '.').replace(/[,،٬\s]/g, '');
-  const n = parseFloat(v);
+}
+function num(v){
+  if(typeof v === 'number') return isFinite(v) ? v : 0;
+  const n = parseFloat(normNum(v));
   return isFinite(n) ? n : 0;
+}
+/* التحقق من خانة رقم: فاضي، أو رقم سليم موجب، وإلا رسالة الغلط */
+function numCheck(raw, el){
+  const t = normNum(raw);
+  if(t === '') return {empty:true};
+  if(!/^(\d+\.?\d*|\.\d+)$/.test(t)) return {err:/^-/.test(t) ? 'الرقم مينفعش يبقى بالسالب' : 'اكتب رقم بس، من غير حروف أو رموز'};
+  const v = parseFloat(t);
+  if(el && el.hasAttribute('data-int') && v % 1) return {err:'اكتب رقم صحيح من غير كسور'};
+  if(el && el.dataset.max && v > +el.dataset.max) return {err:'أقصى رقم هنا ' + el.dataset.max};
+  return {v};
+}
+function markField(el){
+  const r = numCheck(el.value, el), box = el.closest('.fld') || el.parentNode;
+  el.classList.toggle('err', !!r.err);
+  if(box.classList.contains('fld')) box.classList.toggle('err', !!r.err);
+  let m = box.querySelector(':scope > .fld-err');
+  if(r.err){ if(!m){ m = document.createElement('div'); m.className = 'fld-err'; box.appendChild(m); } m.textContent = '⚠️ ' + r.err; }
+  else if(m) m.remove();
+  return !r.err;
+}
+function validNums(root){
+  const bad = [...root.querySelectorAll('input[inputmode="decimal"]')].filter(x => !markField(x));
+  if(bad.length){ bad[0].focus(); toast('فيه رقم مش مظبوط — صلّحه الأول', true); return false; }
+  return true;
 }
 const fmt = n => Math.round(n || 0).toLocaleString('en-US');
 const fmtQ = n => (n || 0).toLocaleString('en-US', {maximumFractionDigits:Math.abs(n || 0) < 10 ? 2 : 1});
@@ -1247,7 +1280,7 @@ function recvForm(id){
   let body = Fd.text('name', 'الفلوس عند مين', rv ? rv.name : '', 'autofocus placeholder="اسم الشخص"');
   body += Fd.num('total', 'المبلغ الكلي اللي ليك', rv ? rv.total : '');
   if(!rv){
-    body += `<div class="fld2">${Fd.date('first', 'هيرجّع أول دفعة امتى', addDays(todayS(), 30))}${Fd.num('count', 'على كام دفعة', 1)}</div>`;
+    body += `<div class="fld2">${Fd.date('first', 'هيرجّع أول دفعة امتى', addDays(todayS(), 30))}${Fd.num('count', 'على كام دفعة', 1, 'data-int data-max="60"')}</div>`;
     body += `<label class="fld"><span>كل قد إيه بين الدفعة والتانية</span><select name="every"><option value="1">كل شهر</option><option value="2">كل شهرين</option><option value="3">كل 3 شهور</option><option value="6">كل 6 شهور</option></select></label>`;
     body += `<label class="switch"><input type="checkbox" name="lendNow"> لسه مسلّفه النهاردة (اخصم المبلغ من رصيدي)</label>`;
   }
@@ -1727,12 +1760,13 @@ PAGES.settings = function(){
 };
 
 /* ===================== الشيت (النوافذ) ===================== */
-let SHEET_SUBMIT = null;
+let SHEET_SUBMIT = null, lastSubmit = 0;
 function openSheet(title, body, onSubmit){
   $('#sheetTitle').textContent = title;
   $('#sheetBody').innerHTML = body;
   $('#sheetWrap').classList.add('open');
   SHEET_SUBMIT = onSubmit || null;
+  lastSubmit = 0;
   const f = $('#sheetBody [autofocus]');
   if(f) setTimeout(() => { f.focus(); if(f.select) f.select(); }, 60);
 }
@@ -1740,6 +1774,9 @@ function closeSheet(){ $('#sheetWrap').classList.remove('open'); SHEET_SUBMIT = 
 $('#sheetForm').addEventListener('submit', e => {
   e.preventDefault();
   if(!SHEET_SUBMIT) return;
+  if(Date.now() - lastSubmit < 800) return;   // دوسة مكررة بالغلط
+  if(!validNums(e.target)) return;
+  lastSubmit = Date.now();
   const fd = new FormData(e.target), v = {};
   for(const [k, val] of fd.entries()) v[k] = val;
   if(SHEET_SUBMIT(v, e.target) !== false) closeSheet();
@@ -1783,6 +1820,7 @@ function quickAdd(preset){
   openSheet(title, body, v => {
     const amount = num(v.amount);
     if(!need(amount > 0, 'اكتب المبلغ')) return false;
+    if(!sane(amount, v.date, t ? t.type : type, t ? t.id : null, v.cat)) return false;
     if(t){
       t.amount = (t.type === 'save' || t.type === 'reserve') && t.amount < 0 ? -amount : amount;
       t.note = v.note.trim(); t.date = v.date || t.date;
@@ -1795,6 +1833,20 @@ function quickAdd(preset){
       if(type === 'inc' && amount >= 100) setTimeout(() => allocateExtra(amount, v.date || todayS()), 60);
     }
   });
+}
+
+/* تحذيرات منطقية قبل التسجيل (مش منع): مبلغ كبير غريب، تاريخ في المستقبل أو قديم، أو تسجيل مكرر */
+function sane(amount, date, type, editId, cat){
+  const td = todayS(), inc = sum(S.incomes, i => i.amount || 0);
+  const big = type === 'inc' ? Math.max(50000, inc * 3) : Math.max(10000, inc * 0.5);
+  if(amount >= big && !confirm(`المبلغ ${fmt(amount)} ج كبير — متأكد إنه مظبوط؟ (مش ${fmt(amount / 10)}؟)`)) return false;
+  if(date && date > addDays(td, 1) && !confirm(`التاريخ ${dayLabel(date)} في المستقبل — متأكد؟`)) return false;
+  if(date && date < addDays(td, -90) && !confirm(`التاريخ ${dayLabel(date)} ${pd(date).getFullYear()} قديم أوي — متأكد؟`)) return false;
+  if(!editId){
+    const dup = S.tx.find(x => x.type === type && Math.abs(x.amount - amount) < 0.01 && (!cat || x.cat === cat) && x.date === (date || td) && Date.now() - (x.ts || 0) < 3 * 60000);
+    if(dup && !confirm('سجّلت نفس المبلغ ده من دقايق — تسجّله تاني؟')) return false;
+  }
+  return true;
 }
 
 /* ---- الأصناف ---- */
@@ -1826,6 +1878,10 @@ function itemForm(id){
     if(!need(v.name.trim(), 'اكتب اسم الصنف')) return false;
     const pu = v.pu && v.pu !== '__new' ? v.pu.trim() : '';
     const pf = pu ? (num(v.pf) > 0 ? num(v.pf) : 1) : 0, f = pu ? pf : 1;
+    const unitTxt = pu || (BASES[v.base] || BASES.PCS).en;
+    if(num(v.price) > 5000 && !confirm(`سعر الـ${unitTxt} ${fmt(num(v.price))} ج؟ ده كبير — متأكد؟`)) return false;
+    if(num(v.monthly) > 200 && !confirm(`بتستهلك ${fmtQ(num(v.monthly))} ${unitTxt} في الشهر؟ متأكد؟`)) return false;
+    if(pu && v.base !== 'PCS' && pf > 100 && !confirm(`الـ${pu} فيه ${fmtQ(pf)} ${(BASES[v.base] || BASES.PCS).en}؟ متأكد؟ (مثلاً 450 جرام تتكتب 0.45)`)) return false;
     const o = it || {id:uid(), createdAt:todayS()};
     Object.assign(o, {name:v.name.trim(), group:v.group.trim() || 'تاني', base:v.base || 'PCS', pu:pu || undefined, pf:pu ? pf : undefined,
       monthly:num(v.monthly) * f, price:Math.round(num(v.price) / f * 1000) / 1000});
@@ -2110,8 +2166,8 @@ function goalForm(id, preset){
 function gameyaForm(id){
   const g = id ? byId(S.goals, id) : null, cp = periodOf(todayS());
   let body = Fd.text('name', 'اسم الجمعية', g ? g.name : 'جمعية', 'autofocus');
-  body += `<div class="fld2">${Fd.num('monthly', 'القسط الشهري', g ? g.monthly : '')}${Fd.num('months', 'عدد الشهور', g ? g.months : 10)}</div>`;
-  body += `<div class="fld2">${Fd.month('start', 'أول قسط شهر', g ? g.start : cp.y + '-' + pad(cp.m + 1))}${g ? '' : Fd.num('paidBefore', 'دفعت كام قسط قبل كده', '')}</div>`;
+  body += `<div class="fld2">${Fd.num('monthly', 'القسط الشهري', g ? g.monthly : '')}${Fd.num('months', 'عدد الشهور', g ? g.months : 10, 'data-int data-max="60"')}</div>`;
+  body += `<div class="fld2">${Fd.month('start', 'أول قسط شهر', g ? g.start : cp.y + '-' + pad(cp.m + 1))}${g ? '' : Fd.num('paidBefore', 'دفعت كام قسط قبل كده', '', 'data-int')}</div>`;
   body += `<div class="muted" data-gm style="margin:-4px 0 10px"></div>`;
   body += Fd.text('note', 'ملاحظة', g ? g.note : '', 'placeholder="مثلاً: هقبضها لمقدّم العربية"');
   body += Fd.foot(g ? 'حفظ' : 'إضافة', g ? {act:'delGoal', id:g.id} : null);
@@ -2354,6 +2410,7 @@ const ACT = {
   donutMode:(d) => { S.settings.donutMode = d.v; save(); },
   goShop:() => { TAB = 'stock'; SUB.stock = 'shop'; render(); window.scrollTo(0, 0); },
   saveJard:() => {
+    if(!validNums($('#jardForm'))) return;
     let n = 0; const ts = Date.now();
     document.querySelectorAll('#jardForm input[data-item]').forEach((inp, i) => {
       if(inp.value.trim() === '') return;
@@ -2491,7 +2548,10 @@ document.addEventListener('change', e => {
   if(el.dataset.act === 'fcRecv'){ S.settings.fcRecv = el.checked; save(); return; }
   if(el.dataset.act === 'rollDebts'){ const g = byId(S.goals, el.dataset.id); if(g){ g.rollDebts = el.checked; save(); } }
 });
-document.addEventListener('input', e => { if(e.target.hasAttribute && e.target.hasAttribute('data-bl')) buyLabels(); });
+document.addEventListener('input', e => {
+  if(e.target.hasAttribute && e.target.hasAttribute('data-bl')) buyLabels();
+  if(e.target.matches && e.target.matches('input[inputmode="decimal"]')) markField(e.target);
+});
 $('#importFile').addEventListener('change', async e => {
   const f = e.target.files[0]; e.target.value = '';
   if(!f) return;
