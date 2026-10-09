@@ -2838,6 +2838,8 @@ document.addEventListener('visibilitychange', () => { if(document.visibilityStat
 load();
 VIEW = periodOf(todayS());
 render();
+// يفتح من غير نت
+if('serviceWorker' in navigator && /^https?:/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});
 // اطلب من المتصفح ما يمسحش بيانات التطبيق من نفسه
 if(navigator.storage && navigator.storage.persist){
   navigator.storage.persist().then(ok => { PERSISTED = ok; const el = $('#persistInfo'); if(el) el.textContent = ok ? 'التخزين محمي ✅' : 'التخزين مش محمي — اعمل نسخ'; }).catch(() => {});
