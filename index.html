@@ -443,7 +443,7 @@ function fresh(){
   return {
     v:1, updatedAt:0,
     settings:{cycleDay:1, coverMode:'month', bufferDays:3, debtExtra:0, syncUrl:'', syncSecret:''},
-    incomes:[], bills:[], debts:[], goals:[], items:[], counts:[], tx:[], cashCounts:[], dues:[], recvs:[],
+    incomes:[], bills:[], debts:[], goals:[], items:[], counts:[], tx:[], cashCounts:[], dues:[], recvs:[], wallets:[{id:'w_main', name:'كاش', icon:'💵'}],
     cats: DEFAULT_CATS.map(c => Object.assign({}, c)),
   };
 }
@@ -452,6 +452,7 @@ function migrate(o){
   for(const k in f) if(o[k] === undefined) o[k] = f[k];
   o.settings = Object.assign(f.settings, o.settings || {});
   if(!Array.isArray(o.cats) || !o.cats.length) o.cats = f.cats;
+  if(!Array.isArray(o.wallets) || !o.wallets.length) o.wallets = [{id:'w_main', name:'كاش', icon:'💵'}];
   if(!o.cats.some(c => c.id === 'house')) o.cats.splice(1, 0, Object.assign({}, DEFAULT_CATS[1]));
   // الأصناف القديمة كان ليها "وحدة" نص حر — نحوّلها لمقياس أساسي + عبوة
   (o.items || []).forEach(it => {
@@ -507,6 +508,8 @@ function persist(){
   catch(e){ toast('مش قادر يحفظ على الجهاز!', true); }
 }
 function save(){
+  // أي حركة جديدة اتعملت من شاشة فيها اختيار محفظة بتاخد المحفظة دي
+  if(PENDING_WALLET) for(let i = PENDING_WALLET.n0; i < S.tx.length; i++) if(!S.tx[i].walletId && S.tx[i].type !== 'xfer') S.tx[i].walletId = PENDING_WALLET.w;
   S.updatedAt = Date.now();
   persist();
   scheduleSync();
@@ -752,11 +755,24 @@ function goalProjection(g){
 /* ---- الرصيد الفعلي ----
    = آخر جرد للفلوس + أي دخل اتسجل بعده − أي حاجة اتصرفت/اتدفعت/اتحوّشت بعده.
    المرتب المتوقع مش بيدخل هنا غير لما تسجّل إنه نزل فعلًا. */
-function cashBalance(){
-  const cs = (S.cashCounts || []).slice().sort((a, b) => evKey(a) < evKey(b) ? -1 : 1);
+/* المحافظ: كاش، بنك، محفظة موبايل... كل حركة ليها محفظة (الافتراضي أول واحدة)،
+   والتحويل بين محفظتين (xfer) ما بيأثرش على الإجمالي */
+const mainWallet = () => S.wallets[0].id;
+const walletOf = t => t.walletId && byId(S.wallets, t.walletId) ? t.walletId : mainWallet();
+function walletFlow(t, wid){
+  if(t.type === 'xfer') return (t.to === wid ? t.amount : 0) - (t.from === wid ? t.amount : 0);
+  if(walletOf(t) !== wid) return 0;
+  return t.type === 'inc' ? t.amount : -t.amount;
+}
+function walletBalance(w){
+  const cs = (S.cashCounts || []).filter(c => (c.walletId && byId(S.wallets, c.walletId) ? c.walletId : mainWallet()) === w.id).sort((a, b) => evKey(a) < evKey(b) ? -1 : 1);
   const last = cs[cs.length - 1] || null, lk = last ? evKey(last) : '';
-  const flow = sum(S.tx.filter(t => !last || evKey(t) > lk), t => t.type === 'inc' ? t.amount : -t.amount);
-  return {known:!!last, last, value:(last ? last.amount : 0) + flow};
+  return {w, known:!!last, last, value:(last ? last.amount : 0) + sum(S.tx.filter(t => !last || evKey(t) > lk), t => walletFlow(t, w.id))};
+}
+function cashBalance(){
+  const bs = S.wallets.map(walletBalance);
+  const last = bs.map(b => b.last).filter(Boolean).sort((a, b) => evKey(a) < evKey(b) ? -1 : 1).pop() || null;
+  return {known:bs.some(b => b.known), last, value:sum(bs, b => b.value), wallets:bs};
 }
 
 /* ---- ملخص شهر مالي ---- */
@@ -863,7 +879,8 @@ function renderHero(){
       <span>اتصرف <b class="num">${fmt(o.outActual)}</b></span>
       <span>حر للصرف <b class="num">${fmt(o.free)}</b></span>
       ${totalReserved() > 0 ? `<span>محجوز للمواعيد <b class="num">${fmt(totalReserved())}</b></span>` : ''}
-    </div>`;
+    </div>
+    ${S.wallets.length > 1 ? `<div class="hero-pills" style="margin-top:8px">${b.wallets.map(x => `<span>${x.w.icon} ${esc(x.w.name)} <b class="num">${fmt(x.value)}</b></span>`).join('')}<span data-act="transfer" style="cursor:pointer">⇄ تحويل</span></div>` : ''}`;
 }
 
 function stat(title, icon, planned, done, doneLabel, barCls){
@@ -1093,6 +1110,7 @@ function alertsHtml(o){
 
 /* ===================== اليومية ===================== */
 function txInfo(t){
+  if(t.type === 'xfer'){ const a = byId(S.wallets, t.from), b = byId(S.wallets, t.to); return {ic:'⇄', title:`تحويل: ${a ? a.name : '—'} ← ${b ? b.name : '—'}`}; }
   if(t.type === 'inc' && t.recvId){ const rv = byId(S.recvs || [], t.recvId); return {ic:'🤝', title:'رجعلي من: ' + (rv ? rv.name : (t.note || '—'))}; }
   if(t.type === 'inc'){ const i = byId(S.incomes, t.incomeId); return {ic:'💰', title:i ? i.name : 'دخل إضافي'}; }
   if(t.type === 'lend'){ const rv = byId(S.recvs || [], t.recvId); return {ic:'🤝', title:'سلّفت: ' + (rv ? rv.name : (t.note || '—'))}; }
@@ -1105,6 +1123,7 @@ function txInfo(t){
   return {ic:c.icon, title:it ? `${it.name} (${qtyPlain(it, t.qty)})` : c.name};
 }
 function txRow(t){
+  if(t.type === 'xfer'){ const i = txInfo(t); return `<div class="list-item" data-act="editTx" data-id="${t.id}"><div class="li-ic">⇄</div><div class="li-main"><div class="li-title">${esc(i.title)}</div>${t.note ? `<div class="li-sub">${esc(t.note)}</div>` : ''}</div><div class="li-end"><b class="num muted">${fmt(t.amount)}</b></div></div>`; }
   const i = txInfo(t), plus = t.type === 'inc' || ((t.type === 'save' || t.type === 'reserve') && t.amount < 0);
   return `<div class="list-item" data-act="editTx" data-id="${t.id}">
     <div class="li-ic">${i.ic}</div>
@@ -1114,6 +1133,7 @@ function txRow(t){
 PAGES.log = function(){
   const o = summary(VIEW);
   const F = {all:'الكل', exp:'مصروف', bill:'التزامات', debt:'ديون', save:'تحويش', reserve:'محجوز', lend:'سلف', inc:'دخل'};
+  if(S.wallets.length > 1) F.xfer = 'تحويلات';
   let list = o.T.slice();
   if(LOGF !== 'all') list = list.filter(t => t.type === LOGF);
   list.sort((a, b) => evKey(a) < evKey(b) ? 1 : -1);
@@ -1129,7 +1149,7 @@ PAGES.log = function(){
   list.forEach(t => {
     if(t.date !== cur){
       cur = t.date;
-      const dayOut = sum(list.filter(x => x.date === cur && x.type !== 'inc'), x => x.amount);
+      const dayOut = sum(list.filter(x => x.date === cur && x.type !== 'inc' && x.type !== 'xfer'), x => x.amount);
       h += `<div class="day-h"><span>${dayLabel(cur)}</span><span class="num">${dayOut ? '−' + fmt(dayOut) : ''}</span></div>`;
     }
     h += txRow(t);
@@ -1370,6 +1390,7 @@ function recvItemForm(rid, iid){
 }
 function recvGet(id){
   const rv = byId(S.recvs, id), nx = recvNext(rv), left = recvRemaining(rv);
+  NEXT_WALLET = {label:'استلمتهم في'};
   openSheet('رجعلك من ' + rv.name, `${Fd.num('amount', 'استلمت كام', nx ? Math.round(nx.left) : left, 'autofocus', `باقي ليك عنده <b class="num">${fmt(left)}</b>`)}${Fd.date('date', 'التاريخ', todayS())}${Fd.foot('سجّل')}`, v => {
     const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
     const date = v.date || todayS();
@@ -1800,6 +1821,10 @@ PAGES.settings = function(){
     <label class="fld"><span>الشهر بيبدأ يوم</span><select data-act="cycleDay">${Array.from({length:28}, (_, i) => `<option value="${i + 1}" ${s.cycleDay === i + 1 ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></label></div>`;
   h += `<div class="card"><h3>🏷️ تصنيفات المصروف <button class="btn sm dark" data-act="catForm">+ إضافة</button></h3>
     <div class="chips" style="flex-wrap:wrap">${S.cats.map(c => `<button class="chip" data-act="catForm" data-id="${c.id}">${c.icon} ${esc(c.name)}</button>`).join('')}</div></div>`;
+  h += `<div class="card"><h3>👛 المحافظ <button class="btn sm dark" data-act="walletForm">+ محفظة</button></h3>
+    <div class="muted" style="line-height:1.8; margin-bottom:6px">لو فلوسك موزعة (كاش، بنك، فودافون كاش، إنستاباي)، ضيف كل واحدة، وهتختار منين دفعت وقت التسجيل.</div>
+    ${cashBalance().wallets.map(x => `<div class="list-item" data-act="walletForm" data-id="${x.w.id}"><div class="li-ic">${x.w.icon}</div><div class="li-main"><div class="li-title">${esc(x.w.name)}${x.w.id === mainWallet() ? ' <span class="tag">الأساسية</span>' : ''}</div></div><div class="li-end">${money(x.value)}</div></div>`).join('')}
+    ${S.wallets.length > 1 ? '<button class="btn sm" style="margin-top:8px" data-act="transfer">⇄ تحويل بين المحافظ</button>' : ''}</div>`;
   h += `<div class="card"><h3>☁️ المزامنة مع جوجل شيت <span class="tag ${s.syncUrl ? 'good' : ''}">${s.syncUrl ? 'شغالة' : 'مقفولة'}</span></h3>
     <div class="muted" style="line-height:1.9">${s.syncUrl ? 'بياناتك بتتحفظ على جوجل شيت أول بأول.' : `<b>أضمن حماية لبياناتك</b> — بتتحفظ على جوجل وتفتحها من أي جهاز. الخطوات (مرة واحدة، 5 دقايق):
       <br>١. دوس <b>"انسخ كود السكريبت"</b> تحت.
@@ -1828,7 +1853,18 @@ PAGES.settings = function(){
 
 /* ===================== الشيت (النوافذ) ===================== */
 let SHEET_SUBMIT = null, lastSubmit = 0;
+let NEXT_WALLET = null, PENDING_WALLET = null;
+function walletSelect(sel, label){
+  sel = byId(S.wallets, sel) ? sel : (byId(S.wallets, S.settings.lastWallet) ? S.settings.lastWallet : mainWallet());
+  return `<label class="fld"><span>${label || 'المحفظة'}</span><select name="wallet">${S.wallets.map(w => `<option value="${w.id}" ${w.id === sel ? 'selected' : ''}>${w.icon} ${esc(w.name)}</option>`).join('')}</select></label>`;
+}
 function openSheet(title, body, onSubmit){
+  // الشاشات اللي بتحرّك فلوس بتاخد اختيار المحفظة (لو عندك أكتر من واحدة)
+  if(NEXT_WALLET && S.wallets.length > 1){
+    const f = walletSelect(NEXT_WALLET.sel, NEXT_WALLET.label), i = body.lastIndexOf('<div class="sheet-foot">');
+    body = i >= 0 ? body.slice(0, i) + f + body.slice(i) : body + f;
+  }
+  NEXT_WALLET = null;
   $('#sheetTitle').textContent = title;
   $('#sheetBody').innerHTML = body;
   $('#sheetWrap').classList.add('open');
@@ -1846,7 +1882,11 @@ $('#sheetForm').addEventListener('submit', e => {
   lastSubmit = Date.now();
   const fd = new FormData(e.target), v = {};
   for(const [k, val] of fd.entries()) v[k] = val;
-  if(SHEET_SUBMIT(v, e.target) !== false) closeSheet();
+  PENDING_WALLET = v.wallet ? {w:v.wallet, n0:S.tx.length} : null;
+  if(v.wallet) S.settings.lastWallet = v.wallet;
+  const ok = SHEET_SUBMIT(v, e.target);
+  PENDING_WALLET = null;
+  if(ok !== false) closeSheet();
 });
 $('#sheetWrap').addEventListener('click', e => { if(e.target.id === 'sheetWrap') closeSheet(); });
 
@@ -1884,6 +1924,7 @@ function quickAdd(preset){
   body += Fd.date('date', 'التاريخ', t ? t.date : (preset.date || todayS()));
   body += Fd.foot(t ? 'حفظ التعديل' : 'سجّل', t ? {act:'delTx', id:t.id} : null);
   const title = t ? 'تعديل: ' + txInfo(t).title : isInc ? 'دخل إضافي' : 'مصروف جديد';
+  NEXT_WALLET = {sel:t && t.walletId, label:t && t.type === 'inc' ? 'دخلوا في' : 'دفعت من'};
   openSheet(title, body, v => {
     const amount = num(v.amount);
     if(!need(amount > 0, 'اكتب المبلغ')) return false;
@@ -1891,6 +1932,7 @@ function quickAdd(preset){
     if(t){
       t.amount = (t.type === 'save' || t.type === 'reserve') && t.amount < 0 ? -amount : amount;
       t.note = v.note.trim(); t.date = v.date || t.date;
+      if(v.wallet) t.walletId = v.wallet;
       if(v.cat) t.cat = v.cat;
       if(t.itemId && v.qty !== undefined) t.qty = num(v.qty);
       save(); toast('اتعدّل');
@@ -1989,6 +2031,7 @@ function buyItem(id){
     <div class="fld2">${Fd.num('qty', '<span data-bl-l="qty">الكمية</span>', q0, 'autofocus data-bl')}${Fd.num('amount', 'دفعت كام إجمالي', it.price ? Math.round(q0 * f0 * it.price) : '')}</div>
     <div class="muted" data-bl-l="conv" style="margin:-4px 0 10px"></div>
     ${Fd.date('date', 'التاريخ', todayS())}<div class="muted">هيتسجّل كمصروف "استوك البيت"، والكمية هتتضاف للموجود، والسعر هيتحدّث.</div>${Fd.foot('سجّل الشراء')}`;
+  NEXT_WALLET = {label:'دفعت من'};
   openSheet('اشتريت ' + it.name, body, v => {
     const q = num(v.qty), a = num(v.amount);
     if(!need(q > 0, 'اكتب الكمية')) return false;
@@ -2054,6 +2097,7 @@ function multiAdd(preset){
     ${Fd.text('note', 'المكان / ملاحظة للكل (اختياري)', '', 'placeholder="مثلاً: كارفور، السوق"')}
     ${Fd.date('date', 'التاريخ', preset.date || todayS())}
     ${Fd.foot('سجّل الكل')}`;
+  NEXT_WALLET = {label:'دفعت من'};
   openSheet('🧾 كذا حاجة مع بعض', body, v => {
     mlRead();
     const lines = ML.filter(o => num(o.amount) > 0);
@@ -2094,6 +2138,7 @@ function buyMany(){
       <td><input name="c_${x.it.id}" inputmode="decimal" value="${x.cost ? Math.round(x.cost) : ''}" style="width:78px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center"></td></tr>`;
   });
   body += `</table>${Fd.date('date', 'التاريخ', todayS())}${Fd.foot('سجّل كل ده')}`;
+  NEXT_WALLET = {label:'دفعت من'};
   openSheet('اشتريت من القائمة', body, v => {
     let n = 0, tot = 0;
     L.forEach(x => {
@@ -2133,6 +2178,7 @@ function billForm(id){
 }
 function payBill(id){
   const b = byId(S.bills, id);
+  NEXT_WALLET = {label:'دفعت من'};
   openSheet('دفعت ' + b.name, `${Fd.num('amount', 'المبلغ اللي اتدفع', b.amount, 'autofocus', 'لو الفاتورة جت مختلفة (كهربا مثلًا) اكتب الرقم الحقيقي.')}${Fd.date('date', 'التاريخ', defaultDate())}${Fd.text('note', 'ملاحظة', '')}${Fd.foot('سجّل الدفع')}`, v => {
     const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
     S.tx.push({id:uid(), ts:Date.now(), type:'bill', billId:id, amount:a, note:v.note.trim(), date:v.date || todayS()});
@@ -2168,6 +2214,7 @@ function debtForm(id){
 }
 function payDebt(id){
   const d = byId(S.debts, id), rem = debtRemaining(d);
+  NEXT_WALLET = {label:'دفعت من'};
   openSheet('سداد: ' + d.name, `${Fd.num('amount', 'المبلغ اللي اتسدد', Math.min(d.monthly || rem, rem), 'autofocus', `الباقي عليك <b class="num">${fmt(rem)}</b>`)}${Fd.date('date', 'التاريخ', defaultDate())}${Fd.text('note', 'ملاحظة', '')}${Fd.foot('سجّل السداد')}`, v => {
     const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
     S.tx.push({id:uid(), ts:Date.now(), type:'debt', debtId:id, amount:Math.min(a, rem || a), note:v.note.trim(), date:v.date || todayS()});
@@ -2246,6 +2293,7 @@ function eventForm(id){
 function reserveDue(id){
   const d = byId(S.dues, id), l = summary(periodOf(todayS())).dueLines.find(x => x.d.id === id);
   const res = Math.max(0, dueReserved(d)), sug = Math.min(d.amount - res, l ? Math.max(l.per - l.resThis, 0) || l.per : d.amount - res);
+  NEXT_WALLET = {label:'شلتهم من'};
   openSheet('شلت لـ ' + dueName(d), `${Fd.num('amount', 'حطيت على جنب كام', Math.round(sug), 'autofocus', `جاهز <b class="num">${fmt(res)}</b> من <b class="num">${fmt(d.amount)}</b>`)}${Fd.date('date', 'التاريخ', todayS())}${Fd.foot('سجّل')}`, v => {
     const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
     S.tx.push({id:uid(), ts:Date.now(), type:'reserve', dueId:id, dueDate:d.date, amount:a, note:'', date:v.date || todayS()});
@@ -2255,6 +2303,7 @@ function reserveDue(id){
 function payDue(id){
   const d = byId(S.dues, id), res = Math.max(0, dueReserved(d));
   const ev = d.kind === 'event';
+  NEXT_WALLET = {label:'دفعت من'};
   openSheet((ev ? 'صرفت على: ' : 'دفعت: ') + dueName(d), `${Fd.num('amount', ev ? 'صرفت كام' : 'المبلغ اللي اتدفع', d.amount, 'autofocus', res > 0 ? `منهم <b class="num">${fmt(res)}</b> كانوا محجوزين${ev ? ' — ولو صرفت أقل، الباقي يرجع لرصيدك' : ''}` : '')}${Fd.date('date', 'التاريخ', todayS())}${Fd.foot('سجّل')}`, v => {
     const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
     const date = v.date || todayS(), ts = Date.now(), full = ev || a >= d.amount - 1;
@@ -2341,6 +2390,7 @@ function gameyaCard(g){
 function goalMove(id, sign){
   const g = byId(S.goals, id);
   const def = sign > 0 ? Math.round(goalPlanMonthly(g)) : '';
+  NEXT_WALLET = {label:sign > 0 ? 'حوّشت من' : 'رجعوا في'};
   openSheet((sign > 0 ? 'حوّشت لـ ' : 'سحبت من ') + g.name, `${Fd.num('amount', 'المبلغ', def, 'autofocus')}${Fd.date('date', 'التاريخ', defaultDate())}${Fd.text('note', 'ملاحظة', '')}${Fd.foot('سجّل')}`, v => {
     const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
     S.tx.push({id:uid(), ts:Date.now(), type:'save', goalId:id, amount:sign * a, note:v.note.trim(), date:v.date || todayS()});
@@ -2367,6 +2417,7 @@ function incomeForm(id){
 }
 function receiveIncome(id){
   const i = byId(S.incomes, id);
+  NEXT_WALLET = {label:'نزل في'};
   openSheet('استلمت ' + i.name, `${Fd.num('amount', 'المبلغ اللي نزل فعلًا', i.amount, 'autofocus')}${Fd.date('date', 'التاريخ', defaultDate())}${Fd.foot('سجّل')}`, v => {
     const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
     S.tx.push({id:uid(), ts:Date.now(), type:'inc', incomeId:id, amount:a, note:'', date:v.date || todayS()});
@@ -2415,6 +2466,7 @@ function allocSheet(cfg){
     ${rows.map((r, i) => `<label class="fld"><span>${r.label}</span><input name="a${i}" inputmode="decimal" value="${Math.round(r.v)}" data-alloc></label>`).join('')}
     <div class="note" id="allocLeft"></div>
     <div class="sheet-foot"><button type="submit" class="btn primary">${cfg.ok}</button><button type="button" class="btn" data-act="closeSheet">${cfg.skip}</button></div>`;
+  NEXT_WALLET = {label:'من محفظة'};
   openSheet(cfg.title, body, v => {
     let n = 0; const ts = Date.now();
     rows.forEach((r, i) => {
@@ -2444,25 +2496,71 @@ function setCycleDay(d){
 
 /* ---- جرد الفلوس ---- */
 function cashCount(){
-  const b = cashBalance();
-  const hint = b.known
-    ? `حسب اللي متسجل المفروض معاك <b class="num">${fmt(b.value)}</b> ج.`
-    : 'اجمع الكاش اللي معاك + اللي في البنك أو المحفظة (من غير فلوس التحويش لو حاططها لوحدها).';
+  const B = cashBalance(), multi = S.wallets.length > 1;
   const resNote = totalReserved() > 0 ? `<br>⚠️ من غير الـ <b class="num">${fmt(totalReserved())}</b> اللي شايلهم لمواعيد السداد.` : '';
-  openSheet('جرد الفلوس', Fd.num('amount', 'معاك كام فلوس دلوقتي؟', '', 'autofocus', hint + resNote) + Fd.text('note', 'ملاحظة (اختياري)', '') + Fd.foot('حفظ الرصيد'), v => {
-    if(!need(String(v.amount).trim() !== '', 'اكتب المبلغ')) return false;
-    const amount = num(v.amount), ts = Date.now();
-    if(b.known){
-      const diff = b.value - amount;
-      if(diff > 1 && confirm(`فيه ${fmt(diff)} ج أقل من المتسجل — غالبًا مصاريف ما اتسجلتش.\nأسجّلهم كمصروف "متنوع" عشان الحسابات تتظبط؟`)){
-        S.tx.push({id:uid(), ts, type:'exp', cat:'other', amount:Math.round(diff), note:'فرق جرد الفلوس — مصاريف ما اتسجلتش', date:todayS()});
-      }else if(diff < -1){
-        toast(`معاك ${fmt(-diff)} ج زيادة عن المتسجل — لو دخل فلوس سجّلها كدخل إضافي`);
-      }
-    }
+  let body;
+  if(multi){
+    body = `<div class="muted" style="line-height:1.8; margin-bottom:8px">اكتب اللي في كل محفظة دلوقتي (سيب الفاضي لو مش هتجرده).${resNote}</div>` +
+      B.wallets.map(x => `<div class="jard-row"><div class="nm">${x.w.icon} ${esc(x.w.name)}${x.known ? `<small>المفروض ${fmt(x.value)}</small>` : ''}</div><input name="cw_${x.w.id}" inputmode="decimal" placeholder="${x.known ? fmt(x.value) : '—'}"></div>`).join('');
+  }else{
+    const hint = B.known ? `حسب اللي متسجل المفروض معاك <b class="num">${fmt(B.value)}</b> ج.` : 'اجمع الكاش اللي معاك + اللي في البنك أو المحفظة (من غير فلوس التحويش لو حاططها لوحدها).';
+    body = Fd.num('amount', 'معاك كام فلوس دلوقتي؟', '', 'autofocus', hint + resNote);
+  }
+  body += Fd.text('note', 'ملاحظة (اختياري)', '') + Fd.foot('حفظ الرصيد');
+  openSheet('جرد الفلوس', body, v => {
+    const entries = multi
+      ? B.wallets.filter(x => String(v['cw_' + x.w.id] || '').trim() !== '').map(x => ({x, amount:num(v['cw_' + x.w.id])}))
+      : (String(v.amount).trim() !== '' ? [{x:B.wallets[0], amount:num(v.amount)}] : []);
+    if(!need(entries.length, 'اكتب المبلغ')) return false;
+    const ts = Date.now(), short = entries.filter(e => e.x.known && e.x.value - e.amount > 1), over = entries.filter(e => e.x.known && e.amount - e.x.value > 1);
+    const shortSum = sum(short, e => e.x.value - e.amount);
+    if(short.length && confirm(`فيه ${fmt(shortSum)} ج أقل من المتسجل — غالبًا مصاريف ما اتسجلتش.\nأسجّلهم كمصروف "متنوع" عشان الحسابات تتظبط؟`))
+      short.forEach((e, i) => S.tx.push({id:uid(), ts:ts + i, type:'exp', cat:'other', amount:Math.round(e.x.value - e.amount), note:'فرق جرد الفلوس — مصاريف ما اتسجلتش', date:todayS(), walletId:e.x.w.id}));
     S.cashCounts = S.cashCounts || [];
-    S.cashCounts.push({id:uid(), ts:ts + 1, date:todayS(), amount, note:v.note.trim()});
-    save(); if(!b.known || Math.abs(b.value - amount) <= 1) toast('اتسجّل الرصيد ✔');
+    entries.forEach((e, i) => S.cashCounts.push({id:uid(), ts:ts + 10 + i, date:todayS(), amount:e.amount, walletId:e.x.w.id, note:v.note.trim()}));
+    save();
+    if(over.length) toast(`معاك ${fmt(sum(over, e => e.amount - e.x.value))} ج زيادة عن المتسجل — لو دخل فلوس سجّلها كدخل إضافي`);
+    else if(!short.length) toast('اتسجّل الرصيد ✔');
+  });
+}
+
+/* ---- المحافظ والتحويل ---- */
+function walletForm(id){
+  const w = id ? byId(S.wallets, id) : null;
+  const used = w && (S.tx.some(t => walletOf(t) === w.id || t.from === w.id || t.to === w.id) || (S.cashCounts || []).some(c => c.walletId === w.id));
+  let body = `<div class="fld2">${Fd.text('name', 'اسم المحفظة', w ? w.name : '', 'autofocus placeholder="مثلاً: البنك، فودافون كاش، إنستاباي"')}${Fd.text('icon', 'أيقونة', w ? w.icon : '🏦')}</div>`;
+  if(!w) body += Fd.num('start', 'فيها كام دلوقتي', '');
+  body += Fd.foot(w ? 'حفظ' : 'إضافة', w && S.wallets.length > 1 && !used && w.id !== mainWallet() ? {act:'delWallet', id:w.id} : null);
+  if(w && used) body += `<div class="muted" style="margin-top:6px">المحفظة دي عليها حركات، فمينفعش تتمسح.</div>`;
+  openSheet(w ? w.name : 'محفظة جديدة', body, v => {
+    if(!need(v.name.trim(), 'اكتب اسم المحفظة')) return false;
+    const o = w || {id:'w' + uid()};
+    o.name = v.name.trim(); o.icon = v.icon.trim() || '🏦';
+    if(!w){
+      S.wallets.push(o);
+      if(String(v.start || '').trim() !== '') (S.cashCounts = S.cashCounts || []).push({id:uid(), ts:Date.now(), date:todayS(), amount:num(v.start), walletId:o.id, note:'رصيد البداية'});
+    }
+    save(); toast('اتحفظت');
+  });
+}
+function transferForm(id){
+  const t = id ? byId(S.tx, id) : null;
+  if(S.wallets.length < 2){ toast('ضيف محفظة تانية الأول من الإعدادات', true); return; }
+  const opt = (sel, def) => S.wallets.map((w, i) => `<option value="${w.id}" ${(sel || def) === w.id ? 'selected' : ''}>${w.icon} ${esc(w.name)}</option>`).join('');
+  let body = `<div class="fld2"><label class="fld"><span>من</span><select name="from">${opt(t && t.from, S.wallets[0].id)}</select></label><label class="fld"><span>إلى</span><select name="to">${opt(t && t.to, S.wallets[1].id)}</select></label></div>`;
+  body += `<div class="fld2">${Fd.num('amount', 'المبلغ', t ? t.amount : '', 'autofocus')}${t ? '' : Fd.num('fee', 'رسوم التحويل (لو فيه)', '')}</div>`;
+  body += Fd.date('date', 'التاريخ', t ? t.date : todayS()) + Fd.text('note', 'ملاحظة', t ? t.note : '', 'placeholder="مثلاً: سحب من الـ ATM"');
+  body += Fd.foot(t ? 'حفظ' : 'حوّل', t ? {act:'delTx', id:t.id} : null);
+  openSheet(t ? 'تعديل تحويل' : '⇄ تحويل بين المحافظ', body, v => {
+    const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
+    if(!need(v.from !== v.to, 'اختار محفظتين مختلفتين')) return false;
+    const o = t || {id:uid(), ts:Date.now(), type:'xfer'};
+    Object.assign(o, {from:v.from, to:v.to, amount:a, date:v.date || todayS(), note:v.note.trim()});
+    if(!t){
+      S.tx.push(o);
+      if(num(v.fee) > 0) S.tx.push({id:uid(), ts:Date.now() + 1, type:'exp', cat:'other', amount:num(v.fee), note:'رسوم تحويل', date:o.date, walletId:v.from});
+    }
+    save(); toast('اتحوّل ✔');
   });
 }
 
@@ -2544,7 +2642,10 @@ const ACT = {
   qaMulti:() => multiAdd({date:defaultDate()}),
   mlAdd:() => { mlRead(); ML.push({cat:(ML[ML.length - 1] || {}).cat || 'market'}); mlRender(); const a = document.querySelectorAll('#mlines [data-f="amount"]'); a[a.length - 1].focus(); },
   mlDel:(d) => { mlRead(); ML.splice(+d.i, 1); if(!ML.length) ML.push({cat:'market'}); mlRender(); },
-  editTx:(d) => { const t = byId(S.tx, d.id); if(t) quickAdd({tx:t}); },
+  editTx:(d) => { const t = byId(S.tx, d.id); if(!t) return; if(t.type === 'xfer') transferForm(t.id); else quickAdd({tx:t}); },
+  transfer:() => transferForm(),
+  walletForm:(d) => walletForm(d.id),
+  delWallet:(d) => { if(!confirm('تمسح المحفظة دي؟')) return; S.wallets = S.wallets.filter(w => w.id !== d.id); closeSheet(); save(); },
   delTx:(d) => { if(!confirm('تمسح الحركة دي؟')) return; S.tx = S.tx.filter(t => t.id !== d.id); closeSheet(); save(); toast('اتمسحت'); },
   hideOnboarding:() => { S.settings.hideOnboarding = true; save(); },
   noDebts:() => { S.settings.noDebts = true; save(); toast('أحسن حاجة 👌'); },
