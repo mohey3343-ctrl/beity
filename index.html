@@ -868,7 +868,12 @@ function spendCard(o, id){
 /* ===================== الرئيسية ===================== */
 PAGES.home = function(){
   const o = summary(VIEW);
-  let h = onboarding();
+  let h = `<div class="chips" style="margin-bottom:12px">
+    <button class="chip" data-act="tab" data-tab="cash">📈 الكاش فلو</button>
+    <button class="chip" data-act="tab" data-tab="report">📊 تقرير الشهر</button>
+    <button class="chip" data-act="goDues">📅 مواعيد السداد</button>
+    <button class="chip" data-act="goShop">🛒 أشتري إيه</button></div>`;
+  h += onboarding();
   if(o.isCurrent){
     h += `<div class="card today">
       <div class="today-top">
@@ -917,6 +922,10 @@ PAGES.home = function(){
       ${ins.length ? ins.slice(0, 3).map(insightHtml).join('') + (ins.length > 3 ? `<div class="muted">و${ins.length - 3} ملاحظات تانية في التقرير الكامل.</div>` : '') : '<div class="muted">كمّل تسجيل مصاريفك كام يوم، وهتظهر هنا ملاحظات ونقاط تحسين.</div>'}</div>`;
   }
   // الكاش فلو
+  if(o.isCurrent && !cashBalance().known){
+    h += `<div class="card"><h3>📈 الكاش فلو <button class="btn sm dark" data-act="cashCount">اكتب رصيدك</button></h3>
+      <div class="muted">اكتب الفلوس اللي معاك دلوقتي، والبرنامج يتوقعلك رصيدك يوم بيوم وينبّهك قبل أي عجز.</div></div>`;
+  }
   if(o.isCurrent && cashBalance().known){
     const F = forecast(30, !!S.settings.fcRecv);
     h += `<div class="card"><h3>📈 الكاش فلو <button class="btn sm dark" data-act="tab" data-tab="cash">التفاصيل</button></h3>
