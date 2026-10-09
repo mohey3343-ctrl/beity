@@ -1344,6 +1344,7 @@ function quickAdd(preset){
     }else{
       S.tx.push({id:uid(), ts:Date.now(), type, amount, cat:type === 'exp' ? (v.cat || 'other') : undefined, note:v.note.trim(), date:v.date || todayS()});
       save(); toast(type === 'inc' ? 'اتسجّل الدخل' : 'اتسجّل ✔');
+      if(type === 'inc' && amount >= 100) setTimeout(() => allocateExtra(amount, v.date || todayS()), 60);
     }
   });
 }
@@ -1603,6 +1604,49 @@ function receiveIncome(id){
     save(); toast('💰 اتسجّل');
   });
 }
+/* ---- توزيع دخل إضافي (مكافأة، شغل زيادة...) ----
+   الاقتراح: الأول نكمّل أي ميعاد سداد قريب ناقصه فلوس، وبعدين جزء للديون وجزء للهدف،
+   والباقي يفضل للصرف. كل الأرقام تتعدّل قبل التسجيل. */
+function allocateExtra(amount, date){
+  let left = amount;
+  const rows = [];
+  activeDues().filter(d => diffDays(todayS(), d.date) <= 90).sort((a, b) => a.date < b.date ? -1 : 1).forEach(d => {
+    const short = Math.max(0, d.amount - Math.max(0, dueReserved(d)));
+    if(short < 1 || left < 1) return;
+    const a = Math.min(short, left); left -= a;
+    rows.push({k:'due', id:d.id, label:`📅 ${esc(dueName(d))} <span class="muted">(${dayLabel(d.date)} — ناقصه ${fmt(short)})</span>`, v:a});
+  });
+  const debt = S.debts.filter(d => debtRemaining(d) > 0.5).sort((a, b) => debtRemaining(a) - debtRemaining(b))[0];
+  const goal = S.goals.find(g => goalSaved(g) < (g.target || 0));
+  const base = left;
+  if(debt){ const a = Math.min(debtRemaining(debt), Math.round(base * (goal ? 0.3 : 0.6))); left -= a; rows.push({k:'debt', id:debt.id, label:`💳 سداد زيادة من دين: ${esc(debt.name)} <span class="muted">(باقي ${fmt(debtRemaining(debt))})</span>`, v:a}); }
+  if(goal){ const a = Math.round(base * (debt ? 0.5 : 0.7)); left -= a; rows.push({k:'goal', id:goal.id, label:`${esc(goal.icon || "🎯")} تحويش للهدف: ${esc(goal.name)}`, v:a}); }
+  if(!rows.length) return;
+  const body = `<div class="muted" style="line-height:1.8; margin-bottom:10px">جالك <b class="num">${fmt(amount)}</b> ج زيادة 🎉 الفلوس الزيادة لو اتسابت في الجيب بتتصرف من غير ما تحس. ده اقتراح للتوزيع، وتقدر تعدّل أي رقم:</div>
+    ${rows.map((r, i) => `<label class="fld"><span>${r.label}</span><input name="a${i}" inputmode="decimal" value="${Math.round(r.v)}" data-alloc></label>`).join('')}
+    <div class="note" id="allocLeft"></div>
+    <div class="sheet-foot"><button type="submit" class="btn primary">وزّع كده</button><button type="button" class="btn" data-act="closeSheet">سيبه كله للصرف</button></div>`;
+  openSheet('توزّع الدخل الإضافي إزاي؟', body, v => {
+    let n = 0; const ts = Date.now();
+    rows.forEach((r, i) => {
+      const a = num(v['a' + i]); if(!(a > 0)) return;
+      if(r.k === 'due'){ const d = byId(S.dues, r.id); S.tx.push({id:uid(), ts:ts + i, type:'reserve', dueId:d.id, dueDate:d.date, amount:a, note:'من دخل إضافي', date}); }
+      if(r.k === 'debt') S.tx.push({id:uid(), ts:ts + i, type:'debt', debtId:r.id, amount:Math.min(a, debtRemaining(byId(S.debts, r.id))), note:'سداد زيادة من دخل إضافي', date});
+      if(r.k === 'goal') S.tx.push({id:uid(), ts:ts + i, type:'save', goalId:r.id, amount:a, note:'من دخل إضافي', date});
+      n++;
+    });
+    if(!n) return;
+    save(); toast('اتوزّع ✔');
+  });
+  const upd = () => {
+    const used = sum([...document.querySelectorAll('#sheetBody [data-alloc]')], x => num(x.value));
+    const el = $('#allocLeft');
+    if(el) el.innerHTML = used > amount ? `<span class="neg">الأرقام أكبر من الدخل بـ <b class="num">${fmt(used - amount)}</b></span>` : `الباقي للصرف: <b class="num">${fmt(amount - used)}</b> ج`;
+  };
+  document.querySelectorAll('#sheetBody [data-alloc]').forEach(x => x.addEventListener('input', upd));
+  upd();
+}
+
 function setCycleDay(d){
   const td = todayS();
   S.settings.cycleDay = d;
