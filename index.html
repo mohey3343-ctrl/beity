@@ -1004,6 +1004,8 @@ PAGES.home = function(){
       ${F.firstNeg ? `<div class="alert bad" style="margin:0"><span class="ic">⚠️</span><span class="tx">متوقع عجز ${dayLabel(F.firstNeg.date)} — أقل نقطة <b class="num">${fmt(F.min.bal)}</b>. شوف التفاصيل والحلول.</span></div>`
         : `<div class="muted">أقل رصيد متوقع في الـ 30 يوم الجاية: <b class="num">${fmt(F.min.bal)}</b> ج يوم ${dayLabel(F.min.date)} ✅</div>`}</div>`;
   }
+  // حدود المصروف
+  h += limitsCard(o);
   // بتصرف فين (دايرة)
   h += spendCard(o, 'dnH');
 
@@ -1071,6 +1073,10 @@ function alertsHtml(o){
   });
   const toSet = sum(o.dueLines.filter(l => diffDays(td, l.d.date) > 14), l => Math.max(0, l.per - l.resThis));
   if(toSet > 1) out.push(['info', '📥', `الشهر ده المفروض تشيل <b class="num">${fmt(toSet)}</b> للمواعيد الجاية`, `<button class="btn sm dark" data-act="goDues">التفاصيل</button>`]);
+  limitLines(o).forEach(l => {
+    if(l.pct >= 1) out.push(['bad', l.c.icon, `${esc(l.c.name)} عدّى الحد الشهري: <b class="num">${fmt(l.spent)}</b> من <span class="num">${fmt(l.c.limit)}</span>`]);
+    else if(l.pct >= 0.8) out.push(['warn', l.c.icon, `${esc(l.c.name)} وصل <b class="num">${Math.round(l.pct * 100)}%</b> من الحد — فاضل <span class="num">${fmt(l.c.limit - l.spent)}</span> لآخر الشهر`]);
+  });
   const low = S.items.map(it => ({it, d:daysLeft(it)})).filter(x => x.d != null && x.d <= 5).sort((a, b) => a.d - b.d);
   if(low.length) out.push(['warn', '🧺', `هيخلصوا قريب: ${low.slice(0, 4).map(x => esc(x.it.name) + ' (' + Math.max(0, Math.floor(x.d)) + ' يوم)').join('، ')}${low.length > 4 ? '…' : ''}`, `<button class="btn sm dark" data-act="goShop">قائمة الشراء</button>`]);
   // امبارح ما اتسجلش فيه ولا مصروف
@@ -1487,6 +1493,11 @@ function insights(p){
       else if(b > 0 && cur < b * 0.8 && b - cur >= 300) out.push(['good', '✅', `${name} أقل من متوسطك بـ <b class="num">${fmt(b - cur)}</b> — برافو.`]);
     }
   }
+  // حدود التصنيفات
+  limitLines(o).forEach(l => {
+    if(l.pct >= 1) out.push(['bad', '🎯', `${esc(l.c.name)} عدّى الحد بـ <b class="num">${fmt(l.spent - l.c.limit)}</b> (${fmt(l.spent)} من ${fmt(l.c.limit)}).`]);
+    else if(o.isCurrent && l.pace > l.c.limit * 1.05 && el >= 5) out.push(['warn', '🎯', `${esc(l.c.name)} ماشي بمعدل هيوصل <b class="num">${fmt(l.pace)}</b> والحد <span class="num">${fmt(l.c.limit)}</span> — هدّي شوية.`]);
+  });
   // ٣) المصاريف الصغيرة المتكررة
   FLEX_CATS.forEach(c => {
     const ts = o.T.filter(t => t.type === 'exp' && t.cat === c);
@@ -1885,7 +1896,9 @@ function quickAdd(preset){
       save(); toast('اتعدّل');
     }else{
       S.tx.push({id:uid(), ts:Date.now(), type, amount, cat:type === 'exp' ? (v.cat || 'other') : undefined, note:v.note.trim(), date:v.date || todayS()});
-      save(); toast(type === 'inc' ? 'اتسجّل الدخل' : 'اتسجّل ✔');
+      save();
+      const lm = type === 'exp' ? limitMsg(v.cat || 'other') : null;
+      if(lm) setTimeout(() => toast(lm.t, lm.bad), 50); else toast(type === 'inc' ? 'اتسجّل الدخل' : 'اتسجّل ✔');
       if(type === 'inc' && amount >= 100) setTimeout(() => allocateExtra(amount, v.date || todayS()), 60);
     }
   });
@@ -2055,7 +2068,9 @@ function multiAdd(preset){
       if(it){ recordBuy(it, num(o.qty) * packF(it), a, date); Object.assign(S.tx[S.tx.length - 1], {ts:ts + i, grp, note:it.name + (place ? ' — ' + place : '')}); }
       else S.tx.push({id:uid(), ts:ts + i, grp, type:'exp', cat:o.cat || 'other', amount:a, note:[o.label.trim(), place].filter(Boolean).join(' — '), date});
     });
-    save(); toast(`اتسجّل ${lines.length} حاجة بـ ${fmt(total)} ج ✔`);
+    save();
+    const lm = [...new Set(lines.map(o => o.cat))].map(limitMsg).filter(Boolean).sort((a, b) => b.bad - a.bad)[0];
+    toast(lm ? lm.t : `اتسجّل ${lines.length} حاجة بـ ${fmt(total)} ج ✔`, lm && lm.bad);
   });
   mlRender();
   setTimeout(() => { const f = document.querySelector('#mlines [data-f="amount"]'); if(f) f.focus(); }, 80);
@@ -2451,16 +2466,60 @@ function cashCount(){
   });
 }
 
+/* ---- حدود المصروف لكل تصنيف ---- */
+function limitLines(o){
+  const by = expByCat(o.T), el = elapsedDays(o);
+  return S.cats.filter(c => c.limit > 0).map(c => {
+    const spent = by[c.id] || 0, pct = spent / c.limit;
+    return {c, spent, pct, pace:o.isCurrent ? spent / el * o.r.days : spent};
+  });
+}
+/* رسالة بعد تسجيل مصروف لو التصنيف قرّب أو عدّى الحد */
+function limitMsg(catId){
+  const c = byId(S.cats, catId); if(!c || !(c.limit > 0)) return null;
+  const spent = expByCat(summary(periodOf(todayS())).T)[catId] || 0, pct = spent / c.limit;
+  if(pct >= 1) return {t:`⚠️ ${c.name} عدّى الحد: ${fmt(spent)} من ${fmt(c.limit)}`, bad:true};
+  if(pct >= 0.8) return {t:`🟡 ${c.name}: ${Math.round(pct * 100)}% من الحد — فاضل ${fmt(c.limit - spent)}`, bad:false};
+  return null;
+}
+function limitsCard(o){
+  const L = limitLines(o);
+  if(!L.length){
+    if(S.tx.filter(t => t.type === 'exp').length < 10) return '';
+    return `<div class="card"><h3>🎯 حدود المصروف <button class="btn sm dark" data-act="limitsForm">حط حدود</button></h3><div class="muted" style="line-height:1.8">حط حد شهري لكل تصنيف (مثلًا أكل برا 1,500)، والبرنامج ينبّهك لما توصل 80% ولما تعدّيه. أقوى طريقة عملية لتقليل المصاريف.</div></div>`;
+  }
+  const tot = sum(L, l => l.c.limit);
+  return `<div class="card"><h3>🎯 حدود المصروف <button class="btn sm" data-act="limitsForm">تعديل</button></h3>` + L.sort((a, b) => b.pct - a.pct).map(l => {
+    const cls = l.pct >= 1 ? 'bad' : l.pct >= 0.8 ? 'warn' : 'good';
+    const paceTxt = o.isCurrent && l.pct < 1 && l.pace > l.c.limit * 1.05 ? ` · <span class="neg">بالمعدل ده هيوصل ${fmt(l.pace)}</span>` : '';
+    return `<div class="cat-row"><div class="row"><span>${l.c.icon} ${esc(l.c.name)}</span><span><b class="num">${fmt(l.spent)}</b> <span class="muted">من</span> <span class="num">${fmt(l.c.limit)}</span>${l.pct >= 1 ? ' <span class="tag bad">عدّى</span>' : ''}</span></div>
+      <div class="bar ${cls}"><i style="width:${Math.min(100, l.pct * 100)}%"></i></div><div class="muted" style="font-size:11.5px; margin-top:3px">${l.pct >= 1 ? 'زيادة ' + fmt(l.spent - l.c.limit) : 'فاضل ' + fmt(l.c.limit - l.spent)}${paceTxt}</div></div>`;
+  }).join('') + `<div class="muted">مجموع الحدود <b class="num">${fmt(tot)}</b>${o.varBudget > 0 ? ` من المتاح للمصروف <b class="num">${fmt(o.varBudget)}</b>${tot > o.varBudget ? ' — <span class="neg">الحدود أكبر من المتاح</span>' : ''}` : ''}</div></div>`;
+}
+function limitsForm(){
+  const base = baseline(periodOf(todayS()), 3).avg, cats = S.cats.filter(c => c.id !== 'house');
+  const body = `<div class="muted" style="line-height:1.8; margin-bottom:10px">اكتب أقصى مبلغ في الشهر لكل تصنيف عاوز تراقبه، وسيب الباقي فاضي. الرقم الرمادي = متوسط صرفك الحقيقي آخر 3 شهور.</div>
+    ${cats.map(c => `<div class="jard-row"><div class="nm">${c.icon} ${esc(c.name)}${base[c.id] ? `<small>متوسطك ${fmt(base[c.id])}</small>` : ''}</div><input name="l_${c.id}" inputmode="decimal" value="${c.limit > 0 ? c.limit : ''}" placeholder="${base[c.id] ? Math.round(base[c.id] * 0.9 / 50) * 50 : '—'}"></div>`).join('')}
+    ${Object.keys(base).length ? '<button type="button" class="btn sm" style="margin-top:8px" data-act="limitsSuggest">اقترح: متوسطي ناقص 10%</button>' : ''}
+    ${Fd.foot('حفظ الحدود')}`;
+  openSheet('🎯 حدود المصروف الشهرية', body, v => {
+    cats.forEach(c => { const n = num(v['l_' + c.id]); if(n > 0) c.limit = n; else delete c.limit; });
+    save(); toast('اتحفظت الحدود');
+  });
+}
+
 /* ---- التصنيفات ---- */
 function catForm(id){
   const c = id ? byId(S.cats, id) : null;
   const used = c ? S.tx.some(t => t.cat === c.id) : false;
   let body = `<div class="fld2">${Fd.text('name', 'اسم التصنيف', c ? c.name : '', 'autofocus')}${Fd.text('icon', 'أيقونة (إيموجي)', c ? c.icon : '🧾')}</div>`;
+  if(!c || c.id !== 'house') body += Fd.num('limit', 'حد شهري (اختياري)', c && c.limit > 0 ? c.limit : '', '', 'البرنامج هينبّهك لما توصل 80% من الحد ولما تعدّيه.');
   body += Fd.foot('حفظ', c && !c.fixed ? {act:'delCat', id:c.id, label:used ? 'حذف (مستخدم)' : 'حذف'} : null);
   openSheet(c ? 'تعديل تصنيف' : 'تصنيف جديد', body, v => {
     if(!need(v.name.trim(), 'اكتب الاسم')) return false;
     const o = c || {id:'c' + uid()};
     o.name = v.name.trim(); o.icon = v.icon.trim() || '🧾';
+    if(v.limit !== undefined){ if(num(v.limit) > 0) o.limit = num(v.limit); else delete o.limit; }
     if(!c) S.cats.push(o);
     save();
   });
@@ -2602,6 +2661,11 @@ const ACT = {
   receiveIncome:(d) => receiveIncome(d.id),
   delIncome:(d) => { if(!confirm('تمسح مصدر الدخل ده؟ (المبالغ المستلمة هتفضل كدخل إضافي)')) return; S.incomes = S.incomes.filter(i => i.id !== d.id); closeSheet(); save(); },
   catForm:(d) => catForm(d.id),
+  limitsForm,
+  limitsSuggest:() => {
+    const base = baseline(periodOf(todayS()), 3).avg;
+    Object.entries(base).forEach(([c, v]) => { const el = $(`#sheetBody [name="l_${c}"]`); if(el && v > 0) el.value = Math.round(v * 0.9 / 50) * 50; });
+  },
   delCat:(d) => {
     if(!confirm('تمسح التصنيف؟ المصروفات اللي عليه هتتنقل لـ "متنوع".')) return;
     S.tx.forEach(t => { if(t.cat === d.id) t.cat = 'other'; });
