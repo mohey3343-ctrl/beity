@@ -354,7 +354,7 @@ function fresh(){
   return {
     v:1, updatedAt:0,
     settings:{cycleDay:1, coverMode:'month', bufferDays:3, debtExtra:0, syncUrl:'', syncSecret:''},
-    incomes:[], bills:[], debts:[], goals:[], items:[], counts:[], tx:[],
+    incomes:[], bills:[], debts:[], goals:[], items:[], counts:[], tx:[], cashCounts:[],
     cats: DEFAULT_CATS.map(c => Object.assign({}, c)),
   };
 }
@@ -562,6 +562,16 @@ function goalProjection(g){
   return {saved, base, atDeadline:atDeadline == null ? acc : atDeadline, reachAt, months};
 }
 
+/* ---- الرصيد الفعلي ----
+   = آخر جرد للفلوس + أي دخل اتسجل بعده − أي حاجة اتصرفت/اتدفعت/اتحوّشت بعده.
+   المرتب المتوقع مش بيدخل هنا غير لما تسجّل إنه نزل فعلًا. */
+function cashBalance(){
+  const cs = (S.cashCounts || []).slice().sort((a, b) => evKey(a) < evKey(b) ? -1 : 1);
+  const last = cs[cs.length - 1] || null, lk = last ? evKey(last) : '';
+  const flow = sum(S.tx.filter(t => !last || evKey(t) > lk), t => t.type === 'inc' ? t.amount : -t.amount);
+  return {known:!!last, last, value:(last ? last.amount : 0) + flow};
+}
+
 /* ---- ملخص شهر مالي ---- */
 function summary(p){
   const r = periodRange(p), T = txBetween(r.start, r.end);
@@ -636,11 +646,15 @@ function render(){
 function renderHero(){
   const o = summary(VIEW);
   $('#periodLabel').innerHTML = periodLabel(VIEW) + (o.isCurrent ? '' : '<small>اضغط للرجوع للشهر الحالي</small>');
+  const b = cashBalance();
   $('#heroMain').innerHTML = `
-    <div class="lbl">الباقي من دخل الشهر</div>
-    <div class="big num ${o.cash < 0 ? 'neg' : ''}">${fmt(o.cash)}</div>
+    <div class="lbl">رصيدك دلوقتي (الفلوس اللي معاك فعلًا)</div>
+    ${b.known
+      ? `<div class="big num ${b.value < 0 ? 'neg' : ''}">${fmt(b.value)}</div>
+         <div style="margin:-2px 0 10px"><button class="btn sm" style="background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.2)" data-act="cashCount">جرد الفلوس · آخر جرد ${dayLabel(b.last.date)}</button></div>`
+      : `<div style="margin:8px 0 12px"><button class="btn primary" data-act="cashCount">اكتب رصيدك الحالي</button></div>`}
     <div class="hero-pills">
-      <span>الدخل <b class="num">${fmt(o.income)}</b></span>
+      <span>دخل نزل <b class="num">${fmt(o.incReceived)}</b></span>
       <span>اتصرف <b class="num">${fmt(o.outActual)}</b></span>
       <span>حر للصرف <b class="num">${fmt(o.free)}</b></span>
     </div>`;
@@ -726,6 +740,7 @@ PAGES.home = function(){
 
 function onboarding(){
   const steps = [
+    [(S.cashCounts || []).length > 0, 'اكتب رصيدك الحالي (الفلوس اللي معاك)', 'cashCount'],
     [S.incomes.length > 0, 'سجّل مرتبك ومصادر دخلك', 'incomeForm'],
     [S.bills.length > 0, 'التزاماتك الشهرية (إيجار، كهربا، نت، مدارس...)', 'billForm'],
     [S.debts.length > 0 || S.settings.noDebts, 'الديون اللي عليك', 'debtForm'],
@@ -1264,6 +1279,29 @@ function setCycleDay(d){
   VIEW = periodOf(td);
 }
 
+/* ---- جرد الفلوس ---- */
+function cashCount(){
+  const b = cashBalance();
+  const hint = b.known
+    ? `حسب اللي متسجل المفروض معاك <b class="num">${fmt(b.value)}</b> ج.`
+    : 'اجمع الكاش اللي معاك + اللي في البنك أو المحفظة (من غير فلوس التحويش لو حاططها لوحدها).';
+  openSheet('جرد الفلوس', Fd.num('amount', 'معاك كام فلوس دلوقتي؟', '', 'autofocus', hint) + Fd.text('note', 'ملاحظة (اختياري)', '') + Fd.foot('حفظ الرصيد'), v => {
+    if(!need(String(v.amount).trim() !== '', 'اكتب المبلغ')) return false;
+    const amount = num(v.amount), ts = Date.now();
+    if(b.known){
+      const diff = b.value - amount;
+      if(diff > 1 && confirm(`فيه ${fmt(diff)} ج أقل من المتسجل — غالبًا مصاريف ما اتسجلتش.\nأسجّلهم كمصروف "متنوع" عشان الحسابات تتظبط؟`)){
+        S.tx.push({id:uid(), ts, type:'exp', cat:'other', amount:Math.round(diff), note:'فرق جرد الفلوس — مصاريف ما اتسجلتش', date:todayS()});
+      }else if(diff < -1){
+        toast(`معاك ${fmt(-diff)} ج زيادة عن المتسجل — لو دخل فلوس سجّلها كدخل إضافي`);
+      }
+    }
+    S.cashCounts = S.cashCounts || [];
+    S.cashCounts.push({id:uid(), ts:ts + 1, date:todayS(), amount, note:v.note.trim()});
+    save(); if(!b.known || Math.abs(b.value - amount) <= 1) toast('اتسجّل الرصيد ✔');
+  });
+}
+
 /* ---- التصنيفات ---- */
 function catForm(id){
   const c = id ? byId(S.cats, id) : null;
@@ -1354,6 +1392,7 @@ const ACT = {
     S.goals = S.goals.filter(g => g.id !== d.id); S.tx = S.tx.filter(t => !(t.type === 'save' && t.goalId === d.id)); closeSheet(); save();
   },
   incomeForm:(d) => incomeForm(d.id),
+  cashCount,
   receiveIncome:(d) => receiveIncome(d.id),
   delIncome:(d) => { if(!confirm('تمسح مصدر الدخل ده؟ (المبالغ المستلمة هتفضل كدخل إضافي)')) return; S.incomes = S.incomes.filter(i => i.id !== d.id); closeSheet(); save(); },
   catForm:(d) => catForm(d.id),
