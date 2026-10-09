@@ -1,0 +1,1511 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#2b2752">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="بيتي">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>بيتي — ميزانية البيت</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=El+Messiri:wght@500;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f3f5fb; --card:#ffffff; --card-2:#f7f8fd;
+    --ink:#1f1c3d; --soft:#69708a; --line:#e3e7f2;
+    --night:#2b2752; --night-2:#1a1834;
+    --gold:#e9a83e; --gold-2:#d68d22;
+    --good:#0f9d6b; --good-bg:#e5f6ef;
+    --bad:#d94545; --bad-bg:#fdecec;
+    --warn:#c97a10; --warn-bg:#fdf3e2;
+    --blue:#3b6fd8; --blue-bg:#e9f0fd;
+    --purple:#7a5bd6; --purple-bg:#efeafc;
+    --radius:16px;
+    --shadow:0 4px 18px rgba(30,30,80,.07);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#121124; --card:#1d1b36; --card-2:#242244;
+      --ink:#ecebf7; --soft:#a3a6c2; --line:#302d55;
+      --good-bg:#12342a; --bad-bg:#3a1c25; --warn-bg:#3a2c14; --blue-bg:#1a2a4d; --purple-bg:#2a2250;
+      --shadow:0 4px 18px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:'IBM Plex Sans Arabic', system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased; -webkit-tap-highlight-color:transparent;
+    padding-bottom:calc(84px + env(safe-area-inset-bottom));
+  }
+  h1,h2,h3{font-family:'El Messiri', sans-serif; margin:0;}
+  .num{font-family:'IBM Plex Mono','IBM Plex Sans Arabic',monospace; font-weight:600; direction:ltr; unicode-bidi:isolate;}
+  .wrap{max-width:620px; margin:0 auto; padding:0 14px;}
+  button{font-family:inherit; cursor:pointer;}
+  input,select,textarea{font-family:inherit; font-size:16px;}
+
+  /* ---------- HERO ---------- */
+  .hero{
+    position:relative; overflow:hidden;
+    background:linear-gradient(175deg, var(--night) 0%, var(--night-2) 100%);
+    color:#fff; padding:calc(14px + env(safe-area-inset-top)) 0 20px;
+    border-radius:0 0 26px 26px; box-shadow:0 14px 32px rgba(10,8,30,.3);
+  }
+  .hero::before{content:''; position:absolute; top:-140px; left:50%; transform:translateX(-50%);
+    width:340px; height:340px; border-radius:50%;
+    background:radial-gradient(circle, rgba(233,168,62,.22) 0%, rgba(233,168,62,0) 70%); pointer-events:none;}
+  .hero .wrap{position:relative;}
+  .hero-top{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
+  .hero-top h1{font-size:24px;}
+  .hero-actions{display:flex; align-items:center; gap:8px;}
+  .icon-btn{background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.18); color:#fff;
+    width:36px; height:36px; border-radius:50%; font-size:17px; display:grid; place-items:center;}
+  .sync-dot{font-size:11px; color:#c9c6ef; max-width:150px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .month-nav{display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom:12px;}
+  .month-nav button{direction:ltr; background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.2); color:#fff;
+    width:32px; height:32px; border-radius:50%; font-size:18px; line-height:1;}
+  .month-label{font-weight:600; font-size:15px; min-width:150px; text-align:center; cursor:pointer;}
+  .month-label small{display:block; font-size:11px; color:#bdb9e8; font-weight:500;}
+  .hero-main{text-align:center;}
+  .hero-main .lbl{font-size:12.5px; color:#cfcbf3;}
+  .hero-main .big{font-size:34px; margin:2px 0 6px;}
+  .hero-main .big.neg{color:#ffb4b4;}
+  .hero-pills{display:flex; justify-content:center; gap:8px; flex-wrap:wrap;}
+  .hero-pills span{background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.14);
+    border-radius:999px; padding:4px 10px; font-size:12px;}
+  .hero-pills b{color:var(--gold);}
+
+  /* ---------- LAYOUT ---------- */
+  main{padding-top:14px;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:var(--shadow); padding:14px; margin-bottom:12px;}
+  .card h3{font-size:16px; margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; gap:8px;}
+  .card h3 .h-actions{display:flex; gap:6px;}
+  .muted{color:var(--soft); font-size:12.5px;}
+  .row{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;}
+  .stat{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:11px 12px; box-shadow:var(--shadow);}
+  .stat .t{font-size:12px; color:var(--soft); display:flex; align-items:center; gap:5px;}
+  .stat .v{font-size:18px; margin:3px 0 6px;}
+  .stat .s{font-size:11.5px; color:var(--soft);}
+  .bar{height:7px; background:var(--card-2); border-radius:999px; overflow:hidden; border:1px solid var(--line);}
+  .bar > i{display:block; height:100%; border-radius:999px; background:var(--blue);}
+  .bar.good > i{background:var(--good);} .bar.bad > i{background:var(--bad);}
+  .bar.warn > i{background:var(--warn);} .bar.gold > i{background:var(--gold);} .bar.purple > i{background:var(--purple);}
+
+  .btn{border:1px solid var(--line); background:var(--card-2); color:var(--ink);
+    border-radius:12px; padding:9px 14px; font-size:14px; font-weight:600;}
+  .btn.sm{padding:6px 10px; font-size:12.5px; border-radius:10px;}
+  .btn.primary{background:linear-gradient(160deg, var(--gold) 0%, var(--gold-2) 100%); border-color:transparent; color:#2b1a00;}
+  .btn.dark{background:var(--night); color:#fff; border-color:transparent;}
+  .btn.good{background:var(--good-bg); color:var(--good); border-color:transparent;}
+  .btn.danger{background:var(--bad-bg); color:var(--bad); border-color:transparent;}
+  .btn.ghost{background:transparent;}
+  .btn.block{display:block; width:100%;}
+  .btn:active{transform:scale(.97);}
+  .btns{display:flex; gap:8px; flex-wrap:wrap;}
+
+  .today{background:linear-gradient(160deg, var(--card) 0%, var(--card-2) 100%);}
+  .today-top{display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:12px;}
+  .today .big{font-size:30px; color:var(--good);}
+  .today .big.neg{color:var(--bad);}
+  .today-side{font-size:12.5px; color:var(--soft); line-height:1.9; text-align:left;}
+  .today-side b{color:var(--ink);}
+
+  .plan-line{display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px dashed var(--line); font-size:14px;}
+  .plan-line:last-child{border-bottom:none;}
+  .plan-line.total{font-weight:700; font-size:15px; border-top:2px solid var(--line); border-bottom:none; margin-top:4px; padding-top:9px;}
+  .pos{color:var(--good);} .neg{color:var(--bad);}
+
+  .alert{display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:12px; margin-bottom:8px; font-size:13.5px;}
+  .alert .ic{font-size:18px;}
+  .alert .tx{flex:1; line-height:1.6;}
+  .alert.bad{background:var(--bad-bg);} .alert.warn{background:var(--warn-bg);} .alert.info{background:var(--blue-bg);} .alert.good{background:var(--good-bg);}
+
+  .cat-row{margin-bottom:10px;}
+  .cat-row .row{font-size:13.5px; margin-bottom:4px;}
+
+  .list-item{display:flex; align-items:center; gap:10px; padding:10px 2px; border-bottom:1px solid var(--line); cursor:pointer;}
+  .list-item:last-child{border-bottom:none;}
+  .li-ic{width:38px; height:38px; border-radius:12px; display:grid; place-items:center; background:var(--card-2); font-size:18px; flex-shrink:0; border:1px solid var(--line);}
+  .li-main{flex:1; min-width:0;}
+  .li-title{font-size:14.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .li-sub{font-size:12px; color:var(--soft); margin-top:1px;}
+  .li-end{text-align:left; flex-shrink:0;}
+  .day-h{display:flex; justify-content:space-between; font-size:12.5px; color:var(--soft); padding:12px 2px 4px; font-weight:600;}
+
+  .seg{display:flex; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:4px; gap:4px; margin-bottom:12px;}
+  .seg button{flex:1; border:none; background:transparent; color:var(--soft); padding:8px 6px; border-radius:9px; font-size:13.5px; font-weight:600;}
+  .seg button.on{background:var(--night); color:#fff;}
+  .chips{display:flex; gap:6px; overflow-x:auto; padding-bottom:4px; margin-bottom:10px; scrollbar-width:none;}
+  .chips::-webkit-scrollbar{display:none;}
+  .chip{border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:999px; padding:6px 12px; font-size:12.5px; white-space:nowrap;}
+  .chip.on{background:var(--night); color:#fff; border-color:var(--night);}
+  .tag{display:inline-block; font-size:11px; padding:2px 7px; border-radius:999px; background:var(--card-2); border:1px solid var(--line); color:var(--soft);}
+  .tag.good{background:var(--good-bg); color:var(--good); border-color:transparent;}
+  .tag.bad{background:var(--bad-bg); color:var(--bad); border-color:transparent;}
+  .tag.warn{background:var(--warn-bg); color:var(--warn); border-color:transparent;}
+  .tag.blue{background:var(--blue-bg); color:var(--blue); border-color:transparent;}
+
+  .empty{text-align:center; padding:26px 10px; color:var(--soft); font-size:14px; line-height:1.8;}
+  .empty .e-ic{font-size:36px; margin-bottom:6px;}
+
+  .steps .step{display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px dashed var(--line); font-size:14px;}
+  .steps .step:last-child{border-bottom:none;}
+  .steps .done{color:var(--good); font-weight:700;}
+  .steps .step .tx{flex:1;}
+
+  table.tbl{width:100%; border-collapse:collapse; font-size:13px;}
+  .tbl th{font-size:11.5px; color:var(--soft); font-weight:600; text-align:right; padding:6px 4px; border-bottom:1px solid var(--line);}
+  .tbl td{padding:8px 4px; border-bottom:1px solid var(--line); vertical-align:middle;}
+  .tbl tr:last-child td{border-bottom:none;}
+
+  .jard-row{display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line);}
+  .jard-row:last-child{border-bottom:none;}
+  .jard-row .nm{flex:1; font-size:14px; font-weight:600;}
+  .jard-row .nm small{display:block; font-weight:400; color:var(--soft); font-size:11.5px;}
+  .jard-row input{width:90px; padding:8px; border:1px solid var(--line); border-radius:10px; background:var(--card-2); color:var(--ink); text-align:center;}
+  .group-h{font-size:12.5px; color:var(--soft); font-weight:700; margin:12px 0 2px;}
+
+  /* ---------- TABBAR + FAB ---------- */
+  .tabbar{position:fixed; bottom:0; left:0; right:0; z-index:30; display:flex; justify-content:center;
+    background:var(--card); border-top:1px solid var(--line); box-shadow:0 -6px 20px rgba(30,40,90,.08);
+    padding:6px 4px calc(8px + env(safe-area-inset-bottom));}
+  .tabbar .in{display:flex; width:100%; max-width:620px;}
+  .tabbar button{flex:1; border:none; background:none; color:var(--soft); display:flex; flex-direction:column; align-items:center; gap:3px; padding:4px 0; font-size:11px; font-weight:600;}
+  .tabbar svg{width:23px; height:23px;}
+  .tabbar button.active{color:var(--night);}
+  @media (prefers-color-scheme: dark){ .tabbar button.active{color:var(--gold);} }
+  .tabbar button.active .tb-ic{background:var(--warn-bg);}
+  .tb-ic{border-radius:10px; padding:3px 10px;}
+  .fab{position:fixed; z-index:31; left:max(16px, calc(50% - 294px)); bottom:calc(80px + env(safe-area-inset-bottom));
+    width:58px; height:58px; border-radius:50%; border:none; font-size:30px; line-height:1;
+    background:linear-gradient(160deg, var(--gold) 0%, var(--gold-2) 100%); color:#2b1a00;
+    box-shadow:0 10px 24px rgba(214,141,34,.45);}
+
+  /* ---------- SHEET ---------- */
+  .sheet-wrap{position:fixed; inset:0; z-index:50; background:rgba(14,12,32,.55); display:none; align-items:flex-end; justify-content:center;}
+  .sheet-wrap.open{display:flex;}
+  .sheet{background:var(--card); width:100%; max-width:620px; max-height:92vh; overflow-y:auto;
+    border-radius:22px 22px 0 0; padding:16px 16px calc(18px + env(safe-area-inset-bottom)); animation:up .18s ease-out;}
+  @keyframes up{from{transform:translateY(40px); opacity:.4} to{transform:none; opacity:1}}
+  .sheet-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;}
+  .sheet-head h2{font-size:19px;}
+  .sheet-head .x{background:var(--card-2); border:1px solid var(--line); color:var(--ink); width:34px; height:34px; border-radius:50%; font-size:16px;}
+  .fld{display:block; margin-bottom:11px;}
+  .fld > span{display:block; font-size:12.5px; color:var(--soft); margin-bottom:4px; font-weight:600;}
+  .fld input, .fld select, .fld textarea{width:100%; padding:11px 12px; border:1px solid var(--line); border-radius:12px; background:var(--card-2); color:var(--ink);}
+  .fld input:focus, .fld select:focus{outline:2px solid var(--gold); outline-offset:0; border-color:transparent;}
+  .fld .hint{font-size:11.5px; color:var(--soft); margin-top:4px; line-height:1.6;}
+  .fld input.amount{font-size:28px; text-align:center; font-family:'IBM Plex Mono', monospace; font-weight:600; padding:12px;}
+  .fld2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .catpick{display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-bottom:12px;}
+  .catpick label{display:block;}
+  .catpick input{position:absolute; opacity:0; pointer-events:none;}
+  .catpick span{display:flex; flex-direction:column; align-items:center; gap:2px; text-align:center; padding:8px 4px; border:1px solid var(--line); border-radius:12px; font-size:11.5px; background:var(--card-2); min-height:58px; justify-content:center;}
+  .catpick span em{font-style:normal; font-size:20px;}
+  .catpick input:checked + span{border-color:var(--gold); background:var(--warn-bg); box-shadow:0 0 0 1px var(--gold) inset;}
+  .sheet-foot{display:flex; gap:8px; margin-top:8px;}
+  .sheet-foot .btn{flex:1; padding:12px;}
+  .switch{display:flex; align-items:center; gap:10px; font-size:13.5px; margin-bottom:11px;}
+  .switch input{width:20px; height:20px; accent-color:var(--gold);}
+
+  .toast{position:fixed; z-index:60; left:50%; transform:translateX(-50%); bottom:calc(150px + env(safe-area-inset-bottom));
+    background:var(--night); color:#fff; padding:10px 18px; border-radius:999px; font-size:13.5px; box-shadow:0 8px 20px rgba(0,0,0,.25);
+    opacity:0; pointer-events:none; transition:opacity .2s;}
+  .toast.show{opacity:1;}
+  .toast.err{background:var(--bad);}
+
+  .hist-row{display:grid; grid-template-columns:72px 1fr 70px; align-items:center; gap:8px; font-size:12px; margin-bottom:7px;}
+  .hist-row .bar{height:12px;}
+  .kv{display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0;}
+  .kv span{color:var(--soft);}
+  .goal-hero{display:flex; align-items:center; gap:12px; margin-bottom:10px;}
+  .goal-hero .gi{font-size:34px;}
+  .ring{--p:0; width:70px; height:70px; border-radius:50%; display:grid; place-items:center; flex-shrink:0;
+    background:conic-gradient(var(--gold) calc(var(--p)*1%), var(--card-2) 0);}
+  .ring b{width:54px; height:54px; border-radius:50%; background:var(--card); display:grid; place-items:center; font-size:13px;}
+  .note{font-size:12.5px; line-height:1.8; color:var(--soft); background:var(--card-2); border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin-top:10px;}
+  .note b{color:var(--ink);}
+  .pre{white-space:pre-wrap; font-size:13px; line-height:1.8; background:var(--card-2); border:1px solid var(--line); border-radius:12px; padding:10px;}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="hero-top">
+      <h1>🏠 بيتي</h1>
+      <div class="hero-actions">
+        <span class="sync-dot" id="syncDot"></span>
+        <button class="icon-btn" data-act="tab" data-tab="settings" aria-label="الإعدادات">⚙︎</button>
+      </div>
+    </div>
+    <div class="month-nav">
+      <button data-act="per" data-d="-1" aria-label="الشهر اللي فات">›</button>
+      <div class="month-label" id="periodLabel" data-act="perNow"></div>
+      <button data-act="per" data-d="1" aria-label="الشهر الجاي">‹</button>
+    </div>
+    <div class="hero-main" id="heroMain"></div>
+  </div>
+</header>
+
+<main class="wrap" id="view"></main>
+
+<button class="fab" data-act="quickAdd" aria-label="سجّل مصروف">+</button>
+
+<nav class="tabbar"><div class="in">
+  <button data-act="tab" data-tab="home"><span class="tb-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-6.5 8 6.5"/><path d="M6 9.5V20h12V9.5"/><path d="M10 20v-5h4v5"/></svg></span>الرئيسية</button>
+  <button data-act="tab" data-tab="log"><span class="tb-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg></span>اليومية</button>
+  <button data-act="tab" data-tab="stock"><span class="tb-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14l-1.2 11.2a2 2 0 0 1-2 1.8H8.2a2 2 0 0 1-2-1.8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg></span>استوك البيت</button>
+  <button data-act="tab" data-tab="bills"><span class="tb-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M9 10h6M9 14h6M9 18h3"/></svg></span>التزامات وديون</button>
+  <button data-act="tab" data-tab="goals"><span class="tb-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 16l1.6-5.2A2 2 0 0 1 8.5 9.4h7a2 2 0 0 1 1.9 1.4L19 16"/><rect x="3.5" y="16" width="17" height="3.5" rx="1.2"/><circle cx="7.5" cy="19.5" r="1.2"/><circle cx="16.5" cy="19.5" r="1.2"/></svg></span>الأهداف</button>
+</div></nav>
+
+<div class="sheet-wrap" id="sheetWrap">
+  <form class="sheet" id="sheetForm" autocomplete="off" novalidate>
+    <div class="sheet-head"><h2 id="sheetTitle"></h2><button type="button" class="x" data-act="closeSheet" aria-label="إغلاق">✕</button></div>
+    <div id="sheetBody"></div>
+  </form>
+</div>
+<div class="toast" id="toast"></div>
+<input type="file" id="importFile" accept="application/json,.json" hidden>
+
+<script>
+'use strict';
+/* =====================================================================
+   بيتي — ميزانية البيت
+   كل البيانات بتتحفظ على الجهاز (localStorage)، واختياري تتزامن مع
+   جوجل شيت عن طريق سكريبت Code.gs اللي جنب الملف ده.
+   ===================================================================== */
+
+const KEY = 'beity.v1';
+const SYNCED_KEY = KEY + '::syncedAt';
+const EXPORTED_KEY = KEY + '::exportedAt';
+const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+
+const DEFAULT_CATS = [
+  {id:'market',   name:'سوبر ماركت وخضار', icon:'🥬'},
+  {id:'house',    name:'استوك البيت',       icon:'🧺', fixed:true},
+  {id:'food',     name:'أكل برا',            icon:'🍔'},
+  {id:'transport',name:'مواصلات وبنزين',     icon:'🚕'},
+  {id:'health',   name:'صحة وأدوية',         icon:'💊'},
+  {id:'kids',     name:'الأولاد والمدارس',   icon:'🎒'},
+  {id:'clothes',  name:'هدوم',               icon:'👕'},
+  {id:'phone',    name:'موبايل ونت',         icon:'📱'},
+  {id:'fun',      name:'خروجات وترفيه',      icon:'🎉'},
+  {id:'gifts',    name:'هدايا ومناسبات',     icon:'🎁'},
+  {id:'fix',      name:'صيانة البيت',        icon:'🔧'},
+  {id:'other',    name:'متنوع',              icon:'🧾'},
+];
+
+/* أصناف شائعة في البيت المصري — بتتضاف فاضية وانت بتكمّل الكميات والأسعار */
+const SEED_ITEMS = [
+  ['تموين','رز','كيلو'],['تموين','سكر','كيلو'],['تموين','زيت','لتر'],['تموين','مكرونة','كيس'],
+  ['تموين','شاي','علبة'],['تموين','عدس','كيلو'],['تموين','فول','كيلو'],['تموين','دقيق','كيلو'],
+  ['تموين','سمنة','كيلو'],['تموين','صلصة','علبة'],['تموين','بُن / نسكافيه','علبة'],
+  ['ألبان وبروتين','بيض','طبق'],['ألبان وبروتين','لبن','لتر'],['ألبان وبروتين','جبنة','كيلو'],
+  ['ألبان وبروتين','فراخ','كيلو'],['ألبان وبروتين','لحمة','كيلو'],
+  ['منظفات','مسحوق غسيل','كيلو'],['منظفات','سائل أطباق','زجاجة'],['منظفات','كلور','زجاجة'],
+  ['منظفات','مناديل','باكو'],['منظفات','ورق تواليت','رول'],['منظفات','أكياس زبالة','لفة'],
+  ['عناية شخصية','صابون','قطعة'],['عناية شخصية','شامبو','زجاجة'],['عناية شخصية','معجون أسنان','أنبوبة'],
+];
+const UNITS = ['كيلو','لتر','علبة','كيس','زجاجة','قطعة','باكو','طبق','رول','لفة','كرتونة','أنبوبة','جرام'];
+
+/* ---------------- أدوات صغيرة ---------------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const sum = (a, f) => a.reduce((s, x) => s + (f ? f(x) : x), 0);
+const pad = n => String(n).padStart(2, '0');
+function num(v){
+  if(typeof v === 'number') return isFinite(v) ? v : 0;
+  v = String(v == null ? '' : v).trim()
+    .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+    .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
+    .replace(/٫/g, '.').replace(/[,،٬\s]/g, '');
+  const n = parseFloat(v);
+  return isFinite(n) ? n : 0;
+}
+const fmt = n => Math.round(n || 0).toLocaleString('en-US');
+const fmtQ = n => (Math.round((n || 0) * 10) / 10).toLocaleString('en-US');
+const money = (n, cls) => `<span class="num ${cls || ''}">${fmt(n)}</span> <small>ج</small>`;
+function ds(d){ return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function pd(s){ const p = String(s).split('-').map(Number); return new Date(p[0], p[1] - 1, p[2] || 1); }
+const todayS = () => ds(new Date());
+function diffDays(a, b){ return Math.round((pd(b) - pd(a)) / 864e5); }
+function addDays(s, n){ const d = pd(s); d.setDate(d.getDate() + n); return ds(d); }
+function dayLabel(s){
+  const t = todayS();
+  if(s === t) return 'النهاردة';
+  if(s === addDays(t, -1)) return 'امبارح';
+  const d = pd(s);
+  return ['الأحد','الاتنين','التلات','الأربع','الخميس','الجمعة','السبت'][d.getDay()] + ' ' + d.getDate() + ' ' + MONTHS[d.getMonth()];
+}
+function monthName(key){ const p = key.split('-').map(Number); return MONTHS[p[1] - 1] + ' ' + p[0]; }
+
+/* ---------------- البيانات ---------------- */
+function fresh(){
+  return {
+    v:1, updatedAt:0,
+    settings:{cycleDay:1, coverMode:'month', bufferDays:3, debtExtra:0, syncUrl:'', syncSecret:''},
+    incomes:[], bills:[], debts:[], goals:[], items:[], counts:[], tx:[],
+    cats: DEFAULT_CATS.map(c => Object.assign({}, c)),
+  };
+}
+function migrate(o){
+  const f = fresh();
+  for(const k in f) if(o[k] === undefined) o[k] = f[k];
+  o.settings = Object.assign(f.settings, o.settings || {});
+  if(!Array.isArray(o.cats) || !o.cats.length) o.cats = f.cats;
+  if(!o.cats.some(c => c.id === 'house')) o.cats.splice(1, 0, Object.assign({}, DEFAULT_CATS[1]));
+  return o;
+}
+let S;
+function load(){
+  try{
+    const raw = localStorage.getItem(KEY);
+    if(raw){ S = migrate(JSON.parse(raw)); return; }
+  }catch(e){}
+  S = fresh();
+}
+function persist(){
+  try{ localStorage.setItem(KEY, JSON.stringify(S)); }
+  catch(e){ toast('مش قادر يحفظ على الجهاز!', true); }
+}
+function save(){
+  S.updatedAt = Date.now();
+  persist();
+  scheduleSync();
+  render();
+}
+
+/* ---------------- الشهر المالي ---------------- */
+/* لو المرتب بينزل يوم 25 مثلًا، الشهر المالي بيبدأ 25 وبيخلص 24 الشهر اللي بعده */
+function periodOf(dateS){
+  const d = pd(dateS), cd = S.settings.cycleDay || 1;
+  let y = d.getFullYear(), m = d.getMonth();
+  if(d.getDate() < cd){ m--; if(m < 0){ m = 11; y--; } }
+  return {y, m};
+}
+function addMonths(p, n){ const d = new Date(p.y, p.m + n, 1); return {y:d.getFullYear(), m:d.getMonth()}; }
+function samePeriod(a, b){ return a.y === b.y && a.m === b.m; }
+function periodRange(p){
+  const cd = S.settings.cycleDay || 1;
+  const start = new Date(p.y, p.m, cd), end = new Date(p.y, p.m + 1, cd - 1);
+  return {start:ds(start), end:ds(end), days:diffDays(ds(start), ds(end)) + 1};
+}
+function periodLabel(p){
+  const cd = S.settings.cycleDay || 1;
+  if(cd === 1) return MONTHS[p.m] + ' ' + p.y;
+  const r = periodRange(p), a = pd(r.start), b = pd(r.end);
+  return MONTHS[p.m] + ' ' + p.y + `<small>${a.getDate()} ${MONTHS[a.getMonth()]} ← ${b.getDate()} ${MONTHS[b.getMonth()]}</small>`;
+}
+/* ميعاد يوم معيّن (زي يوم دفع فاتورة) جوه شهر مالي */
+function dueDateIn(r, day){
+  const s = pd(r.start);
+  let d = new Date(s.getFullYear(), s.getMonth(), day);
+  if(day < (S.settings.cycleDay || 1)) d = new Date(s.getFullYear(), s.getMonth() + 1, day);
+  let out = ds(d);
+  if(out > r.end) out = r.end;
+  return out;
+}
+/* عدد الشهور الباقية لحد شهر الهدف (شامل الشهر الحالي) */
+function monthsUntil(deadline){
+  const p = deadline.split('-').map(Number), cur = periodOf(todayS());
+  return Math.max(1, (p[0] - cur.y) * 12 + (p[1] - 1 - cur.m) + 1);
+}
+
+/* ---------------- الحسابات ---------------- */
+const catOf = id => S.cats.find(c => c.id === id) || {id, name:'متنوع', icon:'🧾'};
+const byId = (arr, id) => arr.find(x => x.id === id);
+function txBetween(a, b){ return S.tx.filter(t => t.date >= a && t.date <= b); }
+
+function debtPaidTotal(d, upto){ return sum(S.tx.filter(t => t.type === 'debt' && t.debtId === d.id && (!upto || t.date <= upto)), t => t.amount); }
+function debtRemaining(d, upto){ return Math.max(0, (d.total || 0) - debtPaidTotal(d, upto)); }
+function goalSaved(g, upto){ return (g.initial || 0) + sum(S.tx.filter(t => t.type === 'save' && t.goalId === g.id && (!upto || t.date <= upto)), t => t.amount); }
+/* المطلوب شهريًا = (المطلوب − اللي اتحوّش قبل الشهر الحالي) ÷ الشهور الباقية شامل الشهر ده،
+   عشان أي تحويش الشهر ده يتحسب من حصة الشهر ده نفسه */
+function goalRequired(g){
+  const before = goalSaved(g, addDays(periodRange(periodOf(todayS())).start, -1));
+  return Math.max(0, (g.target || 0) - before) / monthsUntil(g.deadline);
+}
+function goalPlanMonthly(g){
+  if(goalSaved(g) >= (g.target || 0)) return 0;
+  return g.monthly > 0 ? g.monthly : goalRequired(g);
+}
+
+/* ---- الاستوك ومعدلات الاستهلاك ----
+   المعدل الفعلي بيتحسب من الجرد: (أول جرد + اللي اتشرى بعده − آخر جرد) ÷ عدد الأيام.
+   محتاج جردين بينهم أسبوع على الأقل، وقبل كده بنستخدم الرقم التقديري اللي انت كاتبه. */
+const evKey = e => e.date + '|' + String(e.ts || 0).padStart(15, '0');
+function itemCounts(it){ return S.counts.filter(c => c.itemId === it.id).sort((a, b) => evKey(a) < evKey(b) ? -1 : 1); }
+function itemBuys(it){ return S.tx.filter(t => t.itemId === it.id && t.qty > 0); }
+function learnedDaily(it){
+  const cs = itemCounts(it);
+  if(cs.length < 2) return null;
+  const last = cs[cs.length - 1];
+  // ناخد أقدم جرد في آخر 4 شهور تقريبًا عشان المعدل يبقى حديث
+  let first = null;
+  for(const c of cs){
+    const d = diffDays(c.date, last.date);
+    if(d >= 7 && d <= 125){ first = c; break; }
+  }
+  if(!first){
+    for(let i = cs.length - 2; i >= 0; i--) if(diffDays(cs[i].date, last.date) >= 7){ first = cs[i]; break; }
+  }
+  if(!first) return null;
+  const fk = evKey(first), lk = evKey(last);
+  const bought = sum(itemBuys(it).filter(t => { const k = evKey(t); return k > fk && k <= lk; }), t => t.qty);
+  const used = first.qty + bought - last.qty;
+  if(used < 0) return null;
+  return used / diffDays(first.date, last.date);
+}
+function dailyRate(it){
+  const l = learnedDaily(it);
+  if(l != null) return {v:l, src:'learned'};
+  if(it.monthly > 0) return {v:it.monthly / 30, src:'manual'};
+  return {v:0, src:'none'};
+}
+/* الموجود المتوقع دلوقتي = آخر جرد + اللي اتشرى بعده − الاستهلاك من ساعتها */
+function estStock(it){
+  const cs = itemCounts(it);
+  if(!cs.length) return null;
+  const last = cs[cs.length - 1], lk = evKey(last);
+  const bought = sum(itemBuys(it).filter(t => evKey(t) > lk), t => t.qty);
+  const days = Math.max(0, diffDays(last.date, todayS()));
+  return Math.max(0, last.qty + bought - dailyRate(it).v * days);
+}
+function daysLeft(it){
+  const r = dailyRate(it).v, e = estStock(it);
+  if(e == null || r <= 0) return null;
+  return e / r;
+}
+function houseMonthlyCost(){ return sum(S.items, it => dailyRate(it).v * 30 * (it.price || 0)); }
+function coverDays(){
+  if(S.settings.coverMode === 'period'){
+    const r = periodRange(periodOf(todayS()));
+    return diffDays(todayS(), r.end) + 1;
+  }
+  return 30;
+}
+function shopList(){
+  const cover = coverDays() + (S.settings.bufferDays || 0);
+  return S.items.map(it => {
+    const rate = dailyRate(it), est = estStock(it), have = est == null ? 0 : est;
+    const need = rate.v * cover - have;
+    let qty = 0;
+    if(need > 0.001){ const pack = it.pack > 0 ? it.pack : 1; qty = Math.ceil(need / pack - 1e-9) * pack; }
+    return {it, rate, est, have, need, qty, cost:qty * (it.price || 0)};
+  });
+}
+
+/* ---- الديون: خطة السداد (كرة التلج — الأصغر الأول) ---- */
+function debtPaidIn(d, r){ return S.tx.some(t => t.type === 'debt' && t.debtId === d.id && t.date >= r.start && t.date <= r.end); }
+function debtPlan(extra){
+  const r0 = periodRange(periodOf(todayS()));
+  const ds_ = S.debts.map(d => ({d, rem:debtRemaining(d), m:d.monthly || 0, paid0:debtPaidIn(d, r0), end:null}))
+    .filter(x => x.rem > 0.5).sort((a, b) => a.rem - b.rem);
+  let freed = 0, month = 0;
+  const freedAt = [];
+  while(ds_.some(x => x.end == null) && month < 360){
+    freedAt[month] = freed;
+    let progress = 0;
+    for(const x of ds_){
+      if(x.end != null) continue;
+      const pay = (month === 0 && x.paid0) ? 0 : Math.min(x.m, x.rem);
+      x.rem -= pay; progress += pay;
+    }
+    let pool = (extra || 0) + freed;
+    for(const x of ds_){
+      if(x.end != null || pool <= 0) continue;
+      const pay = Math.min(pool, x.rem);
+      x.rem -= pay; pool -= pay; progress += pay;
+    }
+    let newlyFreed = 0;
+    for(const x of ds_) if(x.end == null && x.rem <= 0.5){ x.end = month; newlyFreed += x.m; }
+    freed += newlyFreed;
+    if(progress <= 0) break;
+    month++;
+  }
+  const stuck = ds_.some(x => x.end == null);
+  return {rows:ds_, months:stuck ? null : month, stuck, freedAt, freedFinal:freed + (extra || 0)};
+}
+function monthLabelFromNow(i){ const p = addMonths(periodOf(todayS()), i); return MONTHS[p.m] + ' ' + p.y; }
+
+/* ---- الأهداف: توقّع التحويش، ومع تحويل أقساط الديون اللي بتخلص ---- */
+function goalProjection(g){
+  const saved = goalSaved(g), target = g.target || 0;
+  const base = goalPlanMonthly(g);
+  const plan = g.rollDebts ? debtPlan(S.settings.debtExtra || 0) : null;
+  const extraAt = i => {
+    if(!plan) return 0;
+    if(i < plan.freedAt.length) return plan.freedAt[i] || 0;
+    return plan.stuck ? (plan.freedAt[plan.freedAt.length - 1] || 0) : plan.freedFinal;
+  };
+  const months = monthsUntil(g.deadline);
+  // اللي اتحوّش فعلًا الشهر ده بيتخصم من مساهمة الشهر الحالي
+  const r0 = periodRange(periodOf(todayS()));
+  const savedNow = sum(S.tx.filter(t => t.type === 'save' && t.goalId === g.id && t.date >= r0.start && t.date <= r0.end), t => t.amount);
+  let acc = saved, reachAt = saved >= target ? 0 : null, atDeadline = null;
+  for(let i = 0; i < 240; i++){
+    acc += (i === 0 ? Math.max(0, base - savedNow) : base) + extraAt(i);
+    if(reachAt == null && acc >= target) reachAt = i;
+    if(i === months - 1) atDeadline = acc;
+    if(i >= months - 1 && reachAt != null) break;
+  }
+  return {saved, base, atDeadline:atDeadline == null ? acc : atDeadline, reachAt, months};
+}
+
+/* ---- ملخص شهر مالي ---- */
+function summary(p){
+  const r = periodRange(p), T = txBetween(r.start, r.end);
+  const o = {p, r, T};
+  // الدخل: اللي اتسجل فعلًا، وإلا المتوقع من مصادر الدخل الثابتة
+  o.incReceived = 0; o.incExpected = 0; o.incLines = [];
+  S.incomes.forEach(inc => {
+    const got = sum(T.filter(t => t.type === 'inc' && t.incomeId === inc.id), t => t.amount);
+    o.incReceived += got; o.incExpected += got > 0 ? got : (inc.amount || 0);
+    o.incLines.push({inc, got});
+  });
+  o.incExtra = sum(T.filter(t => t.type === 'inc' && !byId(S.incomes, t.incomeId)), t => t.amount);
+  o.incReceived += o.incExtra;
+  o.income = o.incExpected + o.incExtra;
+  // الالتزامات الثابتة
+  o.billLines = S.bills.filter(b => !b.off).map(b => {
+    const paidT = T.filter(t => t.type === 'bill' && t.billId === b.id);
+    const paid = sum(paidT, t => t.amount);
+    return {b, paid, paidT, planned:paidT.length ? paid : (b.amount || 0), due:dueDateIn(r, b.dueDay || 1)};
+  });
+  o.billPaid = sum(T.filter(t => t.type === 'bill'), t => t.amount);
+  o.billPlanned = sum(o.billLines, l => l.planned) + (o.billPaid - sum(o.billLines, l => l.paid));
+  // أقساط الديون
+  o.debtLines = S.debts.map(d => {
+    const paidT = T.filter(t => t.type === 'debt' && t.debtId === d.id);
+    const paid = sum(paidT, t => t.amount);
+    const remBefore = debtRemaining(d, addDays(r.start, -1));
+    const due = Math.min(d.monthly || 0, remBefore);
+    return {d, paid, paidT, planned:Math.max(paid, due), remBefore, due:dueDateIn(r, d.dueDay || 1)};
+  });
+  o.debtPaid = sum(T.filter(t => t.type === 'debt'), t => t.amount);
+  o.debtPlanned = sum(o.debtLines, l => l.planned) + (o.debtPaid - sum(o.debtLines, l => l.paid));
+  // التحويش
+  o.goalLines = S.goals.map(g => {
+    const saved = sum(T.filter(t => t.type === 'save' && t.goalId === g.id), t => t.amount);
+    return {g, saved, planned:Math.max(saved, goalPlanMonthly(g))};
+  });
+  o.saved = sum(T.filter(t => t.type === 'save'), t => t.amount);
+  o.savePlanned = sum(o.goalLines, l => l.planned) + (o.saved - sum(o.goalLines, l => l.saved));
+  // استوك البيت
+  o.houseBudget = houseMonthlyCost();
+  o.houseSpent = sum(T.filter(t => t.type === 'exp' && t.cat === 'house'), t => t.amount);
+  o.houseReserved = Math.max(o.houseBudget, o.houseSpent);
+  // المصروف اليومي (المتغير)
+  const varT = T.filter(t => t.type === 'exp' && t.cat !== 'house');
+  o.varSpent = sum(varT, t => t.amount);
+  o.varBudget = o.income - o.billPlanned - o.debtPlanned - o.savePlanned - o.houseReserved;
+  o.outActual = o.billPaid + o.debtPaid + o.saved + o.houseSpent + o.varSpent;
+  o.cash = o.income - o.outActual;
+  o.free = o.varBudget - o.varSpent;
+  const td = todayS();
+  o.isCurrent = td >= r.start && td <= r.end;
+  if(o.isCurrent){
+    o.daysLeft = diffDays(td, r.end) + 1;
+    o.spentToday = sum(varT.filter(t => t.date === td), t => t.amount);
+    o.perDay = (o.varBudget - (o.varSpent - o.spentToday)) / o.daysLeft;
+    o.todayLeft = o.perDay - o.spentToday;
+  }
+  return o;
+}
+
+/* ---------------- الحالة والعرض ---------------- */
+let TAB = 'home', VIEW = null, LOGF = 'all';
+const SUB = {stock:'items', bills:'bills'};
+const PAGES = {};
+
+function render(){
+  renderHero();
+  $('#view').innerHTML = PAGES[TAB]();
+  document.querySelectorAll('.tabbar button').forEach(b => b.classList.toggle('active', b.dataset.tab === TAB));
+}
+function renderHero(){
+  const o = summary(VIEW);
+  $('#periodLabel').innerHTML = periodLabel(VIEW) + (o.isCurrent ? '' : '<small>اضغط للرجوع للشهر الحالي</small>');
+  $('#heroMain').innerHTML = `
+    <div class="lbl">الباقي من دخل الشهر</div>
+    <div class="big num ${o.cash < 0 ? 'neg' : ''}">${fmt(o.cash)}</div>
+    <div class="hero-pills">
+      <span>الدخل <b class="num">${fmt(o.income)}</b></span>
+      <span>اتصرف <b class="num">${fmt(o.outActual)}</b></span>
+      <span>حر للصرف <b class="num">${fmt(o.free)}</b></span>
+    </div>`;
+}
+
+function stat(title, icon, planned, done, doneLabel, barCls){
+  const pct = planned > 0 ? Math.min(100, done / planned * 100) : (done > 0 ? 100 : 0);
+  const over = done > planned + 0.5 && planned > 0;
+  return `<div class="stat"><div class="t">${icon} ${title}</div>
+    <div class="v">${money(planned)}</div>
+    <div class="bar ${over ? 'bad' : barCls}"><i style="width:${pct}%"></i></div>
+    <div class="s" style="margin-top:5px">${doneLabel} <span class="num">${fmt(done)}</span>${over ? ' <span class="tag bad">زيادة</span>' : ''}</div></div>`;
+}
+
+/* ===================== الرئيسية ===================== */
+PAGES.home = function(){
+  const o = summary(VIEW);
+  let h = onboarding();
+  if(o.isCurrent){
+    h += `<div class="card today">
+      <div class="today-top">
+        <div><div class="muted">تقدر تصرف النهاردة</div>
+          <div class="big num ${o.todayLeft < 0 ? 'neg' : ''}">${fmt(o.todayLeft)}</div>
+          <div class="muted">جنيه للمصروف اليومي</div></div>
+        <div class="today-side">
+          <div>صرفت النهاردة <b class="num">${fmt(o.spentToday)}</b></div>
+          <div>المسموح في اليوم <b class="num">${fmt(o.perDay)}</b></div>
+          <div>فاضل <b class="num">${o.daysLeft}</b> يوم في الشهر</div>
+        </div>
+      </div>
+      ${o.todayLeft < 0 && o.perDay > 0 ? `<div class="alert warn"><span class="ic">✋</span><span class="tx">عديت مصروف النهاردة بـ <b class="num">${fmt(-o.todayLeft)}</b> — المسموح للأيام الجاية هيقل لوحده.</span></div>` : ''}
+      ${o.perDay <= 0 && (o.income > 0) ? `<div class="alert bad"><span class="ic">⚠️</span><span class="tx">ميزانية المصروف اليومي خلصت للشهر ده. أي صرف زيادة هيطلع من التحويش أو الالتزامات.</span></div>` : ''}
+      <button class="btn primary block" data-act="quickAdd">+ سجّل مصروف</button>
+    </div>`;
+  }
+  h += alertsHtml(o);
+  h += `<div class="grid2">
+    ${stat('الدخل', '💰', o.income, o.incReceived, 'اتستلم', 'good')}
+    ${stat('الالتزامات', '📋', o.billPlanned, o.billPaid, 'اتدفع', '')}
+    ${stat('أقساط الديون', '💳', o.debtPlanned, o.debtPaid, 'اتسدد', 'purple')}
+    ${stat('التحويش', '🚗', o.savePlanned, o.saved, 'اتحوّش', 'gold')}
+    ${stat('استوك البيت', '🧺', o.houseBudget, o.houseSpent, 'اتصرف', 'warn')}
+    ${stat('المصروف اليومي', '🛒', Math.max(0, o.varBudget), o.varSpent, 'اتصرف', '')}
+  </div>`;
+
+  h += `<div class="card"><h3>خطة الشهر <span class="muted">الفلوس رايحة فين</span></h3>
+    <div class="plan-line"><span>💰 الدخل ${o.incReceived < o.income ? '<span class="tag">متوقع</span>' : ''}</span><b class="num pos">${fmt(o.income)}</b></div>
+    <div class="plan-line"><span>📋 الالتزامات الثابتة</span><b class="num">− ${fmt(o.billPlanned)}</b></div>
+    <div class="plan-line"><span>💳 أقساط الديون</span><b class="num">− ${fmt(o.debtPlanned)}</b></div>
+    <div class="plan-line"><span>🚗 التحويش للأهداف</span><b class="num">− ${fmt(o.savePlanned)}</b></div>
+    <div class="plan-line"><span>🧺 استوك البيت</span><b class="num">− ${fmt(o.houseReserved)}</b></div>
+    <div class="plan-line total"><span>🛒 متاح للمصروف اليومي</span><b class="num ${o.varBudget < 0 ? 'neg' : 'pos'}">${fmt(o.varBudget)}</b></div>
+    <div class="muted" style="margin-top:6px">يعني حوالي <b class="num">${fmt(o.varBudget / o.r.days)}</b> جنيه في اليوم على مدار ${o.r.days} يوم.</div>
+    ${o.varBudget < 0 ? `<div class="note">⚠️ الدخل مش مغطي الخطة بـ <b class="num">${fmt(-o.varBudget)}</b> جنيه. قلّل التحويش الشهري للهدف، أو راجع الالتزامات، أو زوّد مصدر دخل.</div>` : ''}
+  </div>`;
+
+  // توزيع المصروف على التصنيفات
+  const exp = o.T.filter(t => t.type === 'exp');
+  const total = sum(exp, t => t.amount);
+  if(total > 0){
+    const by = {};
+    exp.forEach(t => by[t.cat] = (by[t.cat] || 0) + t.amount);
+    const rows = Object.entries(by).sort((a, b) => b[1] - a[1]);
+    const max = rows[0][1];
+    h += `<div class="card"><h3>المصروف على إيه <span class="muted num">${fmt(total)} ج</span></h3>` +
+      rows.map(([c, v]) => { const ct = catOf(c); return `<div class="cat-row"><div class="row"><span>${ct.icon} ${esc(ct.name)}</span><span><b class="num">${fmt(v)}</b> <span class="muted num">${Math.round(v / total * 100)}%</span></span></div><div class="bar"><i style="width:${v / max * 100}%"></i></div></div>`; }).join('') +
+      `</div>`;
+  }
+
+  // آخر 6 شهور
+  const hist = [];
+  for(let i = 5; i >= 0; i--){ const s = summary(addMonths(VIEW, -i)); hist.push(s); }
+  const hmax = Math.max(1, ...hist.map(s => Math.max(s.incReceived, s.outActual)));
+  if(hist.some(s => s.outActual > 0 || s.incReceived > 0)){
+    h += `<div class="card"><h3>آخر 6 شهور <span class="muted">🟩 دخل · 🟦 خارج</span></h3>` +
+      hist.map(s => `<div class="hist-row"><span class="muted">${MONTHS[s.p.m]}</span>
+        <div><div class="bar good" style="margin-bottom:3px"><i style="width:${s.incReceived / hmax * 100}%"></i></div><div class="bar"><i style="width:${s.outActual / hmax * 100}%"></i></div></div>
+        <span class="num" style="text-align:left; font-size:11.5px">${fmt(s.incReceived - s.outActual)}</span></div>`).join('') +
+      `<div class="muted">الرقم على الشمال = الفرق (دخل − خارج).</div></div>`;
+  }
+  return h;
+};
+
+function onboarding(){
+  const steps = [
+    [S.incomes.length > 0, 'سجّل مرتبك ومصادر دخلك', 'incomeForm'],
+    [S.bills.length > 0, 'التزاماتك الشهرية (إيجار، كهربا، نت، مدارس...)', 'billForm'],
+    [S.debts.length > 0 || S.settings.noDebts, 'الديون اللي عليك', 'debtForm'],
+    [S.goals.length > 0, 'هدف العربية آخر 2027', 'carGoal'],
+    [S.items.length > 0, 'أصناف البيت ومعدل استهلاكها', 'seedItems'],
+  ];
+  if(steps.every(s => s[0]) || S.settings.hideOnboarding) return '';
+  return `<div class="card"><h3>👋 يلا نجهّز البيت <button class="btn sm ghost" data-act="hideOnboarding">إخفاء</button></h3>
+    <div class="steps">${steps.map(s => `<div class="step"><span class="${s[0] ? 'done' : ''}">${s[0] ? '✔' : '○'}</span><span class="tx">${s[1]}</span>${s[0] ? '' : `<button class="btn sm dark" data-act="${s[2]}">ابدأ</button>`}</div>`).join('')}</div>
+    <div class="note">بعد كده كل يوم دوس على <b>+</b> وسجّل أي جنيه بتصرفه، والبرنامج هيقولك تقدر تصرف كام في اليوم.</div></div>`;
+}
+
+function alertsHtml(o){
+  if(!o.isCurrent) return '';
+  const td = todayS(), out = [];
+  o.incLines.forEach(l => {
+    if(l.got > 0) return;
+    const due = dueDateIn(o.r, l.inc.day || S.settings.cycleDay || 1);
+    if(td >= due) out.push(['info', '💰', `${esc(l.inc.name)} (<span class="num">${fmt(l.inc.amount)}</span>) لسه ما اتسجلش إنه اتستلم`, `<button class="btn sm good" data-act="receiveIncome" data-id="${l.inc.id}">استلمته</button>`]);
+  });
+  o.billLines.forEach(l => {
+    if(l.paidT.length) return;
+    const d = diffDays(td, l.due);
+    if(d < 0) out.push(['bad', '⏰', `${esc(l.b.name)} متأخر ${-d} يوم (<span class="num">${fmt(l.b.amount)}</span>)`, `<button class="btn sm dark" data-act="payBill" data-id="${l.b.id}">دفعت</button>`]);
+    else if(d <= 4) out.push(['warn', '📋', `${esc(l.b.name)} ${d === 0 ? 'النهاردة' : 'كمان ' + d + ' يوم'} (<span class="num">${fmt(l.b.amount)}</span>)`, `<button class="btn sm dark" data-act="payBill" data-id="${l.b.id}">دفعت</button>`]);
+  });
+  o.debtLines.forEach(l => {
+    if(l.paidT.length || l.remBefore <= 0.5 || !(l.d.monthly > 0)) return;
+    const d = diffDays(td, l.due);
+    if(d < 0) out.push(['bad', '💳', `قسط ${esc(l.d.name)} متأخر ${-d} يوم`, `<button class="btn sm dark" data-act="payDebt" data-id="${l.d.id}">سددت</button>`]);
+    else if(d <= 4) out.push(['warn', '💳', `قسط ${esc(l.d.name)} ${d === 0 ? 'النهاردة' : 'كمان ' + d + ' يوم'}`, `<button class="btn sm dark" data-act="payDebt" data-id="${l.d.id}">سددت</button>`]);
+  });
+  const low = S.items.map(it => ({it, d:daysLeft(it)})).filter(x => x.d != null && x.d <= 5).sort((a, b) => a.d - b.d);
+  if(low.length) out.push(['warn', '🧺', `هيخلصوا قريب: ${low.slice(0, 4).map(x => esc(x.it.name) + ' (' + Math.max(0, Math.floor(x.d)) + ' يوم)').join('، ')}${low.length > 4 ? '…' : ''}`, `<button class="btn sm dark" data-act="goShop">قائمة الشراء</button>`]);
+  if(!S.settings.syncUrl && S.tx.length >= 10){
+    const ex = Number(localStorage.getItem(EXPORTED_KEY) || 0);
+    if(Date.now() - ex > 14 * 864e5) out.push(['info', '💾', 'بقالك فترة من غير نسخة احتياطية. البيانات متخزنة على الموبايل بس.', `<button class="btn sm dark" data-act="exportData">نزّل نسخة</button>`]);
+  }
+  if(!out.length) return '';
+  return out.map(a => `<div class="alert ${a[0]}"><span class="ic">${a[1]}</span><span class="tx">${a[2]}</span>${a[3] || ''}</div>`).join('');
+}
+
+/* ===================== اليومية ===================== */
+function txInfo(t){
+  if(t.type === 'inc'){ const i = byId(S.incomes, t.incomeId); return {ic:'💰', title:i ? i.name : 'دخل إضافي'}; }
+  if(t.type === 'bill'){ const b = byId(S.bills, t.billId); return {ic:'📋', title:'التزام: ' + (b ? b.name : '—')}; }
+  if(t.type === 'debt'){ const d = byId(S.debts, t.debtId); return {ic:'💳', title:'قسط: ' + (d ? d.name : '—')}; }
+  if(t.type === 'save'){ const g = byId(S.goals, t.goalId); return {ic:t.amount < 0 ? '↩️' : '🏦', title:(t.amount < 0 ? 'سحب من: ' : 'تحويش: ') + (g ? g.name : '—')}; }
+  const c = catOf(t.cat), it = t.itemId ? byId(S.items, t.itemId) : null;
+  return {ic:c.icon, title:it ? `${it.name} (${fmtQ(t.qty)} ${it.unit})` : c.name};
+}
+function txRow(t){
+  const i = txInfo(t), plus = t.type === 'inc' || (t.type === 'save' && t.amount < 0);
+  return `<div class="list-item" data-act="editTx" data-id="${t.id}">
+    <div class="li-ic">${i.ic}</div>
+    <div class="li-main"><div class="li-title">${esc(i.title)}</div>${t.note && t.note !== i.title ? `<div class="li-sub">${esc(t.note)}</div>` : ''}</div>
+    <div class="li-end"><b class="num ${plus ? 'pos' : ''}">${plus ? '+' : '−'}${fmt(Math.abs(t.amount))}</b></div></div>`;
+}
+PAGES.log = function(){
+  const o = summary(VIEW);
+  const F = {all:'الكل', exp:'مصروف', bill:'التزامات', debt:'ديون', save:'تحويش', inc:'دخل'};
+  let list = o.T.slice();
+  if(LOGF !== 'all') list = list.filter(t => t.type === LOGF);
+  list.sort((a, b) => evKey(a) < evKey(b) ? 1 : -1);
+  let h = `<div class="grid2">
+    <div class="stat"><div class="t">💰 دخل اتسجل</div><div class="v">${money(o.incReceived, 'pos')}</div></div>
+    <div class="stat"><div class="t">📤 خارج</div><div class="v">${money(o.outActual)}</div></div></div>`;
+  h += `<div class="chips">${Object.entries(F).map(([k, v]) => `<button class="chip ${LOGF === k ? 'on' : ''}" data-act="logf" data-f="${k}">${v}</button>`).join('')}</div>`;
+  if(!list.length){
+    return h + `<div class="card empty"><div class="e-ic">🧾</div>مفيش حاجة متسجلة في الشهر ده.<br>دوس على <b>+</b> وسجّل أول مصروف.</div>`;
+  }
+  h += '<div class="card" style="padding-top:4px">';
+  let cur = null;
+  list.forEach(t => {
+    if(t.date !== cur){
+      cur = t.date;
+      const dayOut = sum(list.filter(x => x.date === cur && x.type !== 'inc'), x => x.amount);
+      h += `<div class="day-h"><span>${dayLabel(cur)}</span><span class="num">${dayOut ? '−' + fmt(dayOut) : ''}</span></div>`;
+    }
+    h += txRow(t);
+  });
+  return h + '</div>';
+};
+
+/* ===================== استوك البيت ===================== */
+PAGES.stock = function(){
+  const sub = SUB.stock;
+  let h = `<div class="seg">
+    <button class="${sub === 'items' ? 'on' : ''}" data-act="sub" data-k="stock" data-v="items">الأصناف</button>
+    <button class="${sub === 'jard' ? 'on' : ''}" data-act="sub" data-k="stock" data-v="jard">الجرد (اللي عندي)</button>
+    <button class="${sub === 'shop' ? 'on' : ''}" data-act="sub" data-k="stock" data-v="shop">أشتري إيه</button></div>`;
+  if(!S.items.length){
+    return h + `<div class="card empty"><div class="e-ic">🧺</div>لسه مفيش أصناف.<br>ضيف حاجات البيت اللي بتشتريها كل شهر، وكل صنف بتستهلك منه قد إيه في الشهر.
+      <div class="btns" style="justify-content:center; margin-top:12px"><button class="btn primary" data-act="seedItems">ضيف الأصناف الشائعة</button><button class="btn" data-act="itemForm">صنف جديد</button></div></div>`;
+  }
+  if(sub === 'jard') return h + jardHtml();
+  if(sub === 'shop') return h + shopHtml();
+  return h + itemsHtml();
+};
+function groupsOf(){ const g = []; S.items.forEach(it => { const k = it.group || 'تاني'; if(!g.includes(k)) g.push(k); }); return g; }
+function itemsHtml(){
+  const cost = houseMonthlyCost();
+  const incomplete = S.items.filter(it => dailyRate(it).src === 'none' || !(it.price > 0)).length;
+  let h = `<div class="card"><div class="row"><div><div class="muted">تكلفة استوك البيت في الشهر</div><div style="font-size:22px">${money(cost)}</div></div>
+    <button class="btn dark" data-act="itemForm">+ صنف</button></div>
+    ${incomplete ? `<div class="note">فيه <b>${incomplete}</b> صنف ناقصهم الاستهلاك الشهري أو السعر — دوس على الصنف وكمّله عشان الحسابات تبقى مظبوطة.</div>` : ''}
+    <div class="note">💡 اعمل <b>جرد</b> كل أسبوعين تقريبًا (اكتب اللي عندك)، والبرنامج هيتعلم معدل استهلاكك الحقيقي لوحده بدل الرقم التقديري.</div></div>`;
+  groupsOf().forEach(g => {
+    const items = S.items.filter(it => (it.group || 'تاني') === g)
+      .sort((a, b) => (daysLeft(a) == null ? 1e9 : daysLeft(a)) - (daysLeft(b) == null ? 1e9 : daysLeft(b)));
+    h += `<div class="card" style="padding-top:6px"><div class="group-h">${esc(g)}</div>`;
+    items.forEach(it => {
+      const r = dailyRate(it), e = estStock(it), d = daysLeft(it);
+      const pct = d == null ? 0 : Math.min(100, d / 30 * 100);
+      const cls = d == null ? '' : d <= 5 ? 'bad' : d <= 12 ? 'warn' : 'good';
+      const srcTag = r.src === 'learned' ? '<span class="tag good">محسوب من الجرد</span>' : r.src === 'manual' ? '<span class="tag">تقديري</span>' : '<span class="tag bad">ناقص الاستهلاك</span>';
+      h += `<div class="list-item" data-act="itemForm" data-id="${it.id}">
+        <div class="li-main"><div class="li-title">${esc(it.name)} ${srcTag}</div>
+          <div class="li-sub">بتستهلك <span class="num">${fmtQ(r.v * 30)}</span> ${esc(it.unit)}/شهر${it.price > 0 ? ` · <span class="num">${fmt(it.price)}</span> ج لل${esc(it.unit)}` : ' · <span class="neg">من غير سعر</span>'}</div>
+          <div class="bar ${cls}" style="margin-top:6px"><i style="width:${pct}%"></i></div></div>
+        <div class="li-end">${e == null ? '<span class="tag warn">ما اتجردش</span>' : `<b class="num">${fmtQ(e)}</b> <small>${esc(it.unit)}</small><div class="li-sub">${d == null ? '' : d >= 60 ? 'يكفي +60 يوم' : 'يكفي ' + Math.floor(d) + ' يوم'}</div>`}</div></div>`;
+    });
+    h += '</div>';
+  });
+  return h;
+}
+function jardHtml(){
+  let h = `<div class="card"><h3>📝 الجرد — اكتب اللي عندك دلوقتي</h3>
+    <div class="muted" style="line-height:1.8">اكتب الكمية الموجودة فعلًا من كل صنف. سيب الخانة فاضية لو مش عاوز تجرده دلوقتي. الرقم الرمادي هو اللي البرنامج متوقعه.</div></div>
+    <div class="card" id="jardForm">`;
+  groupsOf().forEach(g => {
+    h += `<div class="group-h">${esc(g)}</div>`;
+    S.items.filter(it => (it.group || 'تاني') === g).forEach(it => {
+      const e = estStock(it);
+      h += `<div class="jard-row"><div class="nm">${esc(it.name)}<small>${esc(it.unit)}${e != null ? ' · متوقع ' + fmtQ(e) : ''}</small></div>
+        <input data-item="${it.id}" inputmode="decimal" placeholder="${e != null ? fmtQ(e) : '—'}"></div>`;
+    });
+  });
+  return h + `</div><button class="btn primary block" data-act="saveJard" style="padding:13px; margin-bottom:12px">احفظ الجرد وطلّعلي قائمة الشراء</button>`;
+}
+function shopHtml(){
+  const L = shopList(), need = L.filter(x => x.qty > 0).sort((a, b) => (daysLeft(a.it) || 0) - (daysLeft(b.it) || 0));
+  const total = sum(need, x => x.cost), cover = coverDays();
+  const unknown = S.items.filter(it => estStock(it) == null && dailyRate(it).v > 0).length;
+  let h = `<div class="card"><h3>🛒 أشتري إيه عشان أكمّل الشهر</h3>
+    <div class="seg" style="margin-bottom:10px">
+      <button type="button" class="${S.settings.coverMode !== 'period' ? 'on' : ''}" data-act="cover" data-v="month">يكفي شهر كامل</button>
+      <button type="button" class="${S.settings.coverMode === 'period' ? 'on' : ''}" data-act="cover" data-v="period">لحد آخر الشهر المالي</button></div>
+    <div class="row muted"><span>بنحسب على <b class="num">${cover}</b> يوم + احتياطي <b class="num">${S.settings.bufferDays || 0}</b> يوم</span>
+      <span class="btns"><button class="btn sm" data-act="buffer" data-d="-1">−</button><button class="btn sm" data-act="buffer" data-d="1">+</button></span></div>
+    ${unknown ? `<div class="note">⚠️ <b>${unknown}</b> صنف ما اتعملهمش جرد، فبنعتبر الموجود منهم صفر. <a href="#" data-act="sub" data-k="stock" data-v="jard">اعمل جرد</a></div>` : ''}
+  </div>`;
+  if(!need.length) return h + `<div class="card empty"><div class="e-ic">✅</div>البيت مكفي للمدة دي — مش محتاج تشتري حاجة.</div>`;
+  h += `<div class="card"><div class="row" style="margin-bottom:8px"><div><div class="muted">التكلفة المتوقعة</div><div style="font-size:22px">${money(total)}</div></div>
+    <div class="btns"><button class="btn" data-act="shareList">مشاركة</button><button class="btn primary" data-act="buyMany">اشتريتهم</button></div></div>
+    <table class="tbl"><tr><th>الصنف</th><th>عندي</th><th>محتاج</th><th>اشتري</th><th>التكلفة</th></tr>
+    ${need.map(x => `<tr data-act="buyItem" data-id="${x.it.id}" style="cursor:pointer"><td><b>${esc(x.it.name)}</b></td>
+      <td class="num">${x.est == null ? '؟' : fmtQ(x.have)}</td><td class="num">${fmtQ(x.rate.v * (cover + (S.settings.bufferDays || 0)))}</td>
+      <td><b class="num">${fmtQ(x.qty)}</b> <small>${esc(x.it.unit)}</small></td><td class="num">${x.it.price > 0 ? fmt(x.cost) : '<span class="neg">؟</span>'}</td></tr>`).join('')}
+    </table><div class="muted" style="margin-top:8px">دوس على أي صنف عشان تسجّل إنك اشتريته بالسعر الفعلي.</div></div>`;
+  return h;
+}
+
+/* ===================== الالتزامات والديون ===================== */
+PAGES.bills = function(){
+  const sub = SUB.bills, o = summary(VIEW);
+  let h = `<div class="seg">
+    <button class="${sub === 'bills' ? 'on' : ''}" data-act="sub" data-k="bills" data-v="bills">الالتزامات الشهرية</button>
+    <button class="${sub === 'debts' ? 'on' : ''}" data-act="sub" data-k="bills" data-v="debts">الديون</button></div>`;
+  if(sub === 'debts') return h + debtsHtml(o);
+  if(!S.bills.length) return h + `<div class="card empty"><div class="e-ic">📋</div>سجّل الحاجات اللي بتدفعها كل شهر:<br>إيجار، كهربا، مية، غاز، نت، مدارس، جمعية...<div style="margin-top:12px"><button class="btn primary" data-act="billForm">+ التزام جديد</button></div></div>`;
+  const td = todayS();
+  h += `<div class="card"><div class="row"><div><div class="muted">إجمالي الالتزامات الشهر ده</div><div style="font-size:22px">${money(o.billPlanned)}</div>
+    <div class="muted">اتدفع <span class="num">${fmt(o.billPaid)}</span> · فاضل <span class="num">${fmt(Math.max(0, o.billPlanned - o.billPaid))}</span></div></div>
+    <button class="btn dark" data-act="billForm">+ التزام</button></div></div><div class="card" style="padding-top:4px">`;
+  o.billLines.slice().sort((a, b) => a.due < b.due ? -1 : 1).forEach(l => {
+    const paid = l.paidT.length > 0, late = !paid && o.isCurrent && l.due < td;
+    h += `<div class="list-item" data-act="billForm" data-id="${l.b.id}"><div class="li-ic">${paid ? '✅' : late ? '⏰' : '📋'}</div>
+      <div class="li-main"><div class="li-title">${esc(l.b.name)}</div><div class="li-sub">يوم ${l.b.dueDay || 1} في الشهر${paid ? ' · اتدفع ' + dayLabel(l.paidT[0].date) : late ? ' · <span class="neg">متأخر</span>' : ''}</div></div>
+      <div class="li-end"><b class="num">${fmt(paid ? l.paid : l.b.amount)}</b>${paid ? '' : `<div><button class="btn sm good" data-act="payBill" data-id="${l.b.id}">دفعت</button></div>`}</div></div>`;
+  });
+  const off = S.bills.filter(b => b.off);
+  if(off.length) h += `<div class="day-h"><span>متوقفة</span></div>` + off.map(b => `<div class="list-item" data-act="billForm" data-id="${b.id}"><div class="li-ic">⏸</div><div class="li-main"><div class="li-title">${esc(b.name)}</div></div><div class="li-end num">${fmt(b.amount)}</div></div>`).join('');
+  return h + '</div>';
+};
+function debtsHtml(o){
+  if(!S.debts.length) return `<div class="card empty"><div class="e-ic">💳</div>سجّل كل دين عليك: لمين، المبلغ الكلي، والقسط اللي بتدفعه في الشهر.<br>البرنامج هيعملك خطة سداد ويقولك هتخلص امتى.
+    <div class="btns" style="justify-content:center; margin-top:12px"><button class="btn primary" data-act="debtForm">+ دين جديد</button>${S.settings.noDebts ? '' : '<button class="btn" data-act="noDebts">مفيش عليا ديون</button>'}</div></div>`;
+  const totalRem = sum(S.debts, d => debtRemaining(d)), totalAll = sum(S.debts, d => d.total || 0);
+  const monthly = sum(S.debts.filter(d => debtRemaining(d) > 0.5), d => Math.min(d.monthly || 0, debtRemaining(d)));
+  const extra = S.settings.debtExtra || 0;
+  const plan = debtPlan(extra), base = extra > 0 ? debtPlan(0) : plan;
+  let h = `<div class="card"><div class="row"><div><div class="muted">إجمالي الباقي عليك</div><div style="font-size:24px">${money(totalRem, 'neg')}</div>
+      <div class="muted">سددت <span class="num">${fmt(totalAll - totalRem)}</span> من <span class="num">${fmt(totalAll)}</span> · الأقساط <span class="num">${fmt(monthly)}</span>/شهر</div></div>
+      <button class="btn dark" data-act="debtForm">+ دين</button></div>
+    <div class="bar good" style="margin-top:10px"><i style="width:${totalAll ? (totalAll - totalRem) / totalAll * 100 : 0}%"></i></div></div>`;
+  h += '<div class="card" style="padding-top:4px">';
+  S.debts.slice().sort((a, b) => debtRemaining(a) - debtRemaining(b)).forEach(d => {
+    const rem = debtRemaining(d), l = o.debtLines.find(x => x.d.id === d.id);
+    const paidNow = l && l.paidT.length > 0, done = rem <= 0.5;
+    const pr = plan.rows.find(x => x.d.id === d.id);
+    h += `<div class="list-item" data-act="debtForm" data-id="${d.id}"><div class="li-ic">${done ? '🎉' : paidNow ? '✅' : '💳'}</div>
+      <div class="li-main"><div class="li-title">${esc(d.name)}</div>
+        <div class="li-sub">${done ? 'خلص' : `باقي <b class="num">${fmt(rem)}</b> من <span class="num">${fmt(d.total)}</span> · قسط <span class="num">${fmt(d.monthly || 0)}</span>${pr && pr.end != null ? ' · يخلص ' + monthLabelFromNow(pr.end) : ''}`}</div>
+        <div class="bar purple" style="margin-top:6px"><i style="width:${d.total ? (d.total - rem) / d.total * 100 : 0}%"></i></div></div>
+      <div class="li-end">${done ? '<span class="tag good">مسدد</span>' : paidNow ? '<span class="tag good">اتسدد الشهر ده</span>' : `<button class="btn sm good" data-act="payDebt" data-id="${d.id}">سدد</button>`}</div></div>`;
+  });
+  h += '</div>';
+  if(totalRem > 0.5){
+    h += `<div class="card"><h3>🧊 خطة السداد</h3>
+      <div class="muted" style="line-height:1.8">الطريقة: بتدفع أقساطك العادية، وأي مبلغ زيادة + أقساط الديون اللي بتخلص بيروحوا على أصغر دين فاضل (طريقة "كرة التلج").</div>
+      <label class="fld" style="margin-top:10px"><span>مبلغ زيادة تقدر تحطه على الديون كل شهر</span>
+        <input inputmode="decimal" id="debtExtraIn" value="${extra || ''}" placeholder="0"></label>
+      <button class="btn sm dark" data-act="saveDebtExtra">احسب</button>
+      <div style="margin-top:10px">${plan.rows.map((x, i) => `<div class="kv"><span>${i + 1}. ${esc(x.d.name)}</span><b>${x.end == null ? '<span class="neg">مش هيخلص — حدد قسط</span>' : monthLabelFromNow(x.end)}</b></div>`).join('')}</div>
+      ${plan.stuck ? '' : `<div class="note">🎯 هتخلص كل ديونك في <b>${monthLabelFromNow(plan.months - 1)}</b> (بعد <b class="num">${plan.months}</b> شهر)${extra > 0 && !base.stuck && base.months > plan.months ? `، يعني أسرع بـ <b class="num">${base.months - plan.months}</b> شهر من غير المبلغ الزيادة` : ''}. بعدها هيبقى معاك <b class="num">${fmt(plan.freedFinal)}</b> جنيه في الشهر ممكن تحوّلهم للعربية.</div>`}
+    </div>`;
+  }
+  return h;
+}
+
+/* ===================== الأهداف ===================== */
+PAGES.goals = function(){
+  if(!S.goals.length) return `<div class="card empty"><div class="e-ic">🚗</div><b>هدف العربية آخر 2027</b><br>حط سعر العربية اللي عاوزها، والبرنامج يقولك محتاج تحوّش كام كل شهر عشان توصل في الميعاد.
+    <div class="btns" style="justify-content:center; margin-top:12px"><button class="btn primary" data-act="carGoal">ابدأ هدف العربية</button><button class="btn" data-act="goalForm">هدف تاني</button></div></div>`;
+  let h = `<div class="row" style="margin-bottom:10px"><h2 style="font-size:19px">أهدافي</h2><button class="btn dark sm" data-act="goalForm">+ هدف</button></div>`;
+  S.goals.forEach(g => {
+    const pr = goalProjection(g), target = g.target || 0, saved = pr.saved;
+    const pct = target ? Math.min(100, saved / target * 100) : 0, req = goalRequired(g);
+    const ok = pr.atDeadline >= target - 0.5;
+    h += `<div class="card"><div class="goal-hero"><div class="ring" style="--p:${pct}"><b class="num">${Math.round(pct)}%</b></div>
+      <div style="flex:1"><h3 style="margin:0">${esc(g.icon || '🎯')} ${esc(g.name)}</h3>
+        <div class="muted">الميعاد: ${monthName(g.deadline)} · فاضل <b class="num">${pr.months}</b> شهر</div></div>
+      <button class="btn sm" data-act="goalForm" data-id="${g.id}">تعديل</button></div>
+      <div class="kv"><span>المطلوب</span><b>${money(target)}</b></div>
+      <div class="kv"><span>اتحوّش لحد دلوقتي</span><b>${money(saved, 'pos')}</b></div>
+      <div class="kv"><span>فاضل</span><b>${money(Math.max(0, target - saved))}</b></div>
+      <div class="kv"><span>محتاج تحوّش في الشهر عشان توصل في الميعاد</span><b>${money(req)}</b></div>
+      <div class="kv"><span>اللي حاطه في خطتك الشهرية</span><b>${money(pr.base)}</b></div>
+      <label class="switch" style="margin-top:8px"><input type="checkbox" data-act="rollDebts" data-id="${g.id}" ${g.rollDebts ? 'checked' : ''}> لما دين يخلص، حوّل قسطه للهدف ده</label>
+      <div class="note">${saved >= target ? '🎉 مبروك! الهدف اكتمل.' : ok
+        ? `✅ بالخطة دي هيبقى معاك <b class="num">${fmt(pr.atDeadline)}</b> في ${monthName(g.deadline)}${pr.reachAt != null ? ` — وهتوصل للمبلغ في <b>${monthLabelFromNow(pr.reachAt)}</b>` : ''}.`
+        : `⚠️ بالخطة دي هيبقى معاك <b class="num">${fmt(pr.atDeadline)}</b> بس في ${monthName(g.deadline)} (ناقص <b class="num">${fmt(target - pr.atDeadline)}</b>)${pr.reachAt != null ? ` وهتوصل في ${monthLabelFromNow(pr.reachAt)}` : ''}. زوّد التحويش الشهري لـ <b class="num">${fmt(req)}</b>${S.debts.length && !g.rollDebts ? ' أو فعّل تحويل أقساط الديون' : ''}.`}
+        ${g.note ? '<br>📝 ' + esc(g.note) : ''}</div>
+      <div class="btns" style="margin-top:10px"><button class="btn primary" style="flex:1" data-act="goalMove" data-id="${g.id}" data-s="1">+ حوّشت</button><button class="btn" data-act="goalMove" data-id="${g.id}" data-s="-1">سحبت</button></div></div>`;
+  });
+  h += `<div class="note">💡 نصيحة: سعر العربيات بيتغير — حدّث السعر المطلوب كل كام شهر، والبرنامج هيعيد حساب التحويش الشهري لوحده. وخلّي فلوس التحويش في حساب أو شهادة منفصلة عن فلوس المصروف.</div>`;
+  return h;
+};
+
+/* ===================== الإعدادات ===================== */
+PAGES.settings = function(){
+  const s = S.settings;
+  let h = `<div class="row" style="margin-bottom:10px"><h2 style="font-size:19px">⚙︎ الإعدادات</h2><button class="btn sm" data-act="tab" data-tab="home">رجوع</button></div>`;
+  h += `<div class="card"><h3>💰 مصادر الدخل الشهرية <button class="btn sm dark" data-act="incomeForm">+ إضافة</button></h3>
+    ${S.incomes.length ? S.incomes.map(i => `<div class="list-item" data-act="incomeForm" data-id="${i.id}"><div class="li-ic">💰</div><div class="li-main"><div class="li-title">${esc(i.name)}</div><div class="li-sub">بينزل يوم ${i.day || 1}</div></div><div class="li-end">${money(i.amount)}</div></div>`).join('') : '<div class="muted">لسه ما سجلتش مرتبك.</div>'}
+  </div>`;
+  h += `<div class="card"><h3>📅 بداية الشهر المالي</h3>
+    <div class="muted" style="line-height:1.8; margin-bottom:8px">لو المرتب بينزل يوم 25 مثلًا، خلّي الشهر يبدأ يوم 25 عشان الحسابات تمشي مع المرتب.</div>
+    <label class="fld"><span>الشهر بيبدأ يوم</span><select data-act="cycleDay">${Array.from({length:28}, (_, i) => `<option value="${i + 1}" ${s.cycleDay === i + 1 ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></label></div>`;
+  h += `<div class="card"><h3>🏷️ تصنيفات المصروف <button class="btn sm dark" data-act="catForm">+ إضافة</button></h3>
+    <div class="chips" style="flex-wrap:wrap">${S.cats.map(c => `<button class="chip" data-act="catForm" data-id="${c.id}">${c.icon} ${esc(c.name)}</button>`).join('')}</div></div>`;
+  h += `<div class="card"><h3>☁️ المزامنة مع جوجل شيت <span class="tag ${s.syncUrl ? 'good' : ''}">${s.syncUrl ? 'شغالة' : 'مقفولة'}</span></h3>
+    <div class="muted" style="line-height:1.8">اختياري — عشان البيانات تتحفظ على جوجل وتفتحها من أكتر من جهاز. انسخ ملف <b>Code.gs</b> في Apps Script لشيت جديد، وانشره Web app (Anyone)، وحط الرابط هنا.</div>
+    <label class="fld" style="margin-top:10px"><span>رابط السكريبت (Web app URL)</span><input id="syncUrlIn" dir="ltr" value="${esc(s.syncUrl)}" placeholder="https://script.google.com/macros/s/.../exec"></label>
+    <label class="fld"><span>كلمة السر (نفس اللي في Code.gs)</span><input id="syncSecretIn" dir="ltr" value="${esc(s.syncSecret)}"></label>
+    <div class="btns"><button class="btn dark" data-act="saveSync">حفظ واتصال</button>${s.syncUrl ? '<button class="btn" data-act="pullNow">سحب من الشيت</button><button class="btn" data-act="pushNow">رفع للشيت</button>' : ''}</div>
+    <div class="muted" id="syncInfo" style="margin-top:8px">${esc(syncInfoText())}</div></div>`;
+  h += `<div class="card"><h3>💾 نسخة احتياطية</h3>
+    <div class="btns"><button class="btn dark" data-act="exportData">تنزيل نسخة (ملف)</button><button class="btn" data-act="importData">استرجاع من ملف</button></div>
+    <div class="muted" style="margin-top:8px">${S.tx.length} حركة · ${S.items.length} صنف · ${S.debts.length} دين · ${S.goals.length} هدف</div></div>`;
+  h += `<div class="card"><h3>🗑️ منطقة خطر</h3><button class="btn danger" data-act="wipe">مسح كل البيانات</button></div>`;
+  return h;
+};
+
+/* ===================== الشيت (النوافذ) ===================== */
+let SHEET_SUBMIT = null;
+function openSheet(title, body, onSubmit){
+  $('#sheetTitle').textContent = title;
+  $('#sheetBody').innerHTML = body;
+  $('#sheetWrap').classList.add('open');
+  SHEET_SUBMIT = onSubmit || null;
+  const f = $('#sheetBody [autofocus]');
+  if(f) setTimeout(() => { f.focus(); if(f.select) f.select(); }, 60);
+}
+function closeSheet(){ $('#sheetWrap').classList.remove('open'); SHEET_SUBMIT = null; }
+$('#sheetForm').addEventListener('submit', e => {
+  e.preventDefault();
+  if(!SHEET_SUBMIT) return;
+  const fd = new FormData(e.target), v = {};
+  for(const [k, val] of fd.entries()) v[k] = val;
+  if(SHEET_SUBMIT(v, e.target) !== false) closeSheet();
+});
+$('#sheetWrap').addEventListener('click', e => { if(e.target.id === 'sheetWrap') closeSheet(); });
+
+const Fd = {
+  text:(n, l, v, a) => `<label class="fld"><span>${l}</span><input name="${n}" value="${esc(v)}" ${a || ''}></label>`,
+  num:(n, l, v, a, hint) => `<label class="fld"><span>${l}</span><input name="${n}" inputmode="decimal" value="${v === '' || v == null || v === 0 ? '' : esc(v)}" ${a || ''}>${hint ? `<div class="hint">${hint}</div>` : ''}</label>`,
+  date:(n, l, v) => `<label class="fld"><span>${l}</span><input type="date" name="${n}" value="${esc(v)}"></label>`,
+  month:(n, l, v) => `<label class="fld"><span>${l}</span><input type="month" name="${n}" value="${esc(v)}"></label>`,
+  day:(n, l, v) => `<label class="fld"><span>${l}</span><select name="${n}">${Array.from({length:31}, (_, i) => `<option ${(v || 1) === i + 1 ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></label>`,
+  foot:(save, del) => `<div class="sheet-foot"><button type="submit" class="btn primary">${save || 'حفظ'}</button>${del ? `<button type="button" class="btn danger" data-act="${del.act}" data-id="${del.id}">${del.label || 'حذف'}</button>` : ''}</div>`,
+};
+function need(v, msg){ if(!v){ toast(msg, true); return false; } return true; }
+
+/* ---- تسجيل مصروف / دخل ---- */
+function quickAdd(preset){
+  preset = preset || {};
+  const t = preset.tx || null;
+  const type = t ? t.type : (preset.type || 'exp');
+  const cat = t ? t.cat : (preset.cat || 'market');
+  const cats = S.cats.map(c => `<label><input type="radio" name="cat" value="${c.id}" ${c.id === cat ? 'checked' : ''}><span><em>${c.icon}</em>${esc(c.name)}</span></label>`).join('');
+  const isExp = type === 'exp', isInc = type === 'inc';
+  let body = '';
+  if(!t){
+    body += `<div class="seg"><button type="button" class="${isExp ? 'on' : ''}" data-act="qaType" data-v="exp">مصروف</button><button type="button" class="${isInc ? 'on' : ''}" data-act="qaType" data-v="inc">دخل إضافي</button></div>`;
+  }
+  body += `<label class="fld"><input class="amount" name="amount" inputmode="decimal" placeholder="0" value="${t ? Math.abs(t.amount) : ''}" autofocus></label>`;
+  if(type === 'exp' && !(t && t.itemId)) body += `<div class="catpick">${cats}</div>`;
+  if(t && t.itemId) body += Fd.num('qty', 'الكمية', t.qty);
+  body += Fd.text('note', 'ملاحظة (اختياري)', t ? t.note : '', 'placeholder="مثلاً: خضار من السوق"');
+  body += Fd.date('date', 'التاريخ', t ? t.date : (preset.date || todayS()));
+  body += Fd.foot(t ? 'حفظ التعديل' : 'سجّل', t ? {act:'delTx', id:t.id} : null);
+  const title = t ? 'تعديل: ' + txInfo(t).title : isInc ? 'دخل إضافي' : 'مصروف جديد';
+  openSheet(title, body, v => {
+    const amount = num(v.amount);
+    if(!need(amount > 0, 'اكتب المبلغ')) return false;
+    if(t){
+      t.amount = t.type === 'save' && t.amount < 0 ? -amount : amount;
+      t.note = v.note.trim(); t.date = v.date || t.date;
+      if(v.cat) t.cat = v.cat;
+      if(t.itemId && v.qty !== undefined) t.qty = num(v.qty);
+      save(); toast('اتعدّل');
+    }else{
+      S.tx.push({id:uid(), ts:Date.now(), type, amount, cat:type === 'exp' ? (v.cat || 'other') : undefined, note:v.note.trim(), date:v.date || todayS()});
+      save(); toast(type === 'inc' ? 'اتسجّل الدخل' : 'اتسجّل ✔');
+    }
+  });
+}
+
+/* ---- الأصناف ---- */
+function itemForm(id){
+  const it = id ? byId(S.items, id) : null;
+  const groups = Array.from(new Set(['تموين','ألبان وبروتين','خضار وفاكهة','منظفات','عناية شخصية', ...groupsOf()]));
+  const r = it ? dailyRate(it) : null, learned = it ? learnedDaily(it) : null;
+  let body = Fd.text('name', 'اسم الصنف', it ? it.name : '', 'autofocus placeholder="مثلاً: رز"');
+  body += `<div class="fld2"><label class="fld"><span>الوحدة</span><input name="unit" list="unitsList" value="${esc(it ? it.unit : 'كيلو')}"></label>
+    <label class="fld"><span>المجموعة</span><input name="group" list="groupsList" value="${esc(it ? it.group : 'تموين')}"></label></div>
+    <datalist id="unitsList">${UNITS.map(u => `<option value="${u}">`).join('')}</datalist>
+    <datalist id="groupsList">${groups.map(u => `<option value="${esc(u)}">`).join('')}</datalist>`;
+  body += `<div class="fld2">${Fd.num('monthly', 'بتستهلك كام في الشهر (تقديري)', it ? it.monthly : '')}${Fd.num('price', 'سعر الوحدة (جنيه)', it ? it.price : '')}</div>`;
+  body += Fd.num('pack', 'أقل كمية بتشتريها / حجم العبوة', it ? it.pack : '', '', 'مثلاً لو الزيت بيتباع زجاجة 0.8 لتر اكتب 0.8 — والقائمة هتقرّب لمضاعفاتها. سيبها فاضية = 1');
+  if(!it) body += Fd.num('stock', 'الموجود عندك دلوقتي (اختياري)', '');
+  if(it){
+    const cs = itemCounts(it).slice(-4).reverse(), bs = itemBuys(it).sort((a, b) => evKey(a) < evKey(b) ? 1 : -1).slice(0, 4);
+    body += `<div class="note">📊 المعدل المستخدم: <b class="num">${fmtQ(r.v * 30)}</b> ${esc(it.unit)}/شهر ${r.src === 'learned' ? '(محسوب من الجرد)' : '(تقديري)'}
+      ${learned == null ? '<br>اعمل جردين بينهم أسبوع على الأقل عشان نحسب استهلاكك الحقيقي.' : ''}
+      ${cs.length ? '<br><b>آخر جرد:</b> ' + cs.map(c => `${dayLabel(c.date)}: ${fmtQ(c.qty)}`).join(' · ') : ''}
+      ${bs.length ? '<br><b>آخر شراء:</b> ' + bs.map(b => `${dayLabel(b.date)}: ${fmtQ(b.qty)} بـ ${fmt(b.amount)}ج`).join(' · ') : ''}</div>
+      <div class="btns" style="margin-top:10px"><button type="button" class="btn good" data-act="buyItem" data-id="${it.id}">سجّل شراء</button><button type="button" class="btn" data-act="countItem" data-id="${it.id}">جرد الصنف ده</button></div>`;
+  }
+  body += Fd.foot(it ? 'حفظ' : 'إضافة', it ? {act:'delItem', id:it.id} : null);
+  openSheet(it ? it.name : 'صنف جديد', body, v => {
+    if(!need(v.name.trim(), 'اكتب اسم الصنف')) return false;
+    const o = it || {id:uid(), createdAt:todayS()};
+    Object.assign(o, {name:v.name.trim(), unit:v.unit.trim() || 'قطعة', group:v.group.trim() || 'تاني', monthly:num(v.monthly), price:num(v.price), pack:num(v.pack)});
+    if(!it){
+      S.items.push(o);
+      if(String(v.stock || '').trim() !== '') S.counts.push({id:uid(), ts:Date.now(), itemId:o.id, date:todayS(), qty:num(v.stock)});
+    }
+    save(); toast('اتحفظ');
+  });
+}
+function buyItem(id){
+  const it = byId(S.items, id); if(!it) return;
+  const x = shopList().find(s => s.it.id === id);
+  const qty = x && x.qty > 0 ? x.qty : (it.pack || 1);
+  const body = `<div class="fld2">${Fd.num('qty', 'الكمية (' + esc(it.unit) + ')', qty, 'autofocus')}${Fd.num('amount', 'دفعت كام إجمالي', it.price ? Math.round(qty * it.price) : '')}</div>
+    ${Fd.date('date', 'التاريخ', todayS())}<div class="muted">هيتسجّل كمصروف "استوك البيت"، والكمية هتتضاف للموجود، والسعر هيتحدّث.</div>${Fd.foot('سجّل الشراء')}`;
+  openSheet('اشتريت ' + it.name, body, v => {
+    const q = num(v.qty), a = num(v.amount);
+    if(!need(q > 0, 'اكتب الكمية')) return false;
+    recordBuy(it, q, a, v.date || todayS());
+    save(); toast('اتسجّل الشراء');
+  });
+}
+function recordBuy(it, q, a, date){
+  if(a > 0){
+    S.tx.push({id:uid(), ts:Date.now(), type:'exp', cat:'house', itemId:it.id, qty:q, amount:a, note:it.name, date});
+    it.price = Math.round(a / q * 100) / 100;
+  }else{
+    // اتشرى بس من غير مبلغ (هدية مثلًا) — نضيفه للجرد كحركة شراء بصفر
+    S.tx.push({id:uid(), ts:Date.now(), type:'exp', cat:'house', itemId:it.id, qty:q, amount:0, note:it.name, date});
+  }
+}
+function buyMany(){
+  const L = shopList().filter(x => x.qty > 0);
+  let body = `<div class="muted" style="margin-bottom:8px">عدّل الكمية والسعر الفعلي، وشيل علامة ✓ من اللي ما اشترتهوش.</div><table class="tbl"><tr><th></th><th>الصنف</th><th>الكمية</th><th>دفعت</th></tr>`;
+  L.forEach(x => {
+    body += `<tr><td><input type="checkbox" name="k_${x.it.id}" checked style="width:20px;height:20px;accent-color:var(--gold)"></td><td><b>${esc(x.it.name)}</b><div class="muted">${esc(x.it.unit)}</div></td>
+      <td><input name="q_${x.it.id}" inputmode="decimal" value="${fmtQ(x.qty)}" style="width:64px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center"></td>
+      <td><input name="c_${x.it.id}" inputmode="decimal" value="${x.cost ? Math.round(x.cost) : ''}" style="width:78px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center"></td></tr>`;
+  });
+  body += `</table>${Fd.date('date', 'التاريخ', todayS())}${Fd.foot('سجّل كل ده')}`;
+  openSheet('اشتريت من القائمة', body, v => {
+    let n = 0, tot = 0;
+    L.forEach(x => {
+      if(!v['k_' + x.it.id]) return;
+      const q = num(v['q_' + x.it.id]), a = num(v['c_' + x.it.id]);
+      if(q > 0){ recordBuy(x.it, q, a, v.date || todayS()); n++; tot += a; }
+    });
+    if(!n){ toast('مفيش حاجة متعلّمة', true); return false; }
+    save(); toast(`اتسجّل ${n} صنف بـ ${fmt(tot)} ج`);
+  });
+}
+function countItem(id){
+  const it = byId(S.items, id), e = estStock(it);
+  openSheet('جرد ' + it.name, Fd.num('qty', `الموجود دلوقتي (${esc(it.unit)})`, '', `autofocus placeholder="${e != null ? fmtQ(e) : ''}"`) + Fd.foot('حفظ'), v => {
+    if(!need(String(v.qty).trim() !== '', 'اكتب الكمية')) return false;
+    S.counts.push({id:uid(), ts:Date.now(), itemId:id, date:todayS(), qty:num(v.qty)});
+    save(); toast('اتسجّل الجرد');
+  });
+}
+
+/* ---- الالتزامات ---- */
+function billForm(id){
+  const b = id ? byId(S.bills, id) : null;
+  let body = Fd.text('name', 'الالتزام', b ? b.name : '', 'autofocus placeholder="مثلاً: إيجار، كهربا، نت، مدرسة"');
+  body += `<div class="fld2">${Fd.num('amount', 'المبلغ الشهري (تقريبًا)', b ? b.amount : '')}${Fd.day('dueDay', 'بيتدفع يوم', b ? b.dueDay : 1)}</div>`;
+  if(b) body += `<label class="switch"><input type="checkbox" name="off" ${b.off ? 'checked' : ''}> متوقف مؤقتًا (مش هيتحسب في الخطة)</label>`;
+  body += Fd.foot(b ? 'حفظ' : 'إضافة', b ? {act:'delBill', id:b.id} : null);
+  openSheet(b ? b.name : 'التزام شهري جديد', body, v => {
+    if(!need(v.name.trim(), 'اكتب اسم الالتزام')) return false;
+    const o = b || {id:uid()};
+    Object.assign(o, {name:v.name.trim(), amount:num(v.amount), dueDay:+v.dueDay || 1, off:!!v.off});
+    if(!b) S.bills.push(o);
+    save(); toast('اتحفظ');
+  });
+}
+function payBill(id){
+  const b = byId(S.bills, id);
+  openSheet('دفعت ' + b.name, `${Fd.num('amount', 'المبلغ اللي اتدفع', b.amount, 'autofocus', 'لو الفاتورة جت مختلفة (كهربا مثلًا) اكتب الرقم الحقيقي.')}${Fd.date('date', 'التاريخ', defaultDate())}${Fd.text('note', 'ملاحظة', '')}${Fd.foot('سجّل الدفع')}`, v => {
+    const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
+    S.tx.push({id:uid(), ts:Date.now(), type:'bill', billId:id, amount:a, note:v.note.trim(), date:v.date || todayS()});
+    save(); toast('اتسجّل ✔');
+  });
+}
+
+/* ---- الديون ---- */
+function debtForm(id){
+  const d = id ? byId(S.debts, id) : null;
+  let body = Fd.text('name', 'الدين لمين / اسمه', d ? d.name : '', 'autofocus placeholder="مثلاً: قسط الموبايل، فلوس أخويا، كارت الائتمان"');
+  body += `<div class="fld2">${Fd.num('total', d ? 'المبلغ الكلي للدين' : 'الباقي عليك حاليًا', d ? d.total : '')}${Fd.num('monthly', 'القسط الشهري', d ? d.monthly : '')}</div>`;
+  body += Fd.day('dueDay', 'بيتدفع يوم', d ? d.dueDay : 1);
+  body += Fd.text('note', 'ملاحظة', d ? d.note : '');
+  if(d){
+    const pays = S.tx.filter(t => t.type === 'debt' && t.debtId === d.id).sort((a, b) => a.date < b.date ? 1 : -1);
+    body += `<div class="note">اتسدد <b class="num">${fmt(debtPaidTotal(d))}</b> · باقي <b class="num">${fmt(debtRemaining(d))}</b>${pays.length ? '<br>' + pays.slice(0, 6).map(t => `${dayLabel(t.date)}: ${fmt(t.amount)}`).join(' · ') : ''}</div>`;
+  }
+  body += Fd.foot(d ? 'حفظ' : 'إضافة', d ? {act:'delDebt', id:d.id} : null);
+  openSheet(d ? d.name : 'دين جديد', body, v => {
+    if(!need(v.name.trim(), 'اكتب اسم الدين')) return false;
+    if(!need(num(v.total) > 0, 'اكتب المبلغ')) return false;
+    const o = d || {id:uid(), createdAt:todayS()};
+    Object.assign(o, {name:v.name.trim(), total:num(v.total), monthly:num(v.monthly), dueDay:+v.dueDay || 1, note:v.note.trim()});
+    if(!d) S.debts.push(o);
+    save(); toast('اتحفظ');
+  });
+}
+function payDebt(id){
+  const d = byId(S.debts, id), rem = debtRemaining(d);
+  openSheet('سداد: ' + d.name, `${Fd.num('amount', 'المبلغ اللي اتسدد', Math.min(d.monthly || rem, rem), 'autofocus', `الباقي عليك <b class="num">${fmt(rem)}</b>`)}${Fd.date('date', 'التاريخ', defaultDate())}${Fd.text('note', 'ملاحظة', '')}${Fd.foot('سجّل السداد')}`, v => {
+    const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
+    S.tx.push({id:uid(), ts:Date.now(), type:'debt', debtId:id, amount:Math.min(a, rem || a), note:v.note.trim(), date:v.date || todayS()});
+    save(); toast(debtRemaining(d) <= 0.5 ? '🎉 الدين ده خلص!' : 'اتسجّل ✔');
+  });
+}
+
+/* ---- الأهداف ---- */
+function goalForm(id, preset){
+  const g = id ? byId(S.goals, id) : (preset || null);
+  let body = `<div class="fld2">${Fd.text('name', 'الهدف', g ? g.name : '', 'autofocus')}${Fd.text('icon', 'أيقونة', g ? g.icon : '🎯')}</div>`;
+  body += `<div class="fld2">${Fd.num('target', 'المبلغ المطلوب', g ? g.target : '')}${Fd.month('deadline', 'الميعاد', g ? g.deadline : '2027-12')}</div>`;
+  if(!id) body += Fd.num('initial', 'محوّش كام لحد دلوقتي', g ? g.initial : '');
+  body += Fd.num('monthly', 'هتحوّش كام في الشهر', g ? g.monthly : '', '', 'سيبها فاضية والبرنامج يحسب المطلوب عشان توصل في الميعاد.');
+  body += Fd.text('note', 'ملاحظة', g ? g.note : '', 'placeholder="مثلاً: مقدّم + تقسيط، الموديل..."');
+  body += Fd.foot(id ? 'حفظ' : 'إضافة', id ? {act:'delGoal', id} : null);
+  openSheet(id ? g.name : 'هدف جديد', body, v => {
+    if(!need(v.name.trim(), 'اكتب اسم الهدف')) return false;
+    if(!need(num(v.target) > 0, 'اكتب المبلغ المطلوب')) return false;
+    if(!need(/^\d{4}-\d{2}$/.test(v.deadline), 'اختار الميعاد')) return false;
+    const o = id ? g : {id:uid(), createdAt:todayS(), rollDebts:true};
+    Object.assign(o, {name:v.name.trim(), icon:v.icon.trim() || '🎯', target:num(v.target), deadline:v.deadline, monthly:num(v.monthly), note:v.note.trim()});
+    if(!id){ o.initial = num(v.initial); S.goals.push(o); }
+    save(); toast('اتحفظ');
+  });
+}
+function goalMove(id, sign){
+  const g = byId(S.goals, id);
+  const def = sign > 0 ? Math.round(goalPlanMonthly(g)) : '';
+  openSheet((sign > 0 ? 'حوّشت لـ ' : 'سحبت من ') + g.name, `${Fd.num('amount', 'المبلغ', def, 'autofocus')}${Fd.date('date', 'التاريخ', defaultDate())}${Fd.text('note', 'ملاحظة', '')}${Fd.foot('سجّل')}`, v => {
+    const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
+    S.tx.push({id:uid(), ts:Date.now(), type:'save', goalId:id, amount:sign * a, note:v.note.trim(), date:v.date || todayS()});
+    save(); toast('اتسجّل ✔');
+  });
+}
+
+/* ---- الدخل ---- */
+function incomeForm(id){
+  const i = id ? byId(S.incomes, id) : null;
+  let body = Fd.text('name', 'مصدر الدخل', i ? i.name : 'المرتب', 'autofocus');
+  body += `<div class="fld2">${Fd.num('amount', 'المبلغ الشهري', i ? i.amount : '')}${Fd.day('day', 'بينزل يوم', i ? i.day : (S.settings.cycleDay || 1))}</div>`;
+  if(!S.incomes.length && !i) body += `<label class="switch"><input type="checkbox" name="setCycle" checked> خلّي الشهر المالي يبدأ يوم نزول المرتب</label>`;
+  body += Fd.foot(i ? 'حفظ' : 'إضافة', i ? {act:'delIncome', id:i.id} : null);
+  openSheet(i ? i.name : 'مصدر دخل', body, v => {
+    if(!need(v.name.trim(), 'اكتب الاسم')) return false;
+    if(!need(num(v.amount) > 0, 'اكتب المبلغ')) return false;
+    const o = i || {id:uid()};
+    Object.assign(o, {name:v.name.trim(), amount:num(v.amount), day:+v.day || 1});
+    if(!i) S.incomes.push(o);
+    if(v.setCycle) setCycleDay(Math.min(28, o.day));
+    save(); toast('اتحفظ');
+  });
+}
+function receiveIncome(id){
+  const i = byId(S.incomes, id);
+  openSheet('استلمت ' + i.name, `${Fd.num('amount', 'المبلغ اللي نزل فعلًا', i.amount, 'autofocus')}${Fd.date('date', 'التاريخ', defaultDate())}${Fd.foot('سجّل')}`, v => {
+    const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
+    S.tx.push({id:uid(), ts:Date.now(), type:'inc', incomeId:id, amount:a, note:'', date:v.date || todayS()});
+    save(); toast('💰 اتسجّل');
+  });
+}
+function setCycleDay(d){
+  const td = todayS();
+  S.settings.cycleDay = d;
+  VIEW = periodOf(td);
+}
+
+/* ---- التصنيفات ---- */
+function catForm(id){
+  const c = id ? byId(S.cats, id) : null;
+  const used = c ? S.tx.some(t => t.cat === c.id) : false;
+  let body = `<div class="fld2">${Fd.text('name', 'اسم التصنيف', c ? c.name : '', 'autofocus')}${Fd.text('icon', 'أيقونة (إيموجي)', c ? c.icon : '🧾')}</div>`;
+  body += Fd.foot('حفظ', c && !c.fixed ? {act:'delCat', id:c.id, label:used ? 'حذف (مستخدم)' : 'حذف'} : null);
+  openSheet(c ? 'تعديل تصنيف' : 'تصنيف جديد', body, v => {
+    if(!need(v.name.trim(), 'اكتب الاسم')) return false;
+    const o = c || {id:'c' + uid()};
+    o.name = v.name.trim(); o.icon = v.icon.trim() || '🧾';
+    if(!c) S.cats.push(o);
+    save();
+  });
+}
+
+/* التاريخ الافتراضي للتسجيل: النهاردة لو بنبص على الشهر الحالي، وإلا أول يوم في الشهر المعروض */
+function defaultDate(){
+  const r = periodRange(VIEW), t = todayS();
+  return (t >= r.start && t <= r.end) ? t : r.start;
+}
+
+/* ===================== الأحداث ===================== */
+const ACT = {
+  tab:(d) => { TAB = d.tab; render(); window.scrollTo(0, 0); },
+  per:(d) => { VIEW = addMonths(VIEW, +d.d); render(); },
+  perNow:() => { VIEW = periodOf(todayS()); render(); },
+  sub:(d) => { SUB[d.k] = d.v; render(); },
+  logf:(d) => { LOGF = d.f; render(); },
+  closeSheet,
+  quickAdd:() => quickAdd({date:defaultDate()}),
+  qaType:(d) => quickAdd({type:d.v, date:defaultDate()}),
+  editTx:(d) => { const t = byId(S.tx, d.id); if(t) quickAdd({tx:t}); },
+  delTx:(d) => { if(!confirm('تمسح الحركة دي؟')) return; S.tx = S.tx.filter(t => t.id !== d.id); closeSheet(); save(); toast('اتمسحت'); },
+  hideOnboarding:() => { S.settings.hideOnboarding = true; save(); },
+  noDebts:() => { S.settings.noDebts = true; save(); toast('أحسن حاجة 👌'); },
+  carGoal:() => { TAB = 'goals'; render(); goalForm(null, {name:'العربية', icon:'🚗', deadline:'2027-12', target:'', monthly:''}); },
+  seedItems:() => {
+    const have = new Set(S.items.map(i => i.name));
+    SEED_ITEMS.forEach(([g, n, u]) => { if(!have.has(n)) S.items.push({id:uid(), createdAt:todayS(), group:g, name:n, unit:u, monthly:0, price:0, pack:0}); });
+    TAB = 'stock'; SUB.stock = 'items'; save();
+    toast('اتضافوا — احذف اللي مش بتستخدمه وكمّل الباقي');
+  },
+  itemForm:(d) => itemForm(d.id),
+  delItem:(d) => {
+    if(!confirm('تمسح الصنف ده؟ (مشترياته هتفضل في اليومية)')) return;
+    S.items = S.items.filter(i => i.id !== d.id); S.counts = S.counts.filter(c => c.itemId !== d.id);
+    S.tx.forEach(t => { if(t.itemId === d.id){ delete t.itemId; delete t.qty; } });
+    closeSheet(); save();
+  },
+  buyItem:(d) => buyItem(d.id),
+  buyMany,
+  countItem:(d) => countItem(d.id),
+  goShop:() => { TAB = 'stock'; SUB.stock = 'shop'; render(); window.scrollTo(0, 0); },
+  saveJard:() => {
+    let n = 0; const ts = Date.now();
+    document.querySelectorAll('#jardForm input[data-item]').forEach((inp, i) => {
+      if(inp.value.trim() === '') return;
+      S.counts.push({id:uid(), ts:ts + i, itemId:inp.dataset.item, date:todayS(), qty:num(inp.value)}); n++;
+    });
+    if(!n){ toast('ما كتبتش أي كمية', true); return; }
+    SUB.stock = 'shop'; save(); window.scrollTo(0, 0); toast(`اتسجّل جرد ${n} صنف`);
+  },
+  cover:(d) => { S.settings.coverMode = d.v; save(); },
+  buffer:(d) => { S.settings.bufferDays = Math.max(0, Math.min(30, (S.settings.bufferDays || 0) + (+d.d))); save(); },
+  shareList:() => {
+    const cover = coverDays();
+    const L = shopList().filter(x => x.qty > 0);
+    const txt = `🛒 قائمة مشتريات البيت (تكفي ${cover} يوم)\n\n` + L.map(x => `• ${x.it.name}: ${fmtQ(x.qty)} ${x.it.unit}${x.cost ? ` (~${fmt(x.cost)} ج)` : ''}`).join('\n') + `\n\nالإجمالي التقريبي: ${fmt(sum(L, x => x.cost))} ج`;
+    if(navigator.share) navigator.share({text:txt}).catch(() => {});
+    else if(navigator.clipboard) navigator.clipboard.writeText(txt).then(() => toast('اتنسخت القائمة'));
+    else openSheet('القائمة', `<div class="pre">${esc(txt)}</div>`);
+  },
+  billForm:(d) => billForm(d.id),
+  payBill:(d) => payBill(d.id),
+  delBill:(d) => { if(!confirm('تمسح الالتزام ده؟ (المدفوعات القديمة هتفضل)')) return; S.bills = S.bills.filter(b => b.id !== d.id); closeSheet(); save(); },
+  debtForm:(d) => debtForm(d.id),
+  payDebt:(d) => payDebt(d.id),
+  delDebt:(d) => {
+    const has = S.tx.some(t => t.type === 'debt' && t.debtId === d.id);
+    if(!confirm(has ? 'تمسح الدين ده وكل سداداته؟' : 'تمسح الدين ده؟')) return;
+    S.debts = S.debts.filter(x => x.id !== d.id); S.tx = S.tx.filter(t => !(t.type === 'debt' && t.debtId === d.id)); closeSheet(); save();
+  },
+  saveDebtExtra:() => { S.settings.debtExtra = num($('#debtExtraIn').value); save(); },
+  goalForm:(d) => goalForm(d.id),
+  goalMove:(d) => goalMove(d.id, +d.s),
+  delGoal:(d) => {
+    if(!confirm('تمسح الهدف ده وكل التحويش المتسجل ليه؟')) return;
+    S.goals = S.goals.filter(g => g.id !== d.id); S.tx = S.tx.filter(t => !(t.type === 'save' && t.goalId === d.id)); closeSheet(); save();
+  },
+  incomeForm:(d) => incomeForm(d.id),
+  receiveIncome:(d) => receiveIncome(d.id),
+  delIncome:(d) => { if(!confirm('تمسح مصدر الدخل ده؟ (المبالغ المستلمة هتفضل كدخل إضافي)')) return; S.incomes = S.incomes.filter(i => i.id !== d.id); closeSheet(); save(); },
+  catForm:(d) => catForm(d.id),
+  delCat:(d) => {
+    if(!confirm('تمسح التصنيف؟ المصروفات اللي عليه هتتنقل لـ "متنوع".')) return;
+    S.tx.forEach(t => { if(t.cat === d.id) t.cat = 'other'; });
+    S.cats = S.cats.filter(c => c.id !== d.id);
+    if(!S.cats.some(c => c.id === 'other')) S.cats.push({id:'other', name:'متنوع', icon:'🧾'});
+    closeSheet(); save();
+  },
+  saveSync:async () => {
+    S.settings.syncUrl = $('#syncUrlIn').value.trim(); S.settings.syncSecret = $('#syncSecretIn').value.trim();
+    persist(); render();
+    if(S.settings.syncUrl) await pullRemote(true);
+  },
+  pullNow:() => pullRemote(true),
+  pushNow:() => pushRemote(true),
+  exportData:() => {
+    const blob = new Blob([JSON.stringify(S, null, 1)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'beity-backup-' + todayS() + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    localStorage.setItem(EXPORTED_KEY, String(Date.now()));
+    toast('اتنزّلت النسخة'); render();
+  },
+  importData:() => $('#importFile').click(),
+  wipe:() => {
+    if(!confirm('هتمسح كل البيانات من الجهاز ده. متأكد؟')) return;
+    if(!confirm('آخر مرة: نزّلت نسخة احتياطية؟ المسح ده مالوش رجوع.')) return;
+    const keep = {syncUrl:S.settings.syncUrl, syncSecret:S.settings.syncSecret};
+    S = fresh(); Object.assign(S.settings, keep); VIEW = periodOf(todayS()); TAB = 'home'; save();
+  },
+};
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if(!el || el.tagName === 'SELECT' || (el.tagName === 'INPUT' && el.type === 'checkbox')) return;
+  const fn = ACT[el.dataset.act];
+  if(!fn) return;
+  e.preventDefault();
+  fn(el.dataset, el);
+});
+document.addEventListener('change', e => {
+  const el = e.target;
+  if(el.dataset.act === 'cycleDay'){ setCycleDay(+el.value); save(); toast('اتغيّر بداية الشهر'); }
+  if(el.dataset.act === 'rollDebts'){ const g = byId(S.goals, el.dataset.id); if(g){ g.rollDebts = el.checked; save(); } }
+});
+$('#importFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if(!f) return;
+  try{
+    const o = JSON.parse(await f.text());
+    if(!o || !Array.isArray(o.tx) || !o.settings) throw new Error('bad');
+    if(!confirm(`الملف فيه ${o.tx.length} حركة. هيتحط مكان البيانات الحالية. أكمّل؟`)) return;
+    const keep = {syncUrl:S.settings.syncUrl, syncSecret:S.settings.syncSecret};
+    S = migrate(o); Object.assign(S.settings, keep); VIEW = periodOf(todayS()); save(); toast('اتسترجعت البيانات');
+  }catch(err){ toast('الملف ده مش نسخة من البرنامج', true); }
+});
+
+let toastT = null;
+function toast(msg, err){
+  const t = $('#toast'); t.textContent = msg; t.className = 'toast show' + (err ? ' err' : '');
+  clearTimeout(toastT); toastT = setTimeout(() => t.className = 'toast', 2200);
+}
+
+/* ===================== المزامنة مع جوجل شيت (اختياري) =====================
+   الجهاز هو الأساس. لما المزامنة شغالة:
+   - أول ما البرنامج يفتح (أو ترجعله)، بيسحب النسخة اللي على الشيت لو أحدث.
+   - بعد أي تعديل بثانية ونص، بيرفع النسخة للشيت.
+   - لو فيه تعديلات على الجهاز ما اترفعتش ونسخة الشيت أحدث، بيسألك. */
+let syncTimer = null, syncState = '', syncBusy = false;
+function syncedAt(){ return Number(localStorage.getItem(SYNCED_KEY) || 0); }
+function setSynced(v){ localStorage.setItem(SYNCED_KEY, String(v)); }
+function setSync(state, msg){
+  syncState = msg || '';
+  const el = $('#syncDot');
+  if(!S.settings.syncUrl){ el.textContent = ''; return; }
+  el.textContent = state === 'busy' ? '⏳ بيتزامن' : state === 'ok' ? '☁️ متزامن' : '⚠️ ' + (msg || 'مش متزامن');
+  const info = $('#syncInfo'); if(info) info.textContent = syncInfoText();
+}
+function syncInfoText(){
+  if(!S.settings.syncUrl) return 'المزامنة مقفولة — البيانات على الجهاز ده بس.';
+  const t = syncedAt();
+  return (syncState ? syncState + ' · ' : '') + (t ? 'آخر مزامنة: ' + new Date(t).toLocaleString('ar-EG') : 'لسه ما اتزامنش');
+}
+function scheduleSync(){
+  if(!S.settings.syncUrl) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => pushRemote(false), 1500);
+}
+async function api(method, payload){
+  const s = S.settings;
+  let res;
+  if(method === 'GET') res = await fetch(s.syncUrl + (s.syncUrl.includes('?') ? '&' : '?') + 'secret=' + encodeURIComponent(s.syncSecret || '') + '&t=' + Date.now(), {cache:'no-store'});
+  else res = await fetch(s.syncUrl, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(Object.assign({secret:s.syncSecret || ''}, payload))});
+  const txt = await res.text();
+  let j = null; try{ j = JSON.parse(txt); }catch(e){}
+  if(!j) throw new Error('رد غير مفهوم — راجع إن النشر Anyone');
+  if(!j.ok){ const err = new Error(j.error || 'فشل'); err.code = j.code; throw err; }
+  return j;
+}
+async function pushRemote(force){
+  if(!S.settings.syncUrl || syncBusy) return;
+  syncBusy = true; setSync('busy');
+  try{
+    await api('POST', {action:'set', updatedAt:S.updatedAt, value:JSON.stringify(S), force:!!force});
+    setSynced(S.updatedAt); setSync('ok', 'اترفعت');
+  }catch(e){
+    syncBusy = false;
+    if(e.code === 'stale'){ setSync('err', 'فيه نسخة أحدث على الشيت'); return pullRemote(true); }
+    if(e.code === 'shrink'){
+      if(confirm('النسخة اللي هتترفع أصغر بكتير من اللي على الشيت (ممكن تكون اتمسحت حاجات). ترفعها برضه؟')) return pushRemote(true);
+      setSync('err', 'الرفع اتلغى'); return;
+    }
+    setSync('err', e.message);
+  }
+  syncBusy = false;
+}
+async function pullRemote(manual){
+  if(!S.settings.syncUrl || syncBusy) return;
+  syncBusy = true; setSync('busy');
+  try{
+    const j = await api('GET');
+    syncBusy = false;
+    const rUp = Number(j.updatedAt) || 0;
+    if(j.value && rUp > S.updatedAt){
+      const dirty = S.updatedAt > syncedAt();
+      if(dirty && !confirm('فيه تعديلات على الجهاز ده ما اترفعتش، وفيه نسخة أحدث على جوجل شيت.\n\nموافق = خد نسخة الشيت (تعديلات الجهاز هتضيع)\nإلغاء = ارفع نسخة الجهاز فوق الشيت')){
+        return pushRemote(true);
+      }
+      const keep = {syncUrl:S.settings.syncUrl, syncSecret:S.settings.syncSecret};
+      S = migrate(JSON.parse(j.value)); Object.assign(S.settings, keep);
+      S.updatedAt = rUp; persist(); setSynced(rUp); setSync('ok', 'اتسحبت من الشيت');
+      render(); if(manual) toast('اتحدّثت من جوجل شيت');
+    }else if(S.updatedAt > rUp){
+      return pushRemote(false);
+    }else{
+      setSynced(S.updatedAt); setSync('ok', 'متزامن'); if(manual) toast('كله متزامن ✔');
+    }
+  }catch(e){
+    syncBusy = false; setSync('err', e.message); if(manual) toast('المزامنة فشلت: ' + e.message, true);
+  }
+}
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') pullRemote(false); });
+
+/* ===================== تشغيل ===================== */
+load();
+VIEW = periodOf(todayS());
+render();
+setSync('');
+pullRemote(false);
+</script>
+</body>
+</html>
