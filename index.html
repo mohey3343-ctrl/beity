@@ -1917,7 +1917,9 @@ function openSheet(title, body, onSubmit){
   SHEET_SUBMIT = onSubmit || null;
   lastSubmit = 0;
   const f = $('#sheetBody [autofocus]');
-  if(f) setTimeout(() => { f.focus(); if(f.select) f.select(); }, 60);
+  // نحط المؤشر في أول خانة — إلا لو المستخدم بدأ يكتب في خانة تانية فعلًا
+  const untouched = () => !$('#sheetBody').contains(document.activeElement);
+  if(f) setTimeout(() => { if(untouched()){ f.focus(); if(f.select) f.select(); } }, 60);
 }
 function closeSheet(){ $('#sheetWrap').classList.remove('open'); SHEET_SUBMIT = null; }
 $('#sheetForm').addEventListener('submit', e => {
@@ -2170,7 +2172,7 @@ function multiAdd(preset){
     toast(lm ? lm.t : `اتسجّل ${lines.length} حاجة بـ ${fmt(total)} ج ✔`, lm && lm.bad);
   });
   mlRender();
-  setTimeout(() => { const f = document.querySelector('#mlines [data-f="amount"]'); if(f) f.focus(); }, 80);
+  setTimeout(() => { const f = document.querySelector('#mlines [data-f="amount"]'); if(f && !$('#sheetBody').contains(document.activeElement)) f.focus(); }, 80);
 }
 
 function recordBuy(it, q, a, date){
@@ -2314,10 +2316,12 @@ function dueForm(id, preset){
 function eventForm(id){
   const d = id ? byId(S.dues, id) : null;
   const expCats = S.cats.filter(c => c.id !== 'house');
-  let body = Fd.text('name', 'المناسبة', d ? d.name : '', 'autofocus placeholder="مثلاً: عيد ميلاد مريم، عيد جوازنا"');
+  let body = Fd.text('name', 'المناسبة', d ? d.name : '', 'autofocus placeholder="مثلاً: عيد ميلاد مريم، زيارة أهلي"');
   body += `<div class="fld2">${Fd.date('date', 'التاريخ', d ? d.date : '')}${Fd.num('amount', 'هتصرف كام تقريبًا', d ? (d.baseAmount || d.amount) : '')}</div>`;
   body += `<div class="muted" style="margin:-4px 0 10px">ممكن تكتب تاريخ الميلاد نفسه (حتى لو سنة قديمة)، والبرنامج هيجيب الميعاد الجاي لوحده.</div>`;
-  body += `<label class="fld"><span>بتتكرر؟</span><select name="repeat"><option value="12" ${!d || d.repeat === 12 ? 'selected' : ''}>كل سنة (عيد ميلاد، ذكرى جواز...)</option><option value="0" ${d && !d.repeat ? 'selected' : ''}>مرة واحدة (فرح، زيارة، مناسبة واحدة)</option></select></label>`;
+  const rp = d ? (d.repeat || 0) : 12;
+  body += `<label class="fld"><span>بتتكرر؟</span><select name="repeat">${[[12, 'كل سنة (عيد ميلاد، ذكرى جواز...)'], [1, 'كل شهر (زيارة الأهل، عزومة...)'], [3, 'كل 3 شهور'], [6, 'كل 6 شهور'], [0, 'مرة واحدة (فرح، مناسبة واحدة)']]
+    .map(([k, t]) => `<option value="${k}" ${rp === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>`;
   body += `<label class="fld"><span>يتسجل على تصنيف</span><select name="cat">${expCats.map(c => `<option value="${c.id}" ${(d ? d.cat || 'gifts' : 'gifts') === c.id ? 'selected' : ''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></label>`;
   if(!d) body += Fd.num('reserved', 'شايل له كام لحد دلوقتي (اختياري)', '');
   if(d){
@@ -2331,7 +2335,7 @@ function eventForm(id){
     if(!need(num(v.amount) > 0, 'اكتب هتصرف كام تقريبًا')) return false;
     let date = v.date;
     const repeat = +v.repeat || 0;
-    if(repeat) while(date < todayS()) date = addMonthsDate(date, 12);   // أقرب ميعاد جاي
+    if(repeat) while(date < todayS()) date = addMonthsDate(date, repeat);   // أقرب ميعاد جاي
     else if(date < todayS() && !confirm('التاريخ ده عدّى — متأكد؟')) return false;
     const o = d || {id:uid(), createdAt:todayS(), kind:'event'};
     const oldDate = o.date;
