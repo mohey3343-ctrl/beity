@@ -3026,9 +3026,15 @@ function scheduleSync(){
 }
 async function api(method, payload){
   const s = S.settings;
+  if(!/^https?:\/\/\S+\/exec(\?\S*)?$/.test(s.syncUrl)) throw new Error('الرابط لازم يخلص بـ /exec (انسخ Web app URL مش رابط المحرر)');
   let res;
+  try{
   if(method === 'GET') res = await fetch(s.syncUrl + (s.syncUrl.includes('?') ? '&' : '?') + 'secret=' + encodeURIComponent(s.syncSecret || '') + '&t=' + Date.now(), {cache:'no-store'});
   else res = await fetch(s.syncUrl, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(Object.assign({secret:s.syncSecret || ''}, payload))});
+  }catch(e){
+    // "Failed to fetch" = يا مفيش نت، يا جوجل رجّع صفحة تسجيل دخول/خطأ بدل رد السكريبت
+    throw new Error(navigator.onLine === false ? 'مفيش نت دلوقتي' : 'مش قادر يوصل للسكريبت — اتأكد إن النشر Who has access = Anyone، وإنك عملت Deploy بـ New version بعد آخر تعديل');
+  }
   const txt = await res.text();
   let j = null; try{ j = JSON.parse(txt); }catch(e){}
   if(!j) throw new Error('رد غير مفهوم — راجع إن النشر Anyone');
