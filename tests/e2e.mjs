@@ -13,9 +13,30 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.gs': 'text/plain; charset=utf-8' };
 const NOW = new Date('2026-10-09T10:00:00');
 
+/* جوجل شيت مزيّف على /exec — نفس قواعد Code.gs بالظبط (stale + shrink بالحجم وبعدد الحركات)،
+   ومعاه تأخير اختياري عشان نجرب "الصفحة لسه بتحمّل" */
+const FAKE = { value: null, updatedAt: 0, delay: 0, posts: 0 };
+const txCount = j => { try { return (JSON.parse(j).tx || []).length; } catch (e) { return 0; } };
+function fakeSheet(req, res) {
+  const H = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };
+  const send = o => { res.writeHead(200, H); res.end(JSON.stringify(o)); };
+  if (req.method === 'GET') return setTimeout(() => send({ ok: true, value: FAKE.value, updatedAt: FAKE.updatedAt }), FAKE.delay);
+  let body = ''; req.on('data', c => body += c); req.on('end', () => {
+    const b = JSON.parse(body); FAKE.posts++;
+    if (!b.force) {
+      if (FAKE.updatedAt && b.updatedAt < FAKE.updatedAt) return send({ ok: false, code: 'stale' });
+      if (FAKE.value && b.value.length < FAKE.value.length * 0.6) return send({ ok: false, code: 'shrink' });
+      const o = txCount(FAKE.value), n = txCount(b.value);
+      if (o >= 10 && n < o * 0.8) return send({ ok: false, code: 'shrink' });
+    }
+    FAKE.value = b.value; FAKE.updatedAt = b.updatedAt; send({ ok: true });
+  });
+}
+
 // سيرفر صغير للملفات (عشان localStorage و Service Worker يشتغلوا زي الحقيقة)
 const server = http.createServer((req, res) => {
   const p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+  if (p === '/exec') return fakeSheet(req, res);
   const file = path.join(ROOT, p === '/' ? 'index.html' : p);
   if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); return res.end(); }
   res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream' });
@@ -213,6 +234,25 @@ await test('كل الصفحات بتتعرض من غير أخطاء', async page
   for (const t of ['home', 'log', 'stock', 'bills', 'goals', 'report', 'cash', 'settings']) await ev(page, tab => ACT.tab({ tab }), t);
   for (const v of ['jard', 'shop']) await ev(page, v => { ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v }); }, v);
   for (const v of ['dues', 'debts', 'recv']) await ev(page, v => { ACT.tab({ tab: 'bills' }); ACT.sub({ k: 'bills', v }); }, v);
+});
+
+await test('المزامنة: جهاز جديد وهو بيحمّل ما يمسحش الشيت، والدمج ما يضيّعش حاجة، والمسح ما يترفعش', async page => {
+  const SYNC = URL_ + 'exec';
+  const tx = Array.from({ length: 40 }, (_, i) => ({ id: 'r' + i, ts: i, type: 'exp', cat: 'food', amount: 10, date: '2026-10-05' }));
+  Object.assign(FAKE, { value: JSON.stringify({ v: 1, updatedAt: 1000, settings: { cycleDay: 1 }, tx }), updatedAt: 1000, delay: 2000, posts: 0 });
+  // موبايل جديد فاضي، المزامنة متوصلة، والشيت بطيء — والمستخدم بيسجل مصروف قبل ما التحميل يخلص
+  await ev(page, sync => { S.settings.syncUrl = sync; S.settings.syncSecret = ''; persist(); pullRemote(false); }, SYNC);
+  await page.click('.fab'); await fill(page, 'amount', '55'); await submit(page);
+  await page.waitForTimeout(1200);
+  assert.equal(FAKE.posts, 0, 'رفع قبل ما يخلص التحميل من الشيت');
+  await page.waitForTimeout(3000);
+  assert.equal(await ev(page, () => S.tx.length), 41, 'الموبايل لازم يبقى فيه بيانات الشيت + المصروف الجديد');
+  assert.equal(txCount(FAKE.value), 41, 'الشيت لازم يبقى فيه الكل');
+  FAKE.delay = 0;
+  // المسح على الجهاز ما يترفعش تلقائي فوق الشيت
+  await ev(page, sync => { S = fresh(); S.settings.syncUrl = sync; S.updatedAt = Date.now(); persist(); pushRemote(false); }, SYNC);
+  await page.waitForTimeout(1200);
+  assert.equal(txCount(FAKE.value), 41, 'نسخة فاضية اترفعت فوق الشيت');
 });
 
 await browser.close();

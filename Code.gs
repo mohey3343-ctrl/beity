@@ -44,9 +44,13 @@ function doPost(e) {
       if (cur.updatedAt && updatedAt < cur.updatedAt) {
         return out({ ok: false, code: 'stale', error: 'فيه نسخة أحدث على الشيت' });
       }
-      // حماية من مسح البيانات بالغلط
+      // حماية من مسح البيانات بالغلط (زي جهاز فتح فاضي ورفع قبل ما يحمّل)
       if (cur.value && body.value.length < cur.value.length * 0.6) {
         return out({ ok: false, code: 'shrink', error: 'النسخة الجديدة أصغر بكتير من القديمة' });
+      }
+      const oldTx = txCount(cur.value), newTx = txCount(body.value);
+      if (oldTx >= 10 && newTx < oldTx * 0.8) {
+        return out({ ok: false, code: 'shrink', error: 'النسخة الجديدة فيها حركات أقل بكتير (' + newTx + ' بدل ' + oldTx + ')' });
       }
     }
     backupIfNeeded();
@@ -68,6 +72,10 @@ function book() {
   const ss = SpreadsheetApp.create('بيتي — بيانات');
   props.setProperty('sheetId', ss.getId());
   return ss;
+}
+
+function txCount(json) {
+  try { const o = JSON.parse(json); return (o && o.tx && o.tx.length) || 0; } catch (e) { return 0; }
 }
 
 function sheet() {

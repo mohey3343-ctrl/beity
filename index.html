@@ -2845,7 +2845,11 @@ const ACT = {
     if(S.settings.syncUrl) await pullRemote(true);
   },
   pullNow:() => pullRemote(true),
-  pushNow:() => pushRemote(true),
+  pushNow:() => {
+    if(!confirm('ده هيكتب نسخة الجهاز ده فوق اللي على جوجل شيت، حتى لو الشيت فيه بيانات أكتر. متأكد؟')) return;
+    if(!confirm('آخر مرة: أي حاجة على الشيت ومش على الجهاز ده هتتمسح من الشيت (فيه نسخ احتياطية يومية جوه الشيت). أكمّل؟')) return;
+    pushRemote(true);
+  },
   exportData:async () => {
     const name = 'beity-backup-' + todayS() + '.json', json = JSON.stringify(S, null, 1);
     // على الموبايل: شاشة المشاركة (واتساب، Files، Drive...)، وإلا تنزيل عادي
@@ -2906,8 +2910,16 @@ Object.keys(ACT).filter(k => /^del|^wipe$|^restoreSnap$/.test(k)).forEach(k => {
   const fn = ACT[k];
   ACT[k] = (d, el) => {
     const snap = JSON.stringify(S), before = S.updatedAt;
+    const ids = /^del/.test(k) ? new Set(MERGE_KEYS.flatMap(m => (S[m] || []).map(x => x && x.id))) : null;
     fn(d, el);
-    if(S.updatedAt !== before) setTimeout(() => showUndo(snap, k === 'restoreSnap' ? 'اتسترجعت النسخة' : 'اتمسح'), 30);
+    if(S.updatedAt !== before){
+      if(ids){
+        const now = new Set(MERGE_KEYS.flatMap(m => (S[m] || []).map(x => x && x.id)));
+        const gone = [...ids].filter(id => id && !now.has(id));
+        if(gone.length){ S.tomb = [...(S.tomb || []), ...gone].slice(-2000); persist(); }
+      }
+      setTimeout(() => showUndo(snap, k === 'restoreSnap' ? 'اتسترجعت النسخة' : 'اتمسح'), 30);
+    }
   };
 });
 function downloadIcs(file, title, desc, time, rrule){
@@ -3023,19 +3035,42 @@ async function api(method, payload){
   if(!j.ok){ const err = new Error(j.error || 'فشل'); err.code = j.code; throw err; }
   return j;
 }
+/* ---- حماية المزامنة من "رفع الفاضي فوق الحقيقي" ----
+   ١) ممنوع أي رفع تلقائي قبل ما نسحب من الشيت بنجاح في نفس الفتحة (SYNC_READY).
+   ٢) الرفع التلقائي عمره ما بيكتب فوق نسخة أكبر — لو الشيت رفض (shrink) بنقف ونقولك،
+      والكتابة فوق الشيت بنسخة أصغر ممكنة بس يدوي من الإعدادات وبتأكيد مرتين.
+   ٣) لو فيه تعديلات هنا ونسخة أحدث هناك (أو الجهاز ده فاضي/أصغر بكتير) بندمج الاتنين
+      بدل ما نختار واحدة — ومفيش حاجة بتضيع. اللي اتمسح بإيدك بيتسجل (tomb) فما يرجعش. */
+let SYNC_READY = false;
+const MERGE_KEYS = ['tx', 'counts', 'cashCounts', 'items', 'dues', 'recvs', 'goals', 'debts', 'bills', 'incomes', 'cats', 'wallets'];
+const dataSize = st => (st.tx || []).length + (st.items || []).length + (st.counts || []).length + (st.cashCounts || []).length + (st.dues || []).length + (st.debts || []).length + (st.goals || []).length;
+function mergeStates(remote, local){
+  const out = migrate(JSON.parse(JSON.stringify(remote)));
+  const tomb = new Set([...(remote.tomb || []), ...(local.tomb || [])]);
+  MERGE_KEYS.forEach(k => {
+    const have = new Set((out[k] || []).map(x => x.id));
+    (local[k] || []).forEach(x => { if(x && x.id && !have.has(x.id)) out[k].push(x); });
+    out[k] = out[k].filter(x => !x || !x.id || !tomb.has(x.id));
+  });
+  out.tomb = [...tomb].slice(-2000);
+  return out;
+}
+function adoptRemote(remoteState, rUp, msg){
+  const keep = {syncUrl:S.settings.syncUrl, syncSecret:S.settings.syncSecret, lastWallet:S.settings.lastWallet};
+  S = remoteState; Object.assign(S.settings, keep);
+  S.updatedAt = rUp; persist(); setSynced(rUp); setSync('ok', msg); render();
+}
 async function pushRemote(force){
   if(!S.settings.syncUrl || syncBusy) return;
+  if(!SYNC_READY && !force) return pullRemote(false);
   syncBusy = true; setSync('busy');
   try{
     await api('POST', {action:'set', updatedAt:S.updatedAt, value:JSON.stringify(S), force:!!force});
     setSynced(S.updatedAt); setSync('ok', 'اترفعت');
   }catch(e){
     syncBusy = false;
-    if(e.code === 'stale'){ setSync('err', 'فيه نسخة أحدث على الشيت'); return pullRemote(true); }
-    if(e.code === 'shrink'){
-      if(confirm('النسخة اللي هتترفع أصغر بكتير من اللي على الشيت (ممكن تكون اتمسحت حاجات). ترفعها برضه؟')) return pushRemote(true);
-      setSync('err', 'الرفع اتلغى'); return;
-    }
+    if(e.code === 'stale'){ setSync('err', 'فيه نسخة أحدث على الشيت'); return pullRemote(false); }
+    if(e.code === 'shrink'){ setSync('err', 'مارفعتش: النسخة على الشيت أكبر من اللي هنا'); toast('⚠️ مارفعتش للشيت عشان نسخته أكبر — افتح الإعدادات ← المزامنة', true); return; }
     setSync('err', e.message);
   }
   syncBusy = false;
@@ -3046,16 +3081,22 @@ async function pullRemote(manual){
   try{
     const j = await api('GET');
     syncBusy = false;
+    SYNC_READY = true;
     const rUp = Number(j.updatedAt) || 0;
-    if(j.value && rUp > S.updatedAt){
-      const dirty = S.updatedAt > syncedAt();
-      if(dirty && !confirm('فيه تعديلات على الجهاز ده ما اترفعتش، وفيه نسخة أحدث على جوجل شيت.\n\nموافق = خد نسخة الشيت (تعديلات الجهاز هتضيع)\nإلغاء = ارفع نسخة الجهاز فوق الشيت')){
-        return pushRemote(true);
-      }
-      const keep = {syncUrl:S.settings.syncUrl, syncSecret:S.settings.syncSecret};
-      S = migrate(JSON.parse(j.value)); Object.assign(S.settings, keep);
-      S.updatedAt = rUp; persist(); setSynced(rUp); setSync('ok', 'اتسحبت من الشيت');
-      render(); if(manual) toast('اتحدّثت من جوجل شيت');
+    if(!j.value){ if(dataSize(S) > 0) return pushRemote(false); setSync('ok', 'متزامن'); return; }
+    const remote = migrate(JSON.parse(j.value));
+    const dirty = S.updatedAt > syncedAt(), localSize = dataSize(S), remoteSize = dataSize(remote);
+    if(localSize === 0){
+      adoptRemote(remote, rUp, 'اتسحبت من الشيت'); if(manual) toast('اتحمّلت بياناتك من جوجل شيت ✔');
+    }else if(rUp > S.updatedAt && !dirty){
+      adoptRemote(remote, rUp, 'اتسحبت من الشيت'); if(manual) toast('اتحدّثت من جوجل شيت');
+    }else if(rUp > S.updatedAt || localSize < remoteSize * 0.8){
+      // تعديلات هنا + نسخة أحدث أو أكبر هناك → دمج من غير ما حاجة تضيع، وبعدين رفع
+      const merged = mergeStates(remote, S);
+      const keep = {syncUrl:S.settings.syncUrl, syncSecret:S.settings.syncSecret, lastWallet:S.settings.lastWallet};
+      S = merged; Object.assign(S.settings, keep); S.updatedAt = Math.max(Date.now(), rUp + 1);
+      persist(); render(); toast('🔄 اتدمجت بيانات الجهاز مع جوجل شيت');
+      return pushRemote(false);
     }else if(S.updatedAt > rUp){
       return pushRemote(false);
     }else{
