@@ -2317,6 +2317,7 @@ function eventForm(id){
   let body = Fd.text('name', 'المناسبة', d ? d.name : '', 'autofocus placeholder="مثلاً: عيد ميلاد مريم، عيد جوازنا"');
   body += `<div class="fld2">${Fd.date('date', 'التاريخ', d ? d.date : '')}${Fd.num('amount', 'هتصرف كام تقريبًا', d ? (d.baseAmount || d.amount) : '')}</div>`;
   body += `<div class="muted" style="margin:-4px 0 10px">ممكن تكتب تاريخ الميلاد نفسه (حتى لو سنة قديمة)، والبرنامج هيجيب الميعاد الجاي لوحده.</div>`;
+  body += `<label class="fld"><span>بتتكرر؟</span><select name="repeat"><option value="12" ${!d || d.repeat === 12 ? 'selected' : ''}>كل سنة (عيد ميلاد، ذكرى جواز...)</option><option value="0" ${d && !d.repeat ? 'selected' : ''}>مرة واحدة (فرح، زيارة، مناسبة واحدة)</option></select></label>`;
   body += `<label class="fld"><span>يتسجل على تصنيف</span><select name="cat">${expCats.map(c => `<option value="${c.id}" ${(d ? d.cat || 'gifts' : 'gifts') === c.id ? 'selected' : ''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></label>`;
   if(!d) body += Fd.num('reserved', 'شايل له كام لحد دلوقتي (اختياري)', '');
   if(d){
@@ -2329,10 +2330,12 @@ function eventForm(id){
     if(!need(/^\d{4}-\d{2}-\d{2}$/.test(v.date), 'اختار التاريخ')) return false;
     if(!need(num(v.amount) > 0, 'اكتب هتصرف كام تقريبًا')) return false;
     let date = v.date;
-    while(date < todayS()) date = addMonthsDate(date, 12);   // أقرب ميعاد جاي
+    const repeat = +v.repeat || 0;
+    if(repeat) while(date < todayS()) date = addMonthsDate(date, 12);   // أقرب ميعاد جاي
+    else if(date < todayS() && !confirm('التاريخ ده عدّى — متأكد؟')) return false;
     const o = d || {id:uid(), createdAt:todayS(), kind:'event'};
     const oldDate = o.date;
-    Object.assign(o, {name:v.name.trim(), amount:num(v.amount), baseAmount:num(v.amount), date, repeat:12, cat:v.cat || 'gifts'});
+    Object.assign(o, {name:v.name.trim(), amount:num(v.amount), baseAmount:num(v.amount), date, repeat, cat:v.cat || 'gifts'});
     if(d && oldDate && oldDate !== o.date) S.tx.forEach(t => { if(t.type === 'reserve' && t.dueId === o.id && t.dueDate === oldDate) t.dueDate = o.date; });
     if(!d){
       S.dues = S.dues || []; S.dues.push(o);
