@@ -945,16 +945,24 @@ function spendRows(o, mode){
 /* تقسيم الدخل لأجزاء — شريط واحد بنسبة كل جزء */
 function splitBar(o){
   if(!(o.income > 0)) return '';
+  // دفعات الديون اللي ليها مواعيد (بتتشال شهريًا) هي سداد ديون، مش "مواعيد" عادية
+  const debtRes = sum(o.dueLines.filter(l => l.d.debtId), l => l.planned), otherRes = o.reservePlanned - debtRes;
   const parts = [
-    ['📋 التزامات', o.billPlanned], ['💳 ديون', o.debtPlanned], ['🏦 تحويش وجمعيات', o.savePlanned],
-    ['📅 مواعيد', o.reservePlanned], ['🧺 استوك', o.houseReserved], ['🛒 مصروف يومي', Math.max(0, o.varBudget)],
+    ['📋 التزامات', o.billPlanned], ['💳 ديون', o.debtPlanned + debtRes], ['🏦 تحويش وجمعيات', o.savePlanned],
+    ['📅 مواعيد ومناسبات', otherRes], ['🧺 استوك', o.houseReserved], ['🛒 مصروف يومي', Math.max(0, o.varBudget)],
   ].filter(x => x[1] > 0.5);
   const tot = Math.max(o.income, sum(parts, x => x[1]));
-  const keep = (o.savePlanned + o.debtPlanned) / o.income;
+  const keep = (o.savePlanned + o.debtPlanned + debtRes) / o.income, kp = Math.round(keep * 100);
   return `<div style="margin-top:12px"><div class="muted">المرتب متقسم كده:</div>
     <div class="split">${parts.map((x, i) => `<i style="width:${x[1] / tot * 100}%; background:${VIZ[i]}" title="${x[0]}"></i>`).join('')}</div>
     <div class="split-lg">${parts.map((x, i) => `<span><i style="background:${VIZ[i]}"></i>${x[0]} <b class="num">${Math.round(x[1] / o.income * 100)}%</b></span>`).join('')}</div>
-    <div class="muted" style="margin-top:6px">${keep >= 0.2 ? '💪' : '💡'} التحويش + سداد الديون = <b class="num">${Math.round(keep * 100)}%</b> من الدخل${keep >= 0.2 ? ' — ممتاز.' : '. المستهدف 20% على الأقل (قاعدة 50/30/20).'}</div></div>`;
+    <details style="margin-top:8px"><summary class="muted" style="cursor:pointer">${keep >= 0.2 ? '💪' : '💡'} التحويش + سداد الديون = <b class="num">${kp}%</b> من الدخل${keep >= 0.2 ? ' — ممتاز' : ' — المستهدف 20%'} <span style="color:var(--blue)">(يعني إيه؟)</span></summary>
+      <div class="note" style="line-height:1.9">قاعدة <b>50/30/20</b> طريقة بسيطة تقسّم بيها أي دخل:
+        <br>• <b>50% أساسيات</b>: إيجار، فواتير، أكل البيت، مواصلات، علاج، مدارس.
+        <br>• <b>30% كماليات</b>: أكل برا، خروجات، هدوم، هدايا.
+        <br>• <b>20% لمستقبلك</b>: تحويش، جمعية، سداد ديون.
+        <br>عندك دلوقتي <b class="num">${kp}%</b> بيروحوا لمستقبلك${keep >= 0.2 ? ' — ده فوق المستهدف 👏' : ` — يعني ناقص حوالي <b class="num">${fmt(o.income * 0.2 - o.income * keep)}</b> ج في الشهر عشان توصل 20%. ممكن تجيبهم من الكماليات (شوف "حدود المصروف")، أو تزوّد قسط الجمعية/التحويش.`}
+        <br><span class="muted">الأرقام دي إرشادية — المهم إن الرقم ده يكبر شهر ورا شهر.</span></div></details></div>`;
 }
 function spendCard(o, id){
   const mode = S.settings.donutMode === 'all' ? 'all' : 'exp', rows = spendRows(o, mode).filter(r => r.v > 0);
@@ -1010,7 +1018,9 @@ PAGES.home = function(){
     ${o.reservePlanned ? `<div class="plan-line"><span>📅 تتشال لمواعيد السداد</span><b class="num">− ${fmt(o.reservePlanned)}</b></div>` : ''}
     <div class="plan-line"><span>🧺 استوك البيت</span><b class="num">− ${fmt(o.houseReserved)}</b></div>
     <div class="plan-line total"><span>🛒 متاح للمصروف اليومي</span><b class="num ${o.varBudget < 0 ? 'neg' : 'pos'}">${fmt(o.varBudget)}</b></div>
-    <div class="muted" style="margin-top:6px">يعني حوالي <b class="num">${fmt(o.varBudget / o.r.days)}</b> جنيه في اليوم على مدار ${o.r.days} يوم.</div>
+    <div class="muted" style="margin-top:6px; line-height:1.8">${o.isCurrent
+      ? `اتصرف منه <b class="num">${fmt(o.varSpent)}</b>، وفاضل <b class="num ${o.free < 0 ? 'neg' : ''}">${fmt(o.free)}</b> للـ <b class="num">${o.daysLeft}</b> يوم الباقيين — يعني حوالي <b class="num">${fmt(o.perDay)}</b> جنيه في اليوم.`
+      : `يعني حوالي <b class="num">${fmt(o.varBudget / o.r.days)}</b> جنيه في اليوم على مدار ${o.r.days} يوم.`}</div>
     ${splitBar(o)}
     ${o.recvExpected > 0.5 ? `<div class="note">🤝 متوقع يرجعلك الشهر ده <b class="num">${fmt(o.recvExpected)}</b> ج من فلوس عند الناس — مش محسوبين في الخطة لحد ما يوصلوا فعلًا.</div>` : ''}
     ${o.varBudget < 0 ? `<div class="note">⚠️ الدخل مش مغطي الخطة بـ <b class="num">${fmt(-o.varBudget)}</b> جنيه. قلّل التحويش الشهري للهدف، أو راجع الالتزامات، أو زوّد مصدر دخل.</div>` : ''}
