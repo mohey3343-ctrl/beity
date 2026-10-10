@@ -3,7 +3,7 @@
      أكتر من 3 ثواني بتفتح من النسخة المحفوظة.
    - الأيقونات والخطوط: من المحفوظ على طول، وبتتحدث في الخلفية.
    - المزامنة مع جوجل شيت: من النت بس، عمرها ما بتتحفظ هنا. */
-const CACHE = 'beity-v1';
+const CACHE = 'beity-v2';
 const CORE = ['./', './index.html', './manifest.json', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png', './Code.gs'];
 
 self.addEventListener('install', e => {
