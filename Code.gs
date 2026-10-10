@@ -4,11 +4,15 @@
    الخطوات:
    1) اعمل Google Sheet جديد (منفصل عن شيت العمارة).
    2) Extensions ← Apps Script، امسح اللي موجود والصق الملف ده كله.
-   3) غيّر SECRET تحت لكلمة سر من عندك.
-   4) Deploy ← New deployment ← Web app
+   3) غيّر SECRET تحت لكلمة سر من عندك، ودوس Save.
+   4) من القايمة اللي فوق جنب زرار Run اختار الدالة  setup  ودوس ▶ Run،
+      ووافق على الصلاحيات (Advanced ← Go to … ← Allow). لازم يظهر في
+      الـ Execution log: "✅ تمام".
+   5) Deploy ← New deployment ← Web app
         Execute as: Me
         Who has access: Anyone
-   5) انسخ رابط الـ Web app وحطه في إعدادات البرنامج مع نفس كلمة السر.
+      (ولو كان فيه نشر قديم: Deploy ← Manage deployments ← ✏️ ← Version: New version ← Deploy)
+   6) انسخ رابط الـ Web app وحطه في إعدادات البرنامج مع نفس كلمة السر.
 
    البيانات بتتخزن في شيت اسمه budget_db (مقسومة على صفوف لأن الخلية
    ليها حد أقصى)، وكل يوم بيتعمل نسخة احتياطية في شيت backup_YYYY-MM-DD
@@ -20,14 +24,31 @@ const SHEET_NAME = 'budget_db';
 const CHUNK = 40000;
 const KEEP_BACKUPS = 14;
 
+/* شغّلها مرة واحدة من المحرر (اختار setup ← Run) عشان تطلب الصلاحيات وتجهّز الشيت */
+function setup() {
+  const sh = sheet();
+  readDb();
+  Logger.log('✅ تمام — البيانات هتتحفظ في: ' + book().getName() + ' ← تاب ' + sh.getName() + '\n' + book().getUrl());
+}
+
+/* أي خطأ جوه السكريبت بيرجع للتطبيق كرسالة واضحة، بدل صفحة خطأ التطبيق ما يقدرش يقراها */
 function doGet(e) {
+  try { return handleGet(e); }
+  catch (err) { return out({ ok: false, error: 'خطأ في السكريبت: ' + err.message + ' — شغّل setup من المحرر ووافق على الصلاحيات، وبعدين انشر New version' }); }
+}
+function doPost(e) {
+  try { return handlePost(e); }
+  catch (err) { return out({ ok: false, error: 'خطأ في السكريبت: ' + err.message + ' — شغّل setup من المحرر ووافق على الصلاحيات، وبعدين انشر New version' }); }
+}
+
+function handleGet(e) {
   const p = (e && e.parameter) || {};
   if (SECRET && p.secret !== SECRET) return out({ ok: false, error: 'كلمة السر غلط' });
   const d = readDb();
   return out({ ok: true, value: d.value, updatedAt: d.updatedAt });
 }
 
-function doPost(e) {
+function handlePost(e) {
   let body;
   try { body = JSON.parse(e.postData.contents); }
   catch (x) { return out({ ok: false, error: 'طلب غير مفهوم' }); }

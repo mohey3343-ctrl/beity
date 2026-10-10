@@ -1875,9 +1875,11 @@ PAGES.settings = function(){
     <div class="muted" style="line-height:1.9">${s.syncUrl ? 'بياناتك بتتحفظ على جوجل شيت أول بأول.' : `<b>أضمن حماية لبياناتك</b> — بتتحفظ على جوجل وتفتحها من أي جهاز. الخطوات (مرة واحدة، 5 دقايق):
       <br>١. دوس <b>"انسخ كود السكريبت"</b> تحت.
       <br>٢. افتح <b>sheets.new</b> من المتصفح (شيت جديد)، ومن <b>Extensions ← Apps Script</b> امسح اللي موجود والصق الكود.
-      <br>٣. غيّر <b>SECRET</b> في أول الكود لكلمة سر من عندك، ودوس 💾.
-      <br>٤. <b>Deploy ← New deployment ← Web app</b>، وخلّي <b>Who has access: Anyone</b>، ودوس Deploy ووافق على الصلاحيات.
-      <br>٥. انسخ الرابط اللي هيطلع، وحطه هنا مع كلمة السر، ودوس "حفظ واتصال".`}</div>
+      <br>٣. غيّر <b>SECRET</b> في أول الكود لكلمة سر من عندك (حروف وأرقام)، ودوس 💾.
+      <br>٤. جنب زرار <b>▶ Run</b> اختار <b>setup</b> ودوس Run، ووافق على الصلاحيات (Advanced ← Go to ← Allow) لحد ما يظهر <b>✅ تمام</b>.
+      <br>٥. <b>Deploy ← New deployment ← Web app</b>، وخلّي <b>Who has access: Anyone</b>، ودوس Deploy.
+      <br>٦. انسخ الرابط اللي هيطلع (آخره /exec)، وحطه هنا مع كلمة السر، ودوس "حفظ واتصال".
+      <br><span class="muted">لو عدّلت الكود بعد النشر: Deploy ← Manage deployments ← ✏️ ← Version: <b>New version</b> ← Deploy.</span>`}</div>
     <button class="btn sm" style="margin-top:8px" data-act="copyScript">📋 انسخ كود السكريبت</button>
     <label class="fld" style="margin-top:10px"><span>رابط السكريبت (Web app URL)</span><input id="syncUrlIn" dir="ltr" value="${esc(s.syncUrl)}" placeholder="https://script.google.com/macros/s/.../exec"></label>
     <label class="fld"><span>كلمة السر (نفس اللي في Code.gs)</span><input id="syncSecretIn" dir="ltr" value="${esc(s.syncSecret)}"></label>
