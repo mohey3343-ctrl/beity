@@ -122,6 +122,22 @@ await test('معدل الاستهلاك بيتعلم من الجرد، والع�
   assert.deepEqual(r, { rice: 12, buy: '9 كيس (4.05 KG)', cost: 135 });
 });
 
+await test('الجرد: البحث بيخبّي الباقي من غير ما يمسح اللي اتكتب، والفاضي ما بيتحفظش', async page => {
+  await ev(page, () => { ACT.seedItems(); save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'jard' }); });
+  const rz = await ev(page, () => S.items.find(i => i.name === 'رز').id);
+  await page.fill(`#jardForm input[data-item="${rz}"]`, '3');
+  const shown = () => ev(page, () => [...document.querySelectorAll('#jardForm .jard-row')].filter(r => r.offsetParent).map(r => r.querySelector('.nm').firstChild.textContent));
+  await page.fill('#jardQ', 'مكرونه');
+  assert.deepEqual(await shown(), ['مكرونة']);
+  await page.fill('#jardQ', 'حاجة مش موجودة');
+  assert.deepEqual([(await shown()).length, await page.isVisible('#jardNone')], [0, true]);
+  await page.fill('#jardQ', '');
+  assert.equal((await shown()).length, await ev(page, () => S.items.length));
+  await page.fill('#jardQ', 'مكرونة');
+  await page.click('[data-act="saveJard"]');
+  assert.deepEqual(await ev(page, () => S.counts.map(c => [byId(S.items, c.itemId).name, c.qty])), [['رز', 3]]);
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });
