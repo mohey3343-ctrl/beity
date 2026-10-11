@@ -126,7 +126,7 @@ await test('الجرد: البحث بيخبّي الباقي من غير ما ي
   await ev(page, () => { ACT.seedItems(); save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'jard' }); });
   const rz = await ev(page, () => S.items.find(i => i.name === 'رز').id);
   await page.fill(`#jardForm input[data-item="${rz}"]`, '3');
-  const shown = () => ev(page, () => [...document.querySelectorAll('#jardForm .jard-row')].filter(r => r.offsetParent).map(r => r.querySelector('.nm').firstChild.textContent));
+  const shown = () => ev(page, () => [...document.querySelectorAll('#jardForm .jard-row')].filter(r => r.offsetParent).map(r => r.dataset.nm));
   await page.fill('[data-q="jard"]', 'مكرونه');
   assert.deepEqual(await shown(), ['مكرونة']);
   await page.fill('[data-q="jard"]', 'حاجة مش موجودة');
@@ -156,6 +156,11 @@ await test('الجرد: اللي بيتكتب بيفضل لو خرجت، وقب�
   await fill(page, 'stock', '3'); await submit(page);
   assert.equal(await page.inputValue(`#jardForm input[data-item="${ids[2]}"]`), '4', 'الرقم اتمسح بعد إضافة صنف');
   assert.equal(await page.inputValue('[data-q="jard"]'), '');
+  // الدوس على اسم الصنف بيفتح تعديله، والأرقام برضه ما بتضيعش
+  await page.click(`#jardForm .jard-row:has(input[data-item="${ids[2]}"]) .nm`);
+  assert.equal(await page.inputValue('#sheetBody [name="name"]'), await ev(page, id => byId(S.items, id).name, ids[2]));
+  await submit(page);
+  assert.equal(await page.inputValue(`#jardForm input[data-item="${ids[2]}"]`), '4', 'الرقم اتمسح بعد تعديل صنف');
   await page.click('[data-act="saveJard"]');
   // a و b عندهم جرد قديم ومتسابوا فاضيين → بيظهروا في السؤال
   const asked = await ev(page, () => [...document.querySelectorAll('#sheetBody input[type=checkbox]')].map(x => x.name));

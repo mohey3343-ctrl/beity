@@ -172,6 +172,7 @@
   .jard-row{display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line);}
   .jard-row:last-child{border-bottom:none;}
   .jard-row .nm{flex:1; font-size:14px; font-weight:600;}
+  .jard-row .nm .ed{font-size:11px; opacity:.55;}
   .jard-row .nm small{display:block; font-weight:400; color:var(--soft); font-size:11.5px;}
   .jard-row select{width:74px; padding:8px 4px; border:1px solid var(--line); border-radius:10px; background:var(--card-2); color:var(--ink); font-size:13px;}
   .jard-row input{width:90px; padding:8px; border:1px solid var(--line); border-radius:10px; background:var(--card-2); color:var(--ink); text-align:center;}
@@ -1437,7 +1438,7 @@ function jardHtml(){
   const jv = S.settings.jardView === 'base' ? 'base' : 'pack';
   const jd = jardDraft(), jdn = Object.keys(jd).filter(id => byId(S.items, id)).length;
   let h = `<div class="card"><h3>📝 الجرد — اكتب اللي عندك دلوقتي</h3>
-    <div class="muted" style="line-height:1.8">اكتب الكمية الموجودة فعلًا من كل صنف، واختار الوحدة جنبها (كيس أو KG…). سيب الخانة فاضية لو مش عاوز تجرده دلوقتي، ولو خلص اكتب <b>0</b>. الرقم الرمادي هو اللي البرنامج متوقعه.<br>اللي بتكتبه بيفضل محفوظ لو خرجت ورجعت، وبيتسجّل لما تدوس <b>احفظ</b> في الآخر.</div>
+    <div class="muted" style="line-height:1.8">اكتب الكمية الموجودة فعلًا من كل صنف، واختار الوحدة جنبها (كيس أو KG…). سيب الخانة فاضية لو مش عاوز تجرده دلوقتي، ولو خلص اكتب <b>0</b>. ولو بيانات صنف غلط (الوحدة، العبوة…) دوس على اسمه وعدّلها. الرقم الرمادي هو اللي البرنامج متوقعه.<br>اللي بتكتبه بيفضل محفوظ لو خرجت ورجعت، وبيتسجّل لما تدوس <b>احفظ</b> في الآخر.</div>
     <div class="row" style="margin-top:10px"><span class="muted">اجرد الكل بـ</span>
       <div class="seg" style="margin:0; flex:1; max-width:250px">
         <button type="button" class="${jv === 'pack' ? 'on' : ''}" data-act="jardAll" data-v="pack">العبوة (كيس…)</button>
@@ -1453,7 +1454,7 @@ function jardHtml(){
       const dr = jd[it.id], u = dr && dr.u ? dr.u : jv;
       const e = estStock(it), f = jardF(it, u);
       const conv = hasPack(it) && !(baseOf(it) === 'PCS' && it.pf === 1) ? `1 ${esc(it.pu)} = <span dir="ltr" style="unicode-bidi:isolate">${fmtQ(it.pf)} ${BASES[baseOf(it)].en}</span>` : '';
-      h += `<div class="jard-row" data-nm="${esc(it.name)}" ${hideIf(!qHit('jard', it))}><div class="nm">${esc(it.name)}<small>${conv}${e != null ? `${conv ? ' · ' : ''}متوقع <span data-est>${fmtQ(e / f)}</span>` : ''}</small></div>
+      h += `<div class="jard-row" data-nm="${esc(it.name)}" ${hideIf(!qHit('jard', it))}><div class="nm" data-act="itemForm" data-id="${it.id}" style="cursor:pointer">${esc(it.name)} <span class="ed" aria-label="تعديل">✏️</span><small>${conv}${e != null ? `${conv ? ' · ' : ''}متوقع <span data-est>${fmtQ(e / f)}</span>` : ''}</small></div>
         ${jardUnitSel(it, u, `data-junit="${it.id}"`)}
         <input data-item="${it.id}" inputmode="decimal" value="${dr ? esc(dr.v) : ''}" placeholder="${e != null ? fmtQ(e / f) : '—'}"></div>`;
     });
@@ -2273,6 +2274,9 @@ function itemForm(id, preset){
     if(num(v.price) > 5000 && !confirm(`سعر الـ${unitTxt} ${fmt(num(v.price))} ج؟ ده كبير — متأكد؟`)) return false;
     if(num(v.monthly) > 200 && !confirm(`بتستهلك ${fmtQ(num(v.monthly))} ${unitTxt} في الشهر؟ متأكد؟`)) return false;
     if(pu && v.base !== 'PCS' && pf > 100 && !confirm(`الـ${pu} فيه ${fmtQ(pf)} ${(BASES[v.base] || BASES.PCS).en}؟ متأكد؟ (مثلاً 450 جرام تتكتب 0.45)`)) return false;
+    // تغيير المقياس (KG ↔ PCS…) مالوش تحويل: الجرد والمشتريات القديمة متسجلة بالمقياس القديم
+    if(it && (v.base || 'PCS') !== baseOf(it) && (S.counts.some(c => c.itemId === it.id) || itemBuys(it).length)
+      && !confirm(`الجرد والمشتريات القديمة لـ${it.name} متسجلة بالـ${BASES[baseOf(it)].en}، وبعد التغيير هتتقري ${(BASES[v.base] || BASES.PCS).en}.\nكمّل؟ وبعدها اجرده تاني عشان الرقم يتظبط.`)) return false;
     const o = it || {id:uid(), createdAt:todayS()};
     Object.assign(o, {name:v.name.trim(), group:v.group.trim() || 'تاني', base:v.base || 'PCS', pu:pu || undefined, pf:pu ? pf : undefined,
       monthly:num(v.monthly) * f, price:Math.round(num(v.price) / f * 1000) / 1000});
