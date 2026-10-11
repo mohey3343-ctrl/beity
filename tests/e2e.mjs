@@ -127,15 +127,26 @@ await test('الجرد: البحث بيخبّي الباقي من غير ما ي
   const rz = await ev(page, () => S.items.find(i => i.name === 'رز').id);
   await page.fill(`#jardForm input[data-item="${rz}"]`, '3');
   const shown = () => ev(page, () => [...document.querySelectorAll('#jardForm .jard-row')].filter(r => r.offsetParent).map(r => r.querySelector('.nm').firstChild.textContent));
-  await page.fill('#jardQ', 'مكرونه');
+  await page.fill('[data-q="jard"]', 'مكرونه');
   assert.deepEqual(await shown(), ['مكرونة']);
-  await page.fill('#jardQ', 'حاجة مش موجودة');
-  assert.deepEqual([(await shown()).length, await page.isVisible('#jardNone')], [0, true]);
-  await page.fill('#jardQ', '');
+  await page.fill('[data-q="jard"]', 'حاجة مش موجودة');
+  assert.deepEqual([(await shown()).length, await page.isVisible('[data-qnone="jard"]')], [0, true]);
+  await page.fill('[data-q="jard"]', '');
   assert.equal((await shown()).length, await ev(page, () => S.items.length));
-  await page.fill('#jardQ', 'مكرونة');
+  await page.fill('[data-q="jard"]', 'مكرونة');
   await page.click('[data-act="saveJard"]');
   assert.deepEqual(await ev(page, () => S.counts.map(c => [byId(S.items, c.itemId).name, c.qty])), [['رز', 3]]);
+});
+
+await test('الأصناف: البحث بيفضل شغال بعد تعديل صنف', async page => {
+  await ev(page, () => { ACT.seedItems(); save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'items' }); });
+  const shown = () => ev(page, () => [...document.querySelectorAll('.list-item[data-nm]')].filter(r => r.offsetParent).map(r => r.dataset.nm));
+  await page.fill('[data-q="items"]', 'رز');
+  assert.deepEqual(await shown(), ['رز']);
+  await page.click('.list-item[data-nm="رز"]'); await submit(page);
+  assert.deepEqual([await shown(), await page.inputValue('[data-q="items"]')], [['رز'], 'رز']);
+  await page.fill('[data-q="items"]', '');
+  assert.equal((await shown()).length, await ev(page, () => S.items.length));
 });
 
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
