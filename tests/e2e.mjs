@@ -142,19 +142,26 @@ await test('الجرد: اللي بيتكتب بيفضل لو خرجت، وقب�
   const ids = await ev(page, () => {
     ACT.seedItems();
     const [a, b, c] = S.items;
-    S.counts.push({ id: 'x1', ts: 1, itemId: a.id, date: '2026-10-09', qty: 5 }, { id: 'x2', ts: 2, itemId: b.id, date: '2026-10-09', qty: 5 });
+    S.counts.push({ id: 'x1', ts: 1, itemId: a.id, date: '2026-10-05', qty: 5 }, { id: 'x2', ts: 2, itemId: b.id, date: '2026-10-05', qty: 5 });
     save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'jard' });
     return [a.id, b.id, c.id];
   });
   await page.fill(`#jardForm input[data-item="${ids[2]}"]`, '4');
   await ev(page, () => { ACT.tab({ tab: 'home' }); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'jard' }); });
   assert.equal(await page.inputValue(`#jardForm input[data-item="${ids[2]}"]`), '4', 'الرقم اتمسح لما خرجت ورجعت');
+  // صنف جديد من جوه الجرد: الأرقام اللي اتكتبت ما بتضيعش، والصنف اللي اتعدّ وهو بيتضاف ما يتسألش عنه
+  await page.fill('[data-q="jard"]', 'تونة');
+  await page.click('[data-qnone="jard"] [data-act="itemNew"]');
+  assert.equal(await page.inputValue('#sheetBody [name="name"]'), 'تونة');
+  await fill(page, 'stock', '3'); await submit(page);
+  assert.equal(await page.inputValue(`#jardForm input[data-item="${ids[2]}"]`), '4', 'الرقم اتمسح بعد إضافة صنف');
+  assert.equal(await page.inputValue('[data-q="jard"]'), '');
   await page.click('[data-act="saveJard"]');
   // a و b عندهم جرد قديم ومتسابوا فاضيين → بيظهروا في السؤال
   const asked = await ev(page, () => [...document.querySelectorAll('#sheetBody input[type=checkbox]')].map(x => x.name));
   assert.deepEqual(asked, ['z_' + ids[0], 'z_' + ids[1]]);
   await page.check(`#sheetBody [name="z_${ids[1]}"]`); await submit(page);
-  const r = await ev(page, () => ({ c: S.counts.filter(c => !c.id.startsWith('x')).map(c => [c.itemId, c.qty]), draft: localStorage.getItem(JDRAFT_KEY) }));
+  const r = await ev(page, () => ({ c: S.counts.filter(c => !c.id.startsWith('x') && byId(S.items, c.itemId).name !== 'تونة').map(c => [c.itemId, c.qty]), draft: localStorage.getItem(JDRAFT_KEY) }));
   const f = await ev(page, id => packF(byId(S.items, id)), ids[2]);   // الجرد بالعبوة افتراضيًا
   assert.deepEqual(r, { c: [[ids[2], 4 * f], [ids[1], 0]], draft: null });
 });

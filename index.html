@@ -1441,7 +1441,8 @@ function jardHtml(){
     <div class="row" style="margin-top:10px"><span class="muted">اجرد الكل بـ</span>
       <div class="seg" style="margin:0; flex:1; max-width:250px">
         <button type="button" class="${jv === 'pack' ? 'on' : ''}" data-act="jardAll" data-v="pack">العبوة (كيس…)</button>
-        <button type="button" class="${jv === 'base' ? 'on' : ''}" data-act="jardAll" data-v="base">KG / L / PCS</button></div></div></div>
+        <button type="button" class="${jv === 'base' ? 'on' : ''}" data-act="jardAll" data-v="base">KG / L / PCS</button></div></div>
+    <div class="row" style="margin-top:10px"><span class="muted">لقيت حاجة مش في القايمة؟</span><button type="button" class="btn sm dark" data-act="itemNew" data-k="jard">+ صنف جديد</button></div></div>
     ${jdn ? `<div class="note" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">📝 <span style="flex:1">فيه جرد لسه ما اتحفظش (<b class="num">${jdn}</b> صنف) — كمّل من مكان ما وقفت، وفي الآخر دوس احفظ.</span><button type="button" class="btn sm ghost" data-act="jardDraftClear">ابدأ من الأول</button></div>` : ''}
     <div class="card" id="jardForm">
     ${searchBox('jard')}`;
@@ -1471,7 +1472,7 @@ const hideIf = c => c ? 'style="display:none"' : '';
 function searchBox(k, solo){
   const none = !S.items.some(it => qHit(k, it));
   return `<div data-qmark="${k}"></div><div class="list-q${solo ? ' solo' : ''}"><input data-q="${k}" type="search" value="${esc(LISTQ[k])}" placeholder="🔍 دوّر على صنف: رز، بيض، منظفات…" autocomplete="off"></div>
-    <div class="muted" data-qnone="${k}" style="padding:10px 0${none ? '' : '; display:none'}">مفيش صنف بالاسم ده</div>`;
+    <div class="muted" data-qnone="${k}" style="padding:10px 0${none ? '' : '; display:none'}">مفيش صنف بالاسم ده. <button type="button" class="btn sm" data-act="itemNew" data-k="${k}">+ ضيفه صنف جديد</button></div>`;
 }
 function listFilter(k, q){
   LISTQ[k] = q;
@@ -2237,13 +2238,14 @@ function sane(amount, date, type, editId, cat){
 }
 
 /* ---- الأصناف ---- */
-function itemForm(id){
+function itemForm(id, preset){
   const it = id ? byId(S.items, id) : null;
+  preset = preset || {};
   const groups = Array.from(new Set(['تموين','ألبان وبروتين','خضار وفاكهة','منظفات','عناية شخصية', ...(S.settings.groups || []), ...groupsOf()]));
   const packs = Array.from(new Set([...PACKS, ...(S.settings.packs || []), ...S.items.map(x => x.pu).filter(Boolean)]));
   const r = it ? dailyRate(it) : null, learned = it ? learnedDaily(it) : null;
   const base = it ? baseOf(it) : 'KG', pu = it ? (it.pu || '') : 'كيس', f = it ? packF(it) : 1;
-  let body = Fd.text('name', 'اسم الصنف', it ? it.name : '', 'autofocus placeholder="مثلاً: مكرونة"');
+  let body = Fd.text('name', 'اسم الصنف', it ? it.name : (preset.name || ''), 'autofocus placeholder="مثلاً: مكرونة"');
   body += `<div class="fld2">${Fd.pick('group', 'المجموعة', groups, it ? it.group : 'تموين', 'groups')}
     <label class="fld"><span>المقياس الأساسي</span><select name="base" data-ilbl>${Object.entries(BASES).map(([k, v]) => `<option value="${k}" ${k === base ? 'selected' : ''}>${v.en} — ${v.ar}</option>`).join('')}</select></label></div>`;
   body += `<div class="fld2"><label class="fld"><span>بتشتريه في (العبوة)</span><select name="pu" data-ilbl data-pick="packs" data-label="العبوة" data-prev="${esc(pu)}">
@@ -2278,7 +2280,13 @@ function itemForm(id){
       S.items.push(o);
       if(String(v.stock || '').trim() !== '') S.counts.push({id:uid(), ts:Date.now(), itemId:o.id, date:todayS(), qty:num(v.stock) * f});
     }
+    // لو اتضاف من الجرد أو قايمة الأصناف: نمسح البحث ونوديك على الصنف الجديد
+    if(!it && preset.from){ LISTQ[preset.from] = ''; }
     save(); toast('اتحفظ');
+    if(!it && preset.from) setTimeout(() => {
+      const row = document.querySelector(`#jardForm input[data-item="${o.id}"]`) || document.querySelector(`.list-item[data-id="${o.id}"]`);
+      if(row) row.scrollIntoView({block:'center'});
+    }, 50);
   });
   itemLabels();
 }
@@ -2945,6 +2953,7 @@ const ACT = {
     toast('اتضافوا — احذف اللي مش بتستخدمه وكمّل الباقي');
   },
   itemForm:(d) => itemForm(d.id),
+  itemNew:(d) => itemForm(null, {name:(LISTQ[d.k] || '').trim(), from:d.k}),
   delItem:(d) => {
     if(!confirm('تمسح الصنف ده؟ (مشترياته هتفضل في اليومية)')) return;
     S.items = S.items.filter(i => i.id !== d.id); S.counts = S.counts.filter(c => c.itemId !== d.id);
@@ -2983,7 +2992,8 @@ const ACT = {
     });
     // الأصناف اللي سبتها فاضية والبرنامج فاكر إن عندك منها: نسألك لو فيها حاجة خلصت
     const done = new Set(filled.map(x => x.it.id));
-    const left = S.items.filter(it => !done.has(it.id) && (estStock(it) || 0) > 0.001);
+    const countedToday = new Set(S.counts.filter(c => c.date === todayS()).map(c => c.itemId));
+    const left = S.items.filter(it => !done.has(it.id) && !countedToday.has(it.id) && (estStock(it) || 0) > 0.001);
     if(!left.length) return jardCommit(filled, []);
     const body = `<div class="muted" style="line-height:1.8; margin-bottom:6px">${filled.length ? `كتبت جرد <b class="num">${filled.length}</b> صنف. ` : ''}فيه <b class="num">${left.length}</b> صنف سبتهم فاضيين، والبرنامج فاكر إن عندك منهم — هيفضلوا زي ما هم.<br><b>لو فيهم حاجة خلصت علّم عليها</b> وهتتسجّل صفر.</div>
       ${groupsOf().map(g => { const L = left.filter(it => (it.group || 'تاني') === g); return L.length ? `<div class="group-h">${esc(g)}</div>` + L.map(it => `<label class="jard-row" style="cursor:pointer"><input type="checkbox" name="z_${it.id}" style="width:22px; height:22px; padding:0; flex:none; accent-color:var(--bad)"><div class="nm">${esc(it.name)}<small>متوقع ${qtyTxt(it, estStock(it))}</small></div><span class="muted">خلص</span></label>`).join('') : ''; }).join('')}
