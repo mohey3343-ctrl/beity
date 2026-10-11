@@ -652,6 +652,7 @@ function memo(fn, keyf){
 }
 /* نسخة تلقائية يومية على الجهاز (آخر 7 أيام) — بتحمي من تعديل أو مسح بالغلط */
 const SNAP_KEY = KEY + '::snaps';
+const JDRAFT_KEY = KEY + '::jardDraft';
 function snapshots(){ try{ return JSON.parse(localStorage.getItem(SNAP_KEY) || '[]'); }catch(e){ return []; } }
 function takeSnapshot(){
   try{
@@ -1411,25 +1412,49 @@ function jardUnitSel(it, u, attrs){
   if(!hasPack(it)) return `<span class="muted" style="width:74px; text-align:center; font-size:13px" dir="ltr">${BASES[baseOf(it)].en}</span>`;
   return `<select ${attrs}><option value="pack" ${u !== 'base' ? 'selected' : ''}>${esc(it.pu)}</option><option value="base" ${u === 'base' ? 'selected' : ''}>${BASES[baseOf(it)].en}</option></select>`;
 }
+/* مسودة الجرد: اللي بتكتبه بيتحفظ على الموبايل أول بأول، فلو خرجت من الصفحة أو جالك تليفون
+   ترجع تلاقيه زي ما هو. بيتسجّل فعلًا بس لما تدوس "احفظ الجرد". */
+function jardDraft(){ try{ return JSON.parse(localStorage.getItem(JDRAFT_KEY) || '{}') || {}; }catch(e){ return {}; } }
+function jardDraftSave(){
+  const d = {};
+  document.querySelectorAll('#jardForm input[data-item]').forEach(inp => {
+    if(inp.value.trim() === '') return;
+    const sel = inp.closest('.jard-row').querySelector('select[data-junit]');
+    d[inp.dataset.item] = {v:inp.value.trim(), u:sel ? sel.value : 'base'};
+  });
+  try{ Object.keys(d).length ? localStorage.setItem(JDRAFT_KEY, JSON.stringify(d)) : localStorage.removeItem(JDRAFT_KEY); }catch(e){}
+}
+function jardCommit(filled, zeros){
+  if(!filled.length && !zeros.length){ toast('ما كتبتش أي كمية', true); return; }
+  const ts = Date.now(), date = todayS();
+  filled.forEach((x, i) => S.counts.push({id:uid(), ts:ts + i, itemId:x.it.id, date, qty:x.qty}));
+  zeros.forEach((it, i) => S.counts.push({id:uid(), ts:ts + filled.length + i, itemId:it.id, date, qty:0}));
+  try{ localStorage.removeItem(JDRAFT_KEY); }catch(e){}
+  SUB.stock = 'shop'; LISTQ.jard = ''; save(); window.scrollTo(0, 0);
+  toast(`اتسجّل جرد ${filled.length + zeros.length} صنف` + (zeros.length ? ` (${zeros.length} خلصوا)` : ''));
+}
 function jardHtml(){
   const jv = S.settings.jardView === 'base' ? 'base' : 'pack';
+  const jd = jardDraft(), jdn = Object.keys(jd).filter(id => byId(S.items, id)).length;
   let h = `<div class="card"><h3>📝 الجرد — اكتب اللي عندك دلوقتي</h3>
-    <div class="muted" style="line-height:1.8">اكتب الكمية الموجودة فعلًا من كل صنف، واختار الوحدة جنبها (كيس أو KG…). سيب الخانة فاضية لو مش عاوز تجرده دلوقتي. الرقم الرمادي هو اللي البرنامج متوقعه.</div>
+    <div class="muted" style="line-height:1.8">اكتب الكمية الموجودة فعلًا من كل صنف، واختار الوحدة جنبها (كيس أو KG…). سيب الخانة فاضية لو مش عاوز تجرده دلوقتي، ولو خلص اكتب <b>0</b>. الرقم الرمادي هو اللي البرنامج متوقعه.<br>اللي بتكتبه بيفضل محفوظ لو خرجت ورجعت، وبيتسجّل لما تدوس <b>احفظ</b> في الآخر.</div>
     <div class="row" style="margin-top:10px"><span class="muted">اجرد الكل بـ</span>
       <div class="seg" style="margin:0; flex:1; max-width:250px">
         <button type="button" class="${jv === 'pack' ? 'on' : ''}" data-act="jardAll" data-v="pack">العبوة (كيس…)</button>
         <button type="button" class="${jv === 'base' ? 'on' : ''}" data-act="jardAll" data-v="base">KG / L / PCS</button></div></div></div>
+    ${jdn ? `<div class="note" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">📝 <span style="flex:1">فيه جرد لسه ما اتحفظش (<b class="num">${jdn}</b> صنف) — كمّل من مكان ما وقفت، وفي الآخر دوس احفظ.</span><button type="button" class="btn sm ghost" data-act="jardDraftClear">ابدأ من الأول</button></div>` : ''}
     <div class="card" id="jardForm">
     ${searchBox('jard')}`;
   groupsOf().forEach(g => {
     const its = S.items.filter(it => (it.group || 'تاني') === g);
     h += `<div data-g="${esc(g)}" ${hideIf(!its.some(it => qHit('jard', it)))}><div class="group-h">${esc(g)}</div>`;
     its.forEach(it => {
-      const e = estStock(it), f = jardF(it, jv);
+      const dr = jd[it.id], u = dr && dr.u ? dr.u : jv;
+      const e = estStock(it), f = jardF(it, u);
       const conv = hasPack(it) && !(baseOf(it) === 'PCS' && it.pf === 1) ? `1 ${esc(it.pu)} = <span dir="ltr" style="unicode-bidi:isolate">${fmtQ(it.pf)} ${BASES[baseOf(it)].en}</span>` : '';
       h += `<div class="jard-row" data-nm="${esc(it.name)}" ${hideIf(!qHit('jard', it))}><div class="nm">${esc(it.name)}<small>${conv}${e != null ? `${conv ? ' · ' : ''}متوقع <span data-est>${fmtQ(e / f)}</span>` : ''}</small></div>
-        ${jardUnitSel(it, jv, `data-junit="${it.id}"`)}
-        <input data-item="${it.id}" inputmode="decimal" placeholder="${e != null ? fmtQ(e / f) : '—'}"></div>`;
+        ${jardUnitSel(it, u, `data-junit="${it.id}"`)}
+        <input data-item="${it.id}" inputmode="decimal" value="${dr ? esc(dr.v) : ''}" placeholder="${e != null ? fmtQ(e / f) : '—'}"></div>`;
     });
     h += `</div>`;
   });
@@ -2950,21 +2975,33 @@ const ACT = {
   goShop:() => { TAB = 'stock'; SUB.stock = 'shop'; render(); window.scrollTo(0, 0); },
   saveJard:() => {
     if(!validNums($('#jardForm'))) return;
-    let n = 0; const ts = Date.now();
-    document.querySelectorAll('#jardForm input[data-item]').forEach((inp, i) => {
+    const filled = [];
+    document.querySelectorAll('#jardForm input[data-item]').forEach(inp => {
       if(inp.value.trim() === '') return;
       const it = byId(S.items, inp.dataset.item), sel = inp.closest('.jard-row').querySelector('select[data-junit]');
-      S.counts.push({id:uid(), ts:ts + i, itemId:inp.dataset.item, date:todayS(), qty:num(inp.value) * jardF(it, sel ? sel.value : 'base')}); n++;
+      filled.push({it, qty:num(inp.value) * jardF(it, sel ? sel.value : 'base')});
     });
-    if(!n){ toast('ما كتبتش أي كمية', true); return; }
-    SUB.stock = 'shop'; LISTQ.jard = ''; save(); window.scrollTo(0, 0); toast(`اتسجّل جرد ${n} صنف`);
+    // الأصناف اللي سبتها فاضية والبرنامج فاكر إن عندك منها: نسألك لو فيها حاجة خلصت
+    const done = new Set(filled.map(x => x.it.id));
+    const left = S.items.filter(it => !done.has(it.id) && (estStock(it) || 0) > 0.001);
+    if(!left.length) return jardCommit(filled, []);
+    const body = `<div class="muted" style="line-height:1.8; margin-bottom:6px">${filled.length ? `كتبت جرد <b class="num">${filled.length}</b> صنف. ` : ''}فيه <b class="num">${left.length}</b> صنف سبتهم فاضيين، والبرنامج فاكر إن عندك منهم — هيفضلوا زي ما هم.<br><b>لو فيهم حاجة خلصت علّم عليها</b> وهتتسجّل صفر.</div>
+      ${groupsOf().map(g => { const L = left.filter(it => (it.group || 'تاني') === g); return L.length ? `<div class="group-h">${esc(g)}</div>` + L.map(it => `<label class="jard-row" style="cursor:pointer"><input type="checkbox" name="z_${it.id}" style="width:22px; height:22px; padding:0; flex:none; accent-color:var(--bad)"><div class="nm">${esc(it.name)}<small>متوقع ${qtyTxt(it, estStock(it))}</small></div><span class="muted">خلص</span></label>`).join('') : ''; }).join('')}
+      ${Fd.foot('احفظ الجرد')}`;
+    openSheet('قبل ما تحفظ', body, v => {
+      const zeros = left.filter(it => v['z_' + it.id]);
+      if(!filled.length && !zeros.length){ toast('ما كتبتش أي كمية', true); return false; }
+      jardCommit(filled, zeros);
+    });
   },
+  jardDraftClear:() => { if(!confirm('تمسح كل اللي كتبته في الجرد ده وتبدأ من الأول؟')) return; try{ localStorage.removeItem(JDRAFT_KEY); }catch(e){} render(); },
   cover:(d) => { S.settings.coverMode = d.v; save(); },
   // بيقلب وحدة كل صفوف الجرد من غير ما يمسح اللي اتكتب
   jardAll:(d, el) => {
     S.settings.jardView = d.v; persist();
     el.parentNode.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === el));
     document.querySelectorAll('#jardForm select[data-junit]').forEach(sel => { const prev = sel.value; sel.value = d.v; jardUnitChanged(sel, prev); });
+    jardDraftSave();
   },
   shopView:(d) => { S.settings.shopView = d.v; save(); },
   buffer:(d) => { S.settings.bufferDays = Math.max(0, Math.min(30, (S.settings.bufferDays || 0) + (+d.d))); save(); },
@@ -3161,7 +3198,7 @@ document.addEventListener('change', e => {
   if(el.hasAttribute('data-ml')){ mlRead(); mlRender(); return; }
   if(el.id === 'logCat'){ LOGCAT = el.value; $('#logList').innerHTML = logListHtml(summary(VIEW)); return; }
   if(el.id === 'logAll'){ LOGALL = el.checked; $('#logList').innerHTML = logListHtml(summary(VIEW)); return; }
-  if(el.hasAttribute('data-junit')){ jardUnitChanged(el, el.dataset.prev || (el.value === 'pack' ? 'base' : 'pack')); return; }
+  if(el.hasAttribute('data-junit')){ jardUnitChanged(el, el.dataset.prev || (el.value === 'pack' ? 'base' : 'pack')); if(el.closest('#jardForm')) jardDraftSave(); return; }
   if(el.dataset.act === 'cycleDay'){ setCycleDay(+el.value); save(); toast('اتغيّر بداية الشهر'); }
   if(el.dataset.act === 'fcRecv'){ S.settings.fcRecv = el.checked; save(); return; }
   if(el.dataset.act === 'rollDebts'){ const g = byId(S.goals, el.dataset.id); if(g){ g.rollDebts = el.checked; save(); } }
@@ -3170,6 +3207,7 @@ document.addEventListener('input', e => {
   if(e.target.hasAttribute && e.target.hasAttribute('data-bl')) buyLabels();
   if(e.target.matches && e.target.matches('input[inputmode="decimal"]')) markField(e.target);
   if(e.target.dataset && e.target.dataset.q){ listFilter(e.target.dataset.q, e.target.value); return; }
+  if(e.target.matches && e.target.matches('#jardForm input[data-item]')) jardDraftSave();
   if(e.target.id === 'logQ'){ LOGQ = e.target.value; $('#logList').innerHTML = logListHtml(summary(VIEW)); }
   if(e.target.matches && e.target.matches('#mlines [data-f="amount"]')){
     const rows = document.querySelectorAll('#mlines .ml-row'), row = e.target.closest('.ml-row');

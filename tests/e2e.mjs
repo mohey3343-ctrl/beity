@@ -138,6 +138,27 @@ await test('الجرد: البحث بيخبّي الباقي من غير ما ي
   assert.deepEqual(await ev(page, () => S.counts.map(c => [byId(S.items, c.itemId).name, c.qty])), [['رز', 3]]);
 });
 
+await test('الجرد: اللي بيتكتب بيفضل لو خرجت، وقبل الحفظ بيسألك عن الفاضي اللي ممكن يكون خلص', async page => {
+  const ids = await ev(page, () => {
+    ACT.seedItems();
+    const [a, b, c] = S.items;
+    S.counts.push({ id: 'x1', ts: 1, itemId: a.id, date: '2026-10-09', qty: 5 }, { id: 'x2', ts: 2, itemId: b.id, date: '2026-10-09', qty: 5 });
+    save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'jard' });
+    return [a.id, b.id, c.id];
+  });
+  await page.fill(`#jardForm input[data-item="${ids[2]}"]`, '4');
+  await ev(page, () => { ACT.tab({ tab: 'home' }); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'jard' }); });
+  assert.equal(await page.inputValue(`#jardForm input[data-item="${ids[2]}"]`), '4', 'الرقم اتمسح لما خرجت ورجعت');
+  await page.click('[data-act="saveJard"]');
+  // a و b عندهم جرد قديم ومتسابوا فاضيين → بيظهروا في السؤال
+  const asked = await ev(page, () => [...document.querySelectorAll('#sheetBody input[type=checkbox]')].map(x => x.name));
+  assert.deepEqual(asked, ['z_' + ids[0], 'z_' + ids[1]]);
+  await page.check(`#sheetBody [name="z_${ids[1]}"]`); await submit(page);
+  const r = await ev(page, () => ({ c: S.counts.filter(c => !c.id.startsWith('x')).map(c => [c.itemId, c.qty]), draft: localStorage.getItem(JDRAFT_KEY) }));
+  const f = await ev(page, id => packF(byId(S.items, id)), ids[2]);   // الجرد بالعبوة افتراضيًا
+  assert.deepEqual(r, { c: [[ids[2], 4 * f], [ids[1], 0]], draft: null });
+});
+
 await test('الأصناف: البحث بيفضل شغال بعد تعديل صنف', async page => {
   await ev(page, () => { ACT.seedItems(); save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'items' }); });
   const shown = () => ev(page, () => [...document.querySelectorAll('.list-item[data-nm]')].filter(r => r.offsetParent).map(r => r.dataset.nm));
