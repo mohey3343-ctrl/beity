@@ -226,6 +226,7 @@
   .ml-top select{flex:1.4;} .ml-top input{flex:1; text-align:center; font-family:'IBM Plex Mono', monospace; font-weight:600;}
   .ml-sub select, .ml-sub input{flex:1;} .ml-sub input[data-f="qty"]{flex:.6; text-align:center;}
   .ml-u{font-size:12px; min-width:34px;}
+  .ml-sub select.ml-unit{flex:none; width:auto; max-width:90px;}
   .ml-x{border:none; background:none; color:var(--bad); font-size:16px; width:28px; flex-shrink:0;}
   .catpick{display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-bottom:12px;}
   .catpick label{display:block;}
@@ -2307,29 +2308,49 @@ function itemLabels(){
   if(L('stock')) L('stock').textContent = `الموجود عندك دلوقتي بالـ${unit} (اختياري)`;
   L('conv').innerHTML = pu ? `يعني: 1 ${esc(pu)} = <b class="num">${fmtQ(pf)}</b> ${base.en}` : `الكميات هتتكتب بالـ${base.en} (${base.ar})`;
 }
+/* الوحدات اللي الصنف بيتشرى بيها: العبوة الأساسية + أي عبوات تانية اتشرى بيها قبل كده + المقياس (KG/L/PCS) */
+function itemUnits(it){
+  const out = [];
+  if(hasPack(it)) out.push({k:'pack', name:it.pu, f:it.pf});
+  (it.alt || []).forEach((a, i) => { if(a && a.pu && a.pf > 0 && !(hasPack(it) && a.pu === it.pu && a.pf === it.pf)) out.push({k:'alt' + i, name:a.pu, f:a.pf}); });
+  out.push({k:'base', name:BASES[baseOf(it)].en, f:1, base:true});
+  return out;
+}
+const unitOf = (it, k) => itemUnits(it).find(u => u.k === k) || itemUnits(it)[0];
+const unitLabel = (it, u) => u.base ? `${u.name} — ${BASES[baseOf(it)].ar}` : `${u.name} (= ${fmtQ(u.f)} ${BASES[baseOf(it)].en})`;
+/* بيحفظ عبوة تانية للصنف (لو نفس الاسم موجود بيتحدّث) */
+function addAltUnit(it, pu, pf){
+  it.alt = (it.alt || []).filter(a => a && !(a.pu === pu && a.pf === pf));
+  if(!(hasPack(it) && it.pu === pu && it.pf === pf)) it.alt.push({pu, pf});
+  it.alt = it.alt.slice(-5);
+}
+/* اسم الوحدة مختصر — ولو فيه عبوتين بنفس الاسم (علبة كبيرة وصغيرة) بنكتب حجمها جنبها */
+const unitShort = (it, u) => !u.base && itemUnits(it).filter(x => x.name === u.name).length > 1 ? `${u.name} ${fmtQ(u.f)}` : u.name;
 function buyItem(id){
   const it = byId(S.items, id); if(!it) return;
-  const x = shopList().find(s_ => s_.it.id === id), base = BASES[baseOf(it)];
-  const opts = hasPack(it)
-    ? [[it.pu, esc(it.pu) + ` (= ${fmtQ(it.pf)} ${base.en})`], [baseOf(it), base.en + ' — ' + base.ar]]
-    : [[baseOf(it), base.en + ' — ' + base.ar], ['__setpack', '➕ بعبوة (كيس، زجاجة، علبة…)']];
-  const f0 = packF(it), q0 = x && x.qty > 0 ? +(x.qty / f0).toFixed(2) : 1;
+  const x = shopList().find(s_ => s_.it.id === id), base = BASES[baseOf(it)], units = itemUnits(it);
+  const f0 = units[0].f, q0 = x && x.qty > 0 ? +(x.qty / f0).toFixed(2) : 1;
   const packs = Array.from(new Set([...PACKS, ...(S.settings.packs || [])]));
-  const body = `<label class="fld"><span>اشتريت بالـ</span><select name="bu" data-bl>${opts.map(o => `<option value="${esc(o[0])}">${o[1]}</option>`).join('')}</select></label>
-    <div class="fld2" data-bl-pack style="display:none"><label class="fld"><span>العبوة</span><select name="npu" data-bl>${packs.map(p_ => `<option>${esc(p_)}</option>`).join('')}</select></label>
+  const body = `<label class="fld"><span>اشتريته بإيه؟</span><select name="bu" data-bl>${units.map(u => `<option value="${u.k}">${esc(unitLabel(it, u))}</option>`).join('')}<option value="__new">➕ عبوة تانية (كرتونة، علبة بحجم تاني…)</option></select></label>
+    <div data-bl-pack style="display:none"><div class="fld2"><label class="fld"><span>العبوة</span><select name="npu" data-bl data-pick="packs" data-label="العبوة" data-prev="${esc(packs[0])}">${packs.map(p_ => `<option>${esc(p_)}</option>`).join('')}<option value="__new">➕ إضافة جديد…</option></select></label>
       ${Fd.num('npf', `<span data-bl-l="npf">فيها كام ${base.en}</span>`, '', 'data-bl')}</div>
+      <label class="switch" style="margin:-4px 0 10px"><input type="checkbox" name="main" ${hasPack(it) ? '' : 'checked'}> <span>خليها العبوة الأساسية لـ${esc(it.name)} (في الجرد وقايمة الشراء)</span></label></div>
     <div class="fld2">${Fd.num('qty', '<span data-bl-l="qty">الكمية</span>', q0, 'autofocus data-bl')}${Fd.num('amount', 'دفعت كام إجمالي', it.price ? Math.round(q0 * f0 * it.price) : '')}</div>
     <div class="muted" data-bl-l="conv" style="margin:-4px 0 10px"></div>
-    ${Fd.date('date', 'التاريخ', todayS())}<div class="muted">هيتسجّل كمصروف "استوك البيت"، والكمية هتتضاف للموجود، والسعر هيتحدّث.</div>${Fd.foot('سجّل الشراء')}`;
+    ${Fd.date('date', 'التاريخ', todayS())}<div class="muted">هيتسجّل كمصروف "استوك البيت"، والكمية هتتضاف للموجود، والسعر هيتحدّث. والعبوة الجديدة بتتحفظ للصنف عشان تلاقيها المرة الجاية.</div>${Fd.foot('سجّل الشراء')}`;
   NEXT_WALLET = {label:'دفعت من'};
   openSheet('اشتريت ' + it.name, body, v => {
     const q = num(v.qty), a = num(v.amount);
     if(!need(q > 0, 'اكتب الكمية')) return false;
-    let f = 1;
-    if(v.bu === '__setpack'){
-      if(!need(num(v.npf) > 0, `اكتب العبوة فيها كام ${base.en}`)) return false;
-      it.pu = v.npu; it.pf = num(v.npf); f = it.pf;   // تتحفظ للصنف للمرة الجاية
-    }else if(hasPack(it) && v.bu === it.pu) f = it.pf;
+    let f;
+    if(v.bu === '__new'){
+      const pu = (v.npu || '').trim();
+      if(!need(pu && pu !== '__new', 'اختار العبوة')) return false;
+      if(!need(num(v.npf) > 0, `اكتب الـ${pu} فيها كام ${base.en}`)) return false;
+      f = num(v.npf);
+      if(v.main){ if(hasPack(it)) addAltUnit(it, it.pu, it.pf); it.pu = pu; it.pf = f; it.alt = (it.alt || []).filter(a_ => !(a_.pu === pu && a_.pf === f)); }
+      else addAltUnit(it, pu, f);
+    }else f = unitOf(it, v.bu).f;
     recordBuy(it, q * f, a, v.date || todayS());
     save(); toast('اتسجّل الشراء');
   });
@@ -2341,14 +2362,15 @@ function buyLabels(it){
   const q = n => document.querySelector(`#sheetBody [name="${n}"]`), L = k => document.querySelector(`#sheetBody [data-bl-l="${k}"]`);
   if(!q('bu')) return;
   it = it || byId(S.items, document.querySelector('#sheetBody').dataset.item);
-  const base = BASES[baseOf(it)], bu = q('bu').value, setp = bu === '__setpack';
-  document.querySelector('#sheetBody [data-bl-pack]').style.display = setp ? '' : 'none';
-  const unit = setp ? q('npu').value : (BASES[bu] ? base.en : bu);
-  const f = setp ? num(q('npf').value) : (BASES[bu] ? 1 : it.pf);
+  const base = BASES[baseOf(it)], bu = q('bu').value, isNew = bu === '__new';
+  document.querySelector('#sheetBody [data-bl-pack]').style.display = isNew ? '' : 'none';
+  const u = isNew ? null : unitOf(it, bu);
+  const unit = isNew ? (q('npu').value !== '__new' ? q('npu').value : 'العبوة') : u.name;
+  const f = isNew ? num(q('npf').value) : u.f;
   L('qty').textContent = `الكمية (عدد ${unit})`;
-  if(setp) L('npf').textContent = `الـ${unit} فيه كام ${base.en}`;
+  if(isNew) L('npf').textContent = `الـ${unit} فيها كام ${base.en}`;
   const qty = num(q('qty').value);
-  L('conv').innerHTML = f > 0 && !BASES[bu] ? `${fmtQ(qty)} ${esc(unit)} = <b class="num">${fmtQ(qty * f)}</b> ${base.en}` : '';
+  L('conv').innerHTML = f > 0 && (isNew || !u.base) ? `${fmtQ(qty)} ${esc(unit)} = <b class="num">${fmtQ(qty * f)}</b> ${base.en}` : '';
 }
 /* ---- تسجيل كذا حاجة مع بعض (فاتورة) ----
    كل حاجة سطر: تصنيف + مبلغ. لو التصنيف "استوك البيت" تختار الصنف والكمية فتتضاف للمخزون.
@@ -2362,13 +2384,15 @@ function mlRowHtml(o, i){
       <button type="button" class="ml-x" data-act="mlDel" data-i="${i}" aria-label="شيل السطر">✕</button></div>
     ${o.cat === 'house' && S.items.length
       ? `<div class="ml-sub"><select data-f="item" data-ml><option value="">— الصنف —</option>${S.items.map(x => `<option value="${x.id}" ${x.id === o.item ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>
-         <input data-f="qty" inputmode="decimal" placeholder="كام" value="${esc(o.qty || '')}"><span class="muted ml-u">${it ? esc(entryUnit(it)) : ''}</span></div>`
+         <input data-f="qty" inputmode="decimal" placeholder="كام" value="${esc(o.qty || '')}">${!it ? '' : itemUnits(it).length > 1
+           ? `<select data-f="unit" class="ml-unit">${itemUnits(it).map(u => `<option value="${u.k}" ${u.k === o.unit ? 'selected' : ''}>${esc(unitShort(it, u))}</option>`).join('')}</select>`
+           : `<span class="muted ml-u">${esc(entryUnit(it))}</span>`}</div>`
       : `<div class="ml-sub"><input data-f="label" placeholder="إيه هي؟ (اختياري)" value="${esc(o.label || '')}"></div>`}</div>`;
 }
 function mlRead(){
   document.querySelectorAll('#mlines .ml-row').forEach((r, i) => {
     const g = f => { const el = r.querySelector(`[data-f="${f}"]`); return el ? el.value : ''; };
-    Object.assign(ML[i], {cat:g('cat'), amount:g('amount'), item:g('item'), qty:g('qty'), label:g('label')});
+    Object.assign(ML[i], {cat:g('cat'), amount:g('amount'), item:g('item'), qty:g('qty'), unit:g('unit'), label:g('label')});
   });
 }
 function mlRender(){ $('#mlines').innerHTML = ML.map(mlRowHtml).join(''); mlTotal(); }
@@ -2399,7 +2423,7 @@ function multiAdd(preset){
     const ts = Date.now(), grp = uid();
     lines.forEach((o, i) => {
       const a = num(o.amount), it = o.cat === 'house' && o.item ? byId(S.items, o.item) : null;
-      if(it){ recordBuy(it, num(o.qty) * packF(it), a, date); Object.assign(S.tx[S.tx.length - 1], {ts:ts + i, grp, note:it.name + (place ? ' — ' + place : '')}); }
+      if(it){ recordBuy(it, num(o.qty) * unitOf(it, o.unit).f, a, date); Object.assign(S.tx[S.tx.length - 1], {ts:ts + i, grp, note:it.name + (place ? ' — ' + place : '')}); }
       else S.tx.push({id:uid(), ts:ts + i, grp, type:'exp', cat:o.cat || 'other', amount:a, note:[o.label.trim(), place].filter(Boolean).join(' — '), date});
     });
     save();
@@ -3195,7 +3219,7 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => {
   const el = e.target;
   if(el.dataset.pick){
-    if(el.value !== '__new'){ el.dataset.prev = el.value; if(el.hasAttribute('data-ilbl')) itemLabels(); return; }
+    if(el.value !== '__new'){ el.dataset.prev = el.value; if(el.hasAttribute('data-ilbl')) itemLabels(); if(el.hasAttribute('data-bl')) buyLabels(); return; }
     const v = (prompt('اكتب ' + el.dataset.label + ' الجديدة') || '').trim();
     if(!v){ el.value = el.dataset.prev; return; }
     if(![...el.options].some(o => o.value === v)){
@@ -3205,6 +3229,7 @@ document.addEventListener('change', e => {
     }
     el.value = v; el.dataset.prev = v;
     if(el.hasAttribute('data-ilbl')) itemLabels();
+    if(el.hasAttribute('data-bl')) buyLabels();
     return;
   }
   if(el.hasAttribute('data-ilbl')){ itemLabels(); return; }

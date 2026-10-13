@@ -182,6 +182,41 @@ await test('الأصناف: البحث بيفضل شغال بعد تعديل ص�
   assert.equal((await shown()).length, await ev(page, () => S.items.length));
 });
 
+await test('سجّل شراء: تختار اشتريته بإيه، والعبوة الجديدة بتتحفظ للصنف', async page => {
+  await ev(page, () => { S.items.push({ id: 'tn', name: 'تونة', group: 'تموين', base: 'PCS', monthly: 4, price: 0 }); save(); });
+  const buys = () => ev(page, () => S.tx.filter(t => t.itemId === 'tn').map(t => [t.qty, t.amount]));
+  // صنف من غير عبوة: يشتري بكرتونة (فيها 12) من غير ما تبقى الأساسية
+  await ev(page, () => buyItem('tn'));
+  await page.selectOption('#sheetBody [name="bu"]', '__new');
+  await page.selectOption('#sheetBody [name="npu"]', 'كرتونة');
+  await fill(page, 'npf', 12); await page.uncheck('#sheetBody [name="main"]');
+  await fill(page, 'qty', 2); await fill(page, 'amount', 960);
+  assert.match(await page.textContent('#sheetBody [data-bl-l="conv"]'), /2 كرتونة = 24/);
+  await submit(page);
+  assert.deepEqual(await buys(), [[24, 960]]);
+  assert.deepEqual(await ev(page, () => [byId(S.items, 'tn').pu, byId(S.items, 'tn').alt]), [undefined, [{ pu: 'كرتونة', pf: 12 }]]);
+  // المرة الجاية الكرتونة موجودة في الاختيارات
+  await ev(page, () => buyItem('tn'));
+  const opts = await ev(page, () => [...document.querySelectorAll('#sheetBody [name="bu"] option')].map(o => o.textContent));
+  assert.deepEqual(opts.slice(0, 2), ['كرتونة (= 12 PCS)', 'PCS — قطعة']);
+  await page.selectOption('#sheetBody [name="bu"]', 'base'); await fill(page, 'qty', 3); await fill(page, 'amount', 120); await submit(page);
+  assert.deepEqual(await buys(), [[24, 960], [3, 120]]);
+  // وفي "كذا حاجة" تقدر تختار الوحدة برضه
+  await page.click('.fab'); await page.click('#sheetBody [data-act="qaMulti"]');
+  await page.selectOption('#mlines .ml-row:first-child [data-f="cat"]', 'house');
+  await page.selectOption('#mlines .ml-row:first-child [data-f="item"]', 'tn');
+  await page.fill('#mlines .ml-row:first-child [data-f="amount"]', '480');
+  await page.fill('#mlines .ml-row:first-child [data-f="qty"]', '1');
+  await page.selectOption('#mlines .ml-row:first-child [data-f="unit"]', 'alt0');
+  await submit(page);
+  assert.deepEqual((await buys()).at(-1), [12, 480]);
+  // علبة بحجم تاني بنفس اسم العبوة الأساسية بتتحفظ برضه
+  await ev(page, () => { const it = byId(S.items, 'tn'); it.pu = 'علبة'; it.pf = 3; save(); buyItem('tn'); });
+  await page.selectOption('#sheetBody [name="bu"]', '__new'); await page.selectOption('#sheetBody [name="npu"]', 'علبة');
+  await fill(page, 'npf', 1); await fill(page, 'qty', 1); await fill(page, 'amount', 40); await submit(page);
+  assert.deepEqual(await ev(page, () => itemUnits(byId(S.items, 'tn')).map(u => unitShort(byId(S.items, 'tn'), u))), ['علبة 3', 'كرتونة', 'علبة 1', 'PCS']);
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });
