@@ -395,6 +395,17 @@ await test('الدمج: التعديل الأحدث على أي جهاز هو ا
   assert.deepEqual(r, ['2027-01', 2, 'عربية جديدة']);
 });
 
+await test('زرار التحديث: بيزامن الأول وبعدين يعيد تحميل الصفحة من غير ما حاجة تضيع', async page => {
+  const SYNC = URL_ + 'exec';
+  Object.assign(FAKE, { value: null, updatedAt: 0, delay: 0, posts: 0 });
+  await ev(page, sync => { S.settings.syncUrl = sync; S.settings.syncSecret = ''; save(); }, SYNC);
+  await page.waitForTimeout(500);
+  await page.click('.fab'); await fill(page, 'amount', '33'); await submit(page);
+  await Promise.all([page.waitForEvent('load'), page.click('#refreshBtn')]);
+  await page.waitForTimeout(300);
+  assert.deepEqual([await ev(page, () => S.tx.map(t => t.amount)), txCount(FAKE.value)], [[33], 1]);
+});
+
 await test('المزامنة: جهاز جديد وهو بيحمّل ما يمسحش الشيت، والدمج ما يضيّعش حاجة، والمسح ما يترفعش', async page => {
   const SYNC = URL_ + 'exec';
   const tx = Array.from({ length: 40 }, (_, i) => ({ id: 'r' + i, ts: i, type: 'exp', cat: 'food', amount: 10, date: '2026-10-05' }));
