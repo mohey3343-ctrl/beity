@@ -226,6 +226,7 @@
   .ml-top select{flex:1.4;} .ml-top input{flex:1; text-align:center; font-family:'IBM Plex Mono', monospace; font-weight:600;}
   .ml-sub select, .ml-sub input{flex:1;} .ml-sub input[data-f="qty"]{flex:.6; text-align:center;}
   .ml-u{font-size:12px; min-width:34px;}
+  .mpick{display:flex; gap:5px;} .mpick select:first-child{flex:1.35;} .fld .mpick select{flex:1; min-width:0; padding:11px 8px 11px 2px; font-size:14px;}
   .out-btn{min-height:28px !important; padding:2px 10px; font-size:11.5px; margin-top:4px; color:var(--bad);}
   .ml-sub select.ml-unit{flex:none; width:auto; max-width:90px;}
   .ml-x{border:none; background:none; color:var(--bad); font-size:16px; width:28px; flex-shrink:0;}
@@ -643,9 +644,9 @@ let S;
 function load(){
   try{
     const raw = localStorage.getItem(KEY);
-    if(raw){ S = migrate(JSON.parse(raw)); return; }
+    if(raw){ S = migrate(JSON.parse(raw)); LASTJ = null; stampChanges(); return; }
   }catch(e){}
-  S = fresh();
+  S = fresh(); LASTJ = null; stampChanges();
 }
 /* EPOCH بيزيد مع أي تغيير — الحسابات التقيلة بتتخزن مؤقتًا لحد ما يزيد */
 let EPOCH = 0, PERSISTED = null;
@@ -667,8 +668,22 @@ function takeSnapshot(){
     for(;;){ try{ localStorage.setItem(SNAP_KEY, JSON.stringify(snaps)); break; }catch(e){ if(snaps.length <= 1) break; snaps.shift(); } }
   }catch(e){}
 }
+/* كل سجل بيتعدّل بياخد وقت تعديله (_m) — عشان لما جهازين يعدّلوا نفس الحاجة، الدمج ياخد الأحدث مش نسخة الشيت دايمًا */
+let LASTJ = null;
+const SYNC_LOCAL = ['syncUrl', 'syncSecret', 'lastWallet', '_m'];
+function stampChanges(){
+  const now = Date.now(), first = !LASTJ, next = new Map();
+  const mark = (key, x, skip) => {
+    const j = JSON.stringify(x, (k, v) => skip.includes(k) ? undefined : v);
+    next.set(key, j); if(!first && LASTJ.get(key) !== j) x._m = now;
+  };
+  MERGE_KEYS.forEach(k => (S[k] || []).forEach(x => { if(x && x.id) mark(k + ':' + x.id, x, ['_m']); }));
+  if(S.settings) mark('settings', S.settings, SYNC_LOCAL);
+  LASTJ = next;
+}
 function persist(){
   EPOCH++;
+  stampChanges();
   takeSnapshot();
   try{ localStorage.setItem(KEY, JSON.stringify(S)); }
   catch(e){ toast('مش قادر يحفظ على الجهاز!', true); }
@@ -2182,7 +2197,14 @@ const Fd = {
   text:(n, l, v, a) => `<label class="fld"><span>${l}</span><input name="${n}" value="${esc(v)}" ${a || ''}></label>`,
   num:(n, l, v, a, hint) => `<label class="fld"><span>${l}</span><input name="${n}" inputmode="decimal" value="${v === '' || v == null || v === 0 ? '' : esc(v)}" ${a || ''}>${hint ? `<div class="hint">${hint}</div>` : ''}</label>`,
   date:(n, l, v) => `<label class="fld"><span>${l}</span><input type="date" name="${n}" value="${esc(v)}"></label>`,
-  month:(n, l, v) => `<label class="fld"><span>${l}</span><input type="month" name="${n}" value="${esc(v)}"></label>`,
+  // الشهر والسنة في قايمتين (اختيار الشهر الجاهز في الآيفون ساعات ما بيثبتش)
+  month:(n, l, v) => {
+    const [y0, m0] = /^\d{4}-\d{2}$/.test(v || '') ? v.split('-').map(Number) : [periodOf(todayS()).y, periodOf(todayS()).m + 1];
+    const cy = new Date().getFullYear(), ys = []; for(let y = Math.min(cy - 1, y0); y <= Math.max(cy + 8, y0); y++) ys.push(y);
+    return `<div class="fld"><span>${l}</span><div class="mpick"><select data-mp="${n}" data-mpk="m">${MONTHS.map((t, i) => `<option value="${pad(i + 1)}" ${i + 1 === m0 ? 'selected' : ''}>${t}</option>`).join('')}</select>
+      <select data-mp="${n}" data-mpk="y">${ys.map(y => `<option ${y === y0 ? 'selected' : ''}>${y}</option>`).join('')}</select></div>
+      <input type="hidden" name="${n}" value="${y0}-${pad(m0)}"></div>`;
+  },
   day:(n, l, v) => `<label class="fld"><span>${l}</span><select name="${n}">${Array.from({length:31}, (_, i) => `<option ${(v || 1) === i + 1 ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></label>`,
   /* قايمة اختيار + "إضافة جديد" — الجديد بيتحفظ في الإعدادات عشان يفضل موجود */
   pick:(n, l, opts, v, store) => {
@@ -3259,6 +3281,10 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const el = e.target;
+  if(el.dataset && el.dataset.mp){
+    const box = el.closest('.fld'), g = k => box.querySelector(`[data-mpk="${k}"]`).value, h = box.querySelector(`input[name="${el.dataset.mp}"]`);
+    h.value = g('y') + '-' + g('m'); h.dispatchEvent(new Event('input', {bubbles:true})); return;
+  }
   if(el.dataset.pick){
     if(el.value !== '__new'){ el.dataset.prev = el.value; if(el.hasAttribute('data-ilbl')) itemLabels(); if(el.hasAttribute('data-bl')) buyLabels(); return; }
     const v = (prompt('اكتب ' + el.dataset.label + ' الجديدة') || '').trim();
@@ -3371,16 +3397,21 @@ function mergeStates(remote, local){
   const out = migrate(JSON.parse(JSON.stringify(remote)));
   const tomb = new Set([...(remote.tomb || []), ...(local.tomb || [])]);
   MERGE_KEYS.forEach(k => {
-    const have = new Set((out[k] || []).map(x => x.id));
-    (local[k] || []).forEach(x => { if(x && x.id && !have.has(x.id)) out[k].push(x); });
+    const at = new Map((out[k] || []).map((x, i) => [x && x.id, i]));
+    (local[k] || []).forEach(x => {
+      if(!x || !x.id) return;
+      if(!at.has(x.id)) out[k].push(x);
+      else if((x._m || 0) > (out[k][at.get(x.id)]._m || 0)) out[k][at.get(x.id)] = x;   // اتعدّل هنا بعد آخر تعديل هناك
+    });
     out[k] = out[k].filter(x => !x || !x.id || !tomb.has(x.id));
   });
+  if(local.settings && (local.settings._m || 0) > ((remote.settings || {})._m || 0)) out.settings = Object.assign({}, out.settings, local.settings);
   out.tomb = [...tomb].slice(-2000);
   return out;
 }
 function adoptRemote(remoteState, rUp, msg){
   const keep = {syncUrl:S.settings.syncUrl, syncSecret:S.settings.syncSecret, lastWallet:S.settings.lastWallet};
-  S = remoteState; Object.assign(S.settings, keep);
+  S = remoteState; Object.assign(S.settings, keep); LASTJ = null;
   S.updatedAt = rUp; persist(); setSynced(rUp); setSync('ok', msg); render();
 }
 async function pushRemote(force){
@@ -3417,7 +3448,7 @@ async function pullRemote(manual){
       // تعديلات هنا + نسخة أحدث أو أكبر هناك → دمج من غير ما حاجة تضيع، وبعدين رفع
       const merged = mergeStates(remote, S);
       const keep = {syncUrl:S.settings.syncUrl, syncSecret:S.settings.syncSecret, lastWallet:S.settings.lastWallet};
-      S = merged; Object.assign(S.settings, keep); S.updatedAt = Math.max(Date.now(), rUp + 1);
+      S = merged; Object.assign(S.settings, keep); LASTJ = null; S.updatedAt = Math.max(Date.now(), rUp + 1);
       persist(); render(); toast('🔄 اتدمجت بيانات الجهاز مع جوجل شيت');
       return pushRemote(false);
     }else if(S.updatedAt > rUp){

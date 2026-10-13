@@ -251,7 +251,9 @@ await test('ترتيب الأصناف حسب الإتاحة: اللي خلص ا�
 await test('هدف لسه ما بدأش: مش بيتخصم من خطة الشهر لحد شهر البداية', async page => {
   await ev(page, () => { ACT.tab({ tab: 'goals' }); goalForm(); });
   await fill(page, 'name', 'عربية'); await fill(page, 'target', 120000);
-  await page.fill('#sheetBody [name="deadline"]', '2027-12'); await page.fill('#sheetBody [name="start"]', '2027-01');
+  const mp = async (n, y, m) => { await page.selectOption(`#sheetBody [data-mp="${n}"][data-mpk="y"]`, y); await page.selectOption(`#sheetBody [data-mp="${n}"][data-mpk="m"]`, m); };
+  await mp('deadline', '2027', '12'); await mp('start', '2027', '01');
+  assert.equal(await page.inputValue('#sheetBody [name="start"]'), '2027-01');
   await submit(page);
   const r = await ev(page, () => {
     const g = S.goals[0], pr = goalProjection(g);
@@ -376,6 +378,21 @@ await test('كل الصفحات بتتعرض من غير أخطاء', async page
   for (const t of ['home', 'log', 'stock', 'bills', 'goals', 'report', 'cash', 'settings']) await ev(page, tab => ACT.tab({ tab }), t);
   for (const v of ['jard', 'shop']) await ev(page, v => { ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v }); }, v);
   for (const v of ['dues', 'debts', 'recv']) await ev(page, v => { ACT.tab({ tab: 'bills' }); ACT.sub({ k: 'bills', v }); }, v);
+});
+
+await test('الدمج: التعديل الأحدث على أي جهاز هو اللي بيفضل', async page => {
+  const r = await ev(page, () => {
+    S.goals.push({ id: 'g', name: 'عربية', target: 100, deadline: '2027-12' }); save();
+    const remote = JSON.parse(JSON.stringify(S));               // نسخة الشيت قبل التعديل
+    byId(S.goals, 'g').start = '2027-01'; save();                // تعديل هنا بعدها
+    remote.goals.push({ id: 'g2', name: 'تاني', target: 5, deadline: '2027-12' });   // وحاجة جديدة اتضافت من جهاز تاني
+    const m = mergeStates(remote, S);
+    // والعكس: لو الجهاز التاني عدّل بعدنا، تعديله هو اللي يكسب
+    const remote2 = JSON.parse(JSON.stringify(S)); remote2.goals[0].name = 'عربية جديدة'; remote2.goals[0]._m = Date.now() + 5000;
+    const m2 = mergeStates(remote2, S);
+    return [byId(m.goals, 'g').start, m.goals.length, byId(m2.goals, 'g').name];
+  });
+  assert.deepEqual(r, ['2027-01', 2, 'عربية جديدة']);
 });
 
 await test('المزامنة: جهاز جديد وهو بيحمّل ما يمسحش الشيت، والدمج ما يضيّعش حاجة، والمسح ما يترفعش', async page => {
