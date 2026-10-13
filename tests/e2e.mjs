@@ -248,6 +248,22 @@ await test('ترتيب الأصناف حسب الإتاحة: اللي خلص ا�
   assert.deepEqual(await ev(page, () => [...document.querySelectorAll('.list-item[data-nm]')].filter(r => r.offsetParent).map(r => r.dataset.nm)), ['خلصان', 'مش متجرد']);
 });
 
+await test('هدف لسه ما بدأش: مش بيتخصم من خطة الشهر لحد شهر البداية', async page => {
+  await ev(page, () => { ACT.tab({ tab: 'goals' }); goalForm(); });
+  await fill(page, 'name', 'عربية'); await fill(page, 'target', 120000);
+  await page.fill('#sheetBody [name="deadline"]', '2027-12'); await page.fill('#sheetBody [name="start"]', '2027-01');
+  await submit(page);
+  const r = await ev(page, () => {
+    const g = S.goals[0], pr = goalProjection(g);
+    return { start: g.start, planned: Math.round(summary(VIEW).savePlanned), base: Math.round(pr.base), atDl: Math.round(pr.atDeadline),
+      reach: pr.reachAt, note: !!document.querySelector('[data-act="goalStartNow"]') };
+  });
+  // من يناير لديسمبر 2027 = 12 شهر → 10,000 في الشهر، والشهر ده صفر
+  assert.deepEqual(r, { start: '2027-01', planned: 0, base: 10000, atDl: 120000, reach: 14, note: true });
+  await page.click('[data-act="goalStartNow"]');
+  assert.equal(await ev(page, () => Math.round(summary(VIEW).savePlanned)), Math.round(120000 / 15));
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });

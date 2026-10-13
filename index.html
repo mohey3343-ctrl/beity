@@ -730,15 +730,21 @@ function goalSaved(g, upto){ return (g.initial || 0) + sum(S.tx.filter(t => t.ty
    عشان أي تحويش الشهر ده يتحسب من حصة الشهر ده نفسه */
 function goalRequired(g){
   const before = goalSaved(g, addDays(periodRange(periodOf(todayS())).start, -1));
-  return Math.max(0, (g.target || 0) - before) / monthsUntil(g.deadline);
+  // لو التحويش لسه ما بدأش: المطلوب يتقسم على الشهور من البداية للميعاد بس
+  const months = goalNotStarted(g) ? Math.max(1, monthsUntil(g.deadline) - monthsUntil(g.start) + 1) : monthsUntil(g.deadline);
+  return Math.max(0, (g.target || 0) - before) / months;
 }
 const curKey = () => { const p = periodOf(todayS()); return p.y + '-' + pad(p.m + 1); };
-function goalPlanMonthly(g){
+/* الهدف أو الجمعية ليهم "يبدأ من شهر" — قبله مش بيتخصموا من خطة الشهر */
+const goalNotStarted = g => !!(g.start && curKey() < g.start);
+function goalMonthlyAt(g, key){
   if(g.doneOn) return 0;
-  if(g.kind === 'gameya' && g.start && curKey() < g.start) return 0;   // الجمعية لسه ما بدأتش
+  if(g.start && key < g.start) return 0;
+  if(g.kind === 'gameya' && key > g.deadline) return 0;
   if(goalSaved(g) >= (g.target || 0)) return 0;
   return g.monthly > 0 ? g.monthly : goalRequired(g);
 }
+function goalPlanMonthly(g){ return goalMonthlyAt(g, curKey()); }
 
 /* ---- الاستوك ومعدلات الاستهلاك ----
    المعدل الفعلي بيتحسب من الجرد: (أول جرد + اللي اتشرى بعده − آخر جرد) ÷ عدد الأيام.
@@ -909,7 +915,9 @@ function monthLabelFromNow(i){ const p = addMonths(periodOf(todayS()), i); retur
 /* ---- الأهداف: توقّع التحويش، ومع تحويل أقساط الديون اللي بتخلص ---- */
 function goalProjection(g){
   const saved = goalSaved(g), target = g.target || 0;
-  const base = goalPlanMonthly(g);
+  // لو لسه ما بدأش: الشهور اللي قبل البداية مفيهاش تحويش
+  const startOff = goalNotStarted(g) ? monthsUntil(g.start) - 1 : 0;
+  const base = startOff ? goalMonthlyAt(g, g.start) : goalPlanMonthly(g);
   const plan = g.rollDebts ? debtPlan(S.settings.debtExtra || 0) : null;
   const extraAt = i => {
     if(!plan) return 0;
@@ -922,8 +930,8 @@ function goalProjection(g){
   const savedNow = sum(S.tx.filter(t => t.type === 'save' && t.goalId === g.id && t.date >= r0.start && t.date <= r0.end), t => t.amount);
   let acc = saved, reachAt = saved >= target ? 0 : null, atDeadline = null;
   for(let i = 0; i < 240; i++){
-    acc += (i === 0 ? Math.max(0, base - savedNow) : base) + extraAt(i);
-    if(reachAt == null && acc >= target) reachAt = i;
+    if(i >= startOff) acc += (i === 0 ? Math.max(0, base - savedNow) : base) + extraAt(i);
+    if(reachAt == null && acc >= target - 0.5) reachAt = i;   // سماحية كسور القروش
     if(i === months - 1) atDeadline = acc;
     if(i >= months - 1 && reachAt != null) break;
   }
@@ -1727,7 +1735,8 @@ PAGES.goals = function(){
       <div class="kv"><span>اتحوّش لحد دلوقتي</span><b>${money(saved, 'pos')}</b></div>
       <div class="kv"><span>فاضل</span><b>${money(Math.max(0, target - saved))}</b></div>
       <div class="kv"><span>محتاج تحوّش في الشهر عشان توصل في الميعاد</span><b>${money(req)}</b></div>
-      <div class="kv"><span>اللي حاطه في خطتك الشهرية</span><b>${money(pr.base)}</b></div>
+      <div class="kv"><span>${goalNotStarted(g) ? `هتحوّش في الشهر من ${monthName(g.start)}` : 'اللي حاطه في خطتك الشهرية'}</span><b>${money(pr.base)}</b></div>
+      ${goalNotStarted(g) ? `<div class="alert info" style="margin-top:8px; display:block; line-height:1.8">⏳ التحويش هيبدأ <b>${monthName(g.start)}</b> — لحد ساعتها الهدف ده مش داخل في خطة الشهر.<div style="margin-top:8px"><button class="btn sm" data-act="goalStartNow" data-id="${g.id}">ابدأ من الشهر ده</button></div></div>` : ''}
       <label class="switch" style="margin-top:8px"><input type="checkbox" data-act="rollDebts" data-id="${g.id}" ${g.rollDebts ? 'checked' : ''}> لما دين يخلص، حوّل قسطه للهدف ده</label>
       <div class="note">${saved >= target ? '🎉 مبروك! الهدف اكتمل.' : ok
         ? `✅ بالخطة دي هيبقى معاك <b class="num">${fmt(pr.atDeadline)}</b> في ${monthName(g.deadline)}${pr.reachAt != null ? ` — وهتوصل للمبلغ في <b>${monthLabelFromNow(pr.reachAt)}</b>` : ''}.`
@@ -1966,9 +1975,8 @@ function forecast(N, withRecv){
     });
     // ادفع لنفسك الأول: التحويش الشهري يوم نزول المرتب
     S.goals.forEach(g => {
-      let need = goalPlanMonthly(g);
+      let need = goalMonthlyAt(g, p.y + '-' + pad(p.m + 1));
       if(isCur) need -= sum(S.tx.filter(t => t.type === 'save' && t.goalId === g.id && t.date >= r.start && t.date <= r.end), t => t.amount);
-      if(g.kind === 'gameya' && g.start && (p.y + '-' + pad(p.m + 1)) > g.deadline) need = 0;
       const d = at(payday || r.start);
       if(need > 1 && d <= end) evs.push({date:d, n:(g.icon || '🎯') + ' تحويش ' + g.name, a:-need});
     });
@@ -2661,7 +2669,8 @@ function goalForm(id, preset){
   let body = `<div class="fld2">${Fd.text('name', 'الهدف', g ? g.name : '', 'autofocus')}${Fd.text('icon', 'أيقونة', g ? g.icon : '🎯')}</div>`;
   body += `<div class="fld2">${Fd.num('target', 'المبلغ المطلوب', g ? g.target : '')}${Fd.month('deadline', 'الميعاد', g ? g.deadline : '2027-12')}</div>`;
   if(!id) body += Fd.num('initial', 'محوّش كام لحد دلوقتي', g ? g.initial : '');
-  body += Fd.num('monthly', 'هتحوّش كام في الشهر', g ? g.monthly : '', '', 'سيبها فاضية والبرنامج يحسب المطلوب عشان توصل في الميعاد.');
+  body += `<div class="fld2">${Fd.num('monthly', 'هتحوّش كام في الشهر', g ? g.monthly : '')}${Fd.month('start', 'هتبدأ تحوّش من شهر', g && g.start ? g.start : curKey())}</div>
+    <div class="muted" style="margin:-4px 0 10px; line-height:1.7">سيب "كام في الشهر" فاضية والبرنامج يحسب المطلوب عشان توصل في الميعاد. ولو لسه مش هتبدأ، اختار الشهر اللي هتبدأ فيه — ولحد ساعتها الهدف مش هيتخصم من خطة الشهر.</div>`;
   body += Fd.text('note', 'ملاحظة', g ? g.note : '', 'placeholder="مثلاً: مقدّم + تقسيط، الموديل..."');
   body += Fd.foot(id ? 'حفظ' : 'إضافة', id ? {act:'delGoal', id} : null);
   openSheet(id ? g.name : 'هدف جديد', body, v => {
@@ -2669,7 +2678,9 @@ function goalForm(id, preset){
     if(!need(num(v.target) > 0, 'اكتب المبلغ المطلوب')) return false;
     if(!need(/^\d{4}-\d{2}$/.test(v.deadline), 'اختار الميعاد')) return false;
     const o = id ? g : {id:uid(), createdAt:todayS(), rollDebts:!(g && g.kind === 'emergency'), kind:g && g.kind || undefined};
-    Object.assign(o, {name:v.name.trim(), icon:v.icon.trim() || '🎯', target:num(v.target), deadline:v.deadline, monthly:num(v.monthly), note:v.note.trim()});
+    if(/^\d{4}-\d{2}$/.test(v.start) && v.start > v.deadline){ toast('شهر البداية بعد الميعاد', true); return false; }
+    Object.assign(o, {name:v.name.trim(), icon:v.icon.trim() || '🎯', target:num(v.target), deadline:v.deadline, monthly:num(v.monthly), note:v.note.trim(),
+      start:/^\d{4}-\d{2}$/.test(v.start) && v.start > curKey() ? v.start : undefined});
     if(!id){ o.initial = num(v.initial); S.goals.push(o); }
     save(); toast('اتحفظ');
   });
@@ -3005,6 +3016,7 @@ const ACT = {
     setTimeout(() => showUndo(snap, `${it.name} خلص — اتضاف لقايمة الشراء`), 30);
   },
   itemSort:(d) => { S.settings.itemSort = d.v; save(); },
+  goalStartNow:(d) => { const g = byId(S.goals, d.id); if(g){ delete g.start; save(); toast('بدأ التحويش من الشهر ده'); } },
   itemNew:(d) => itemForm(null, {name:(LISTQ[d.k] || '').trim(), from:d.k}),
   delItem:(d) => {
     if(!confirm('تمسح الصنف ده؟ (مشترياته هتفضل في اليومية)')) return;
