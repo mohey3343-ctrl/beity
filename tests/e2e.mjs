@@ -217,6 +217,23 @@ await test('سجّل شراء: تختار اشتريته بإيه، والعبو
   assert.deepEqual(await ev(page, () => itemUnits(byId(S.items, 'tn')).map(u => unitShort(byId(S.items, 'tn'), u))), ['علبة 3', 'كرتونة', 'علبة 1', 'PCS']);
 });
 
+await test('جركن بحجم مختلف للمرة دي بس، و"خلص" بضغطة واحدة ويترجع', async page => {
+  await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30 });
+    S.counts.push({ id: 'c0', ts: 1, itemId: 'sb', date: '2026-10-01', qty: 6 }); save(); buyItem('sb'); });
+  assert.equal(await page.inputValue('#sheetBody [name="npf"]'), '4');
+  await fill(page, 'npf', '4.6'); await fill(page, 'qty', 1); await fill(page, 'amount', 150);
+  assert.match(await page.textContent('#sheetBody [data-bl-l="sizeNote"]'), /للمرة دي بس/);
+  await submit(page);
+  assert.deepEqual(await ev(page, () => [S.tx.at(-1).qty, byId(S.items, 'sb').pf, (byId(S.items, 'sb').alt || []).length]), [4.6, 4, 0]);
+  // خلص من قايمة الأصناف
+  await ev(page, () => { ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'items' }); });
+  await page.click('.list-item[data-id="sb"] [data-act="itemOut"]');
+  assert.equal(await ev(page, () => estStock(byId(S.items, 'sb'))), 0);
+  assert.ok(await ev(page, () => shopList().find(x => x.it.id === 'sb').qty > 0), 'لازم يدخل قايمة الشراء');
+  await page.click('#undoBar [data-act="undo"]');
+  assert.ok(await ev(page, () => estStock(byId(S.items, 'sb')) > 0 && S.tomb.length === 1), 'التراجع لازم يرجّعه ويعلّم على الجرد اللي اتشال');
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });

@@ -226,6 +226,7 @@
   .ml-top select{flex:1.4;} .ml-top input{flex:1; text-align:center; font-family:'IBM Plex Mono', monospace; font-weight:600;}
   .ml-sub select, .ml-sub input{flex:1;} .ml-sub input[data-f="qty"]{flex:.6; text-align:center;}
   .ml-u{font-size:12px; min-width:34px;}
+  .out-btn{min-height:28px !important; padding:2px 10px; font-size:11.5px; margin-top:4px; color:var(--bad);}
   .ml-sub select.ml-unit{flex:none; width:auto; max-width:90px;}
   .ml-x{border:none; background:none; color:var(--bad); font-size:16px; width:28px; flex-shrink:0;}
   .catpick{display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-bottom:12px;}
@@ -1402,7 +1403,8 @@ function itemsHtml(){
         <div class="li-main"><div class="li-title">${esc(it.name)} ${srcTag}</div>
           <div class="li-sub">بتستهلك ${qtyTxt(it, r.v * 30)}/شهر${it.price > 0 ? ` · <span class="num">${fmt(it.price * packF(it))}</span> ج لل${esc(entryUnit(it))}` : ' · <span class="neg">من غير سعر</span>'}</div>
           <div class="bar ${cls}" style="margin-top:6px"><i style="width:${pct}%"></i></div></div>
-        <div class="li-end">${e == null ? '<span class="tag warn">ما اتجردش</span>' : `<b>${qtyTxt(it, e)}</b><div class="li-sub">${d == null ? '' : d >= 60 ? 'يكفي +60 يوم' : 'يكفي ' + Math.floor(d) + ' يوم'}</div>`}</div></div>`;
+        <div class="li-end">${e == null ? '<span class="tag warn">ما اتجردش</span>' : `<b>${qtyTxt(it, e)}</b><div class="li-sub">${d == null ? '' : d >= 60 ? 'يكفي +60 يوم' : 'يكفي ' + Math.floor(d) + ' يوم'}</div>`}
+          ${e > 0.001 ? `<button type="button" class="btn sm ghost out-btn" data-act="itemOut" data-id="${it.id}">خلص؟</button>` : ''}</div></div>`;
     });
     h += '</div>';
   });
@@ -2264,7 +2266,7 @@ function itemForm(id, preset){
       ${bs.length ? '<br><b>آخر شراء:</b> ' + bs.map(b => `${dayLabel(b.date)}: ${esc(qtyPlain(it, b.qty))} بـ ${fmt(b.amount)}ج`).join(' · ') : ''}
       ${(() => { const ph = priceHistory(it); if(ph.length < 2) return ''; const ch = (ph[ph.length - 1].p / ph[0].p - 1) * 100;
         return `<br><b>💲 سعر الـ${esc(entryUnit(it))}:</b> ` + ph.slice(-6).map(x => `<span class="num">${fmtQ(x.p)}</span>`).join(' ← ') + ` <span class="tag ${ch > 3 ? 'bad' : ch < -3 ? 'good' : ''}">${ch > 0 ? '▲' : '▼'} ${Math.abs(Math.round(ch))}% من أول مرة</span>`; })()}</div>
-      <div class="btns" style="margin-top:10px"><button type="button" class="btn good" data-act="buyItem" data-id="${it.id}">سجّل شراء</button><button type="button" class="btn" data-act="countItem" data-id="${it.id}">جرد الصنف ده</button></div>`;
+      <div class="btns" style="margin-top:10px"><button type="button" class="btn good" data-act="buyItem" data-id="${it.id}">سجّل شراء</button><button type="button" class="btn" data-act="countItem" data-id="${it.id}">جرد الصنف ده</button><button type="button" class="btn danger" data-act="itemOut" data-id="${it.id}">خلص 🚫</button></div>`;
   }
   body += Fd.foot(it ? 'حفظ' : 'إضافة', it ? {act:'delItem', id:it.id} : null);
   openSheet(it ? it.name : 'صنف جديد', body, v => {
@@ -2332,9 +2334,10 @@ function buyItem(id){
   const f0 = units[0].f, q0 = x && x.qty > 0 ? +(x.qty / f0).toFixed(2) : 1;
   const packs = Array.from(new Set([...PACKS, ...(S.settings.packs || [])]));
   const body = `<label class="fld"><span>اشتريته بإيه؟</span><select name="bu" data-bl>${units.map(u => `<option value="${u.k}">${esc(unitLabel(it, u))}</option>`).join('')}<option value="__new">➕ عبوة تانية (كرتونة، علبة بحجم تاني…)</option></select></label>
-    <div data-bl-pack style="display:none"><div class="fld2"><label class="fld"><span>العبوة</span><select name="npu" data-bl data-pick="packs" data-label="العبوة" data-prev="${esc(packs[0])}">${packs.map(p_ => `<option>${esc(p_)}</option>`).join('')}<option value="__new">➕ إضافة جديد…</option></select></label>
+    <div data-bl-pack style="display:none"><div class="fld2"><label class="fld" data-bl-new><span>العبوة</span><select name="npu" data-bl data-pick="packs" data-label="العبوة" data-prev="${esc(packs[0])}">${packs.map(p_ => `<option>${esc(p_)}</option>`).join('')}<option value="__new">➕ إضافة جديد…</option></select></label>
       ${Fd.num('npf', `<span data-bl-l="npf">فيها كام ${base.en}</span>`, '', 'data-bl')}</div>
-      <label class="switch" style="margin:-4px 0 10px"><input type="checkbox" name="main" ${hasPack(it) ? '' : 'checked'}> <span>خليها العبوة الأساسية لـ${esc(it.name)} (في الجرد وقايمة الشراء)</span></label></div>
+      <div class="muted" data-bl-l="sizeNote" style="margin:-6px 0 10px"></div>
+      <label class="switch" data-bl-new style="margin:-4px 0 10px"><input type="checkbox" name="main" ${hasPack(it) ? '' : 'checked'}> <span>خليها العبوة الأساسية لـ${esc(it.name)} (في الجرد وقايمة الشراء)</span></label></div>
     <div class="fld2">${Fd.num('qty', '<span data-bl-l="qty">الكمية</span>', q0, 'autofocus data-bl')}${Fd.num('amount', 'دفعت كام إجمالي', it.price ? Math.round(q0 * f0 * it.price) : '')}</div>
     <div class="muted" data-bl-l="conv" style="margin:-4px 0 10px"></div>
     ${Fd.date('date', 'التاريخ', todayS())}<div class="muted">هيتسجّل كمصروف "استوك البيت"، والكمية هتتضاف للموجود، والسعر هيتحدّث. والعبوة الجديدة بتتحفظ للصنف عشان تلاقيها المرة الجاية.</div>${Fd.foot('سجّل الشراء')}`;
@@ -2350,7 +2353,11 @@ function buyItem(id){
       f = num(v.npf);
       if(v.main){ if(hasPack(it)) addAltUnit(it, it.pu, it.pf); it.pu = pu; it.pf = f; it.alt = (it.alt || []).filter(a_ => !(a_.pu === pu && a_.pf === f)); }
       else addAltUnit(it, pu, f);
-    }else f = unitOf(it, v.bu).f;
+    }else{
+      const u = unitOf(it, v.bu);
+      // الحجم ممكن يختلف من مرة للتانية (جركن 4 لتر ومرة 4.6) — بيتحسب للمرة دي بس
+      f = u.base ? 1 : num(v.npf) > 0 ? num(v.npf) : u.f;
+    }
     recordBuy(it, q * f, a, v.date || todayS());
     save(); toast('اتسجّل الشراء');
   });
@@ -2362,13 +2369,18 @@ function buyLabels(it){
   const q = n => document.querySelector(`#sheetBody [name="${n}"]`), L = k => document.querySelector(`#sheetBody [data-bl-l="${k}"]`);
   if(!q('bu')) return;
   it = it || byId(S.items, document.querySelector('#sheetBody').dataset.item);
-  const base = BASES[baseOf(it)], bu = q('bu').value, isNew = bu === '__new';
-  document.querySelector('#sheetBody [data-bl-pack]').style.display = isNew ? '' : 'none';
+  const base = BASES[baseOf(it)], sel = q('bu'), bu = sel.value, isNew = bu === '__new';
   const u = isNew ? null : unitOf(it, bu);
+  document.querySelector('#sheetBody [data-bl-pack]').style.display = isNew || !u.base ? '' : 'none';
+  document.querySelectorAll('#sheetBody [data-bl-new]').forEach(x => x.style.display = isNew ? '' : 'none');
+  // أول ما الوحدة تتغيّر نحط حجمها المحفوظ، وتقدر تعدّله للمرة دي
+  if(sel.dataset.prev !== bu){ sel.dataset.prev = bu; q('npf').value = isNew ? '' : u.base ? '' : u.f; }
+  if(!isNew && !u.base) L('sizeNote').textContent = num(q('npf').value) > 0 && num(q('npf').value) !== u.f ? `الحجم ده للمرة دي بس — المحفوظ ${fmtQ(u.f)} ${base.en}` : '';
+  else L('sizeNote').textContent = '';
   const unit = isNew ? (q('npu').value !== '__new' ? q('npu').value : 'العبوة') : u.name;
-  const f = isNew ? num(q('npf').value) : u.f;
+  const f = u && u.base ? 1 : num(q('npf').value);
   L('qty').textContent = `الكمية (عدد ${unit})`;
-  if(isNew) L('npf').textContent = `الـ${unit} فيها كام ${base.en}`;
+  L('npf').textContent = `حجم الـ${unit} (كام ${base.en})`;
   const qty = num(q('qty').value);
   L('conv').innerHTML = f > 0 && (isNew || !u.base) ? `${fmtQ(qty)} ${esc(unit)} = <b class="num">${fmtQ(qty * f)}</b> ${base.en}` : '';
 }
@@ -2981,6 +2993,13 @@ const ACT = {
     toast('اتضافوا — احذف اللي مش بتستخدمه وكمّل الباقي');
   },
   itemForm:(d) => itemForm(d.id),
+  itemOut:(d) => {
+    const it = byId(S.items, d.id); if(!it) return;
+    const snap = JSON.stringify(S);
+    S.counts.push({id:uid(), ts:Date.now(), itemId:it.id, date:todayS(), qty:0});
+    closeSheet(); save();
+    setTimeout(() => showUndo(snap, `${it.name} خلص — اتضاف لقايمة الشراء`), 30);
+  },
   itemNew:(d) => itemForm(null, {name:(LISTQ[d.k] || '').trim(), from:d.k}),
   delItem:(d) => {
     if(!confirm('تمسح الصنف ده؟ (مشترياته هتفضل في اليومية)')) return;
@@ -3163,7 +3182,12 @@ const ACT = {
   noSpend:(d) => { S.settings.noSpend = Object.assign({}, S.settings.noSpend, {[d.d]:true}); save(); },
   undo:() => {
     if(!UNDO) return;
-    S = migrate(JSON.parse(UNDO)); UNDO = null; $('#undoBar').classList.remove('show'); closeSheet(); save(); toast('رجعت زي ما كانت ✔');
+    const ids = () => new Set(MERGE_KEYS.flatMap(m => (S[m] || []).map(x => x && x.id)));
+    const before = ids();
+    S = migrate(JSON.parse(UNDO)); UNDO = null;
+    // اللي اتضاف وبعدين اتعمله تراجع: نعلّم عليه إنه اتمسح عشان المزامنة ما ترجعهوش
+    const now = ids(), gone = [...before].filter(id => id && !now.has(id));
+    if(gone.length) S.tomb = [...(S.tomb || []), ...gone].slice(-2000); $('#undoBar').classList.remove('show'); closeSheet(); save(); toast('رجعت زي ما كانت ✔');
   },
   wipe:() => {
     if(!confirm('هتمسح كل البيانات من الجهاز ده. متأكد؟')) return;
