@@ -234,6 +234,20 @@ await test('جركن بحجم مختلف للمرة دي بس، و"خلص" بض�
   assert.ok(await ev(page, () => estStock(byId(S.items, 'sb')) > 0 && S.tomb.length === 1), 'التراجع لازم يرجّعه ويعلّم على الجرد اللي اتشال');
 });
 
+await test('ترتيب الأصناف حسب الإتاحة: اللي خلص الأول وبعده اللي هيخلص', async page => {
+  const order = await ev(page, () => {
+    S.items.push({ id: 'a', name: 'كتير', group: 'ج1', base: 'PCS', monthly: 30 }, { id: 'b', name: 'خلصان', group: 'ج2', base: 'PCS', monthly: 30 },
+      { id: 'c', name: 'قرب', group: 'ج1', base: 'PCS', monthly: 30 }, { id: 'd', name: 'مش متجرد', group: 'ج2', base: 'PCS', monthly: 30 });
+    S.counts.push({ id: 'k1', ts: 1, itemId: 'a', date: '2026-10-09', qty: 40 }, { id: 'k2', ts: 2, itemId: 'b', date: '2026-10-09', qty: 0 },
+      { id: 'k3', ts: 3, itemId: 'c', date: '2026-10-09', qty: 3 });
+    save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'items' }); ACT.itemSort({ v: 'avail' });
+    return [...document.querySelectorAll('.list-item[data-nm]')].map(r => r.dataset.nm);
+  });
+  assert.deepEqual(order, ['خلصان', 'قرب', 'كتير', 'مش متجرد']);
+  await page.fill('[data-q="items"]', 'ج2');   // البحث بالمجموعة شغال في القايمة الواحدة برضه
+  assert.deepEqual(await ev(page, () => [...document.querySelectorAll('.list-item[data-nm]')].filter(r => r.offsetParent).map(r => r.dataset.nm)), ['خلصان', 'مش متجرد']);
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });
