@@ -278,6 +278,19 @@ await test('خطة الشهر: الاستوك = اللي اتصرف + اللي �
   assert.deepEqual(r, [50, 160, 210, 300]);
 });
 
+await test('خطة الشهر: المواعيد بتتخصم بس لما تشيل فعلًا', async page => {
+  const r = await ev(page, () => {
+    S.incomes.push({ id: 'i', name: 'المرتب', amount: 10000, day: 1 });
+    S.dues.push({ id: 'u', name: 'المدرسة', amount: 3000, baseAmount: 3000, date: '2026-12-15', repeat: 0 }); save();
+    const a = summary(VIEW);
+    S.tx.push({ id: 'r', ts: 1, type: 'reserve', dueId: 'u', dueDate: '2026-12-15', amount: 400, date: '2026-10-09' }); save();
+    const b = summary(VIEW), next = summary(addMonths(VIEW, 1));
+    return [Math.round(a.reservePlanned), Math.round(a.reserveToDo), Math.round(b.reservePlanned), Math.round(b.reserveToDo), Math.round(next.reservePlanned)];
+  });
+  // 3000 على 3 شهور = 1000 الشهر ده؛ الشهر الجاي (تخطيط) بيتحسب بالمطلوب: (3000−400)÷2
+  assert.deepEqual(r, [0, 1000, 400, 600, 1300]);
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });

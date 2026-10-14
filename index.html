@@ -1026,7 +1026,10 @@ function summaryRaw(p){
     return {d, resThis, per, planned:Math.max(resThis, per), reserved:dueReserved(d)};
   });
   o.reserveNet = sum(T.filter(t => t.type === 'reserve'), t => t.amount);
-  o.reservePlanned = sum(o.dueLines, l => l.planned) + (o.reserveNet - sum(o.dueLines, l => l.resThis));
+  // اللي فاضل تشيله للمواعيد ما بيتخصمش من الخطة غير لما تشيله فعلًا (الشهر الحالي واللي فات)؛ الشهور الجاية بنخطط بالمطلوب
+  o.reserveToDo = sum(o.dueLines, l => Math.max(0, l.per - l.resThis));
+  o.reserveActual = r.start <= todayS();
+  o.reservePlanned = o.reserveActual ? o.reserveNet : sum(o.dueLines, l => l.planned) + (o.reserveNet - sum(o.dueLines, l => l.resThis));
   // استوك البيت
   // الشهر الحالي: اللي اتصرف + اللي فاضل تشتريه لآخر الشهر (حسب الموجود ومعدل الاستهلاك)
   // شهر فات: اللي اتصرف بس · شهر جاي: تكلفة الشهر كله
@@ -1146,7 +1149,7 @@ function spendRows(o, mode){
 function splitBar(o){
   if(!(o.income > 0)) return '';
   // دفعات الديون اللي ليها مواعيد (بتتشال شهريًا) هي سداد ديون، مش "مواعيد" عادية
-  const debtRes = sum(o.dueLines.filter(l => l.d.debtId), l => l.planned), otherRes = o.reservePlanned - debtRes;
+  const debtRes = sum(o.dueLines.filter(l => l.d.debtId), l => o.reserveActual ? l.resThis : l.planned), otherRes = Math.max(0, o.reservePlanned - debtRes);
   const parts = [
     ['📋 التزامات', o.billPlanned], ['💳 ديون', o.debtPlanned + debtRes], ['🏦 تحويش وجمعيات', o.savePlanned],
     ['📅 مواعيد ومناسبات', otherRes], ['🧺 استوك', o.houseReserved], ['🛒 مصروف يومي', Math.max(0, o.varBudget)],
@@ -1215,14 +1218,15 @@ PAGES.home = function(){
     <div class="plan-line"><span>📋 الالتزامات الثابتة</span><b class="num">− ${fmt(o.billPlanned)}</b></div>
     <div class="plan-line"><span>💳 أقساط الديون</span><b class="num">− ${fmt(o.debtPlanned)}</b></div>
     <div class="plan-line"><span>🚗 التحويش للأهداف</span><b class="num">− ${fmt(o.savePlanned)}</b></div>
-    ${(() => { const done = Math.max(0, o.reserveNet), rest = Math.max(0, o.reservePlanned - done);
-      return (done > 0.5 ? `<div class="plan-line"><span>📅 اتشال لمواعيد السداد</span><b class="num">− ${fmt(done)}</b></div>` : '')
-        + (rest > 0.5 ? `<div class="plan-line"><span>📅 فاضل تشيله للمواعيد الشهر ده</span><b class="num">− ${fmt(rest)}</b></div>` : ''); })()}
+    ${Math.abs(o.reservePlanned) > 0.5 ? `<div class="plan-line"><span>📅 ${o.reserveActual ? 'اتشال لمواعيد السداد' : 'تتشال لمواعيد السداد'}</span><b class="num">− ${fmt(o.reservePlanned)}</b></div>` : ''}
+    ${o.isCurrent && o.reserveToDo > 0.5 ? `<div class="muted" style="font-size:12px; padding:4px 0 8px; border-bottom:1px solid var(--line)">⏳ لسه المفروض تشيل <b class="num">${fmt(o.reserveToDo)}</b> للمواعيد الشهر ده — مش متخصومة من الحساب لحد ما تشيلها فعلًا.</div>` : ''}
     <div class="plan-line"><span>🧺 استوك البيت${o.isCurrent && o.houseToBuy > 0.5 ? `<div class="muted" style="font-size:11.5px">اتصرف ${fmt(o.houseSpent)} + فاضل تشتري بـ ${fmt(o.houseToBuy)} لآخر الشهر</div>` : ''}</span><b class="num">− ${fmt(o.houseReserved)}</b></div>
-    <div class="plan-line total"><span>🛒 متاح للمصروف اليومي</span><b class="num ${o.varBudget < 0 ? 'neg' : 'pos'}">${fmt(o.varBudget)}</b></div>
-    <div class="muted" style="margin-top:6px; line-height:1.8">${o.isCurrent
-      ? `اتصرف منه <b class="num">${fmt(o.varSpent)}</b>، وفاضل <b class="num ${o.free < 0 ? 'neg' : ''}">${fmt(o.free)}</b> للـ <b class="num">${o.daysLeft}</b> يوم الباقيين — يعني حوالي <b class="num">${fmt(o.perDay)}</b> جنيه في اليوم.`
-      : `يعني حوالي <b class="num">${fmt(o.varBudget / o.r.days)}</b> جنيه في اليوم على مدار ${o.r.days} يوم.`}</div>
+    <div class="plan-line" style="border-bottom:0"><span>🛒 <b>متاح للمصروف اليومي</b></span><b class="num ${o.varBudget < 0 ? 'neg' : ''}">${fmt(o.varBudget)}</b></div>
+    ${o.isCurrent ? `<div class="plan-line"><span>🧾 اتصرف لحد دلوقتي</span><b class="num">− ${fmt(o.varSpent)}</b></div>
+    <div class="plan-line total"><span>💵 فاضل للمصروف</span><b class="num ${o.free < 0 ? 'neg' : 'pos'}">${fmt(o.free)}</b></div>
+    <div class="muted" style="margin-top:6px; line-height:1.8">للـ <b class="num">${o.daysLeft}</b> يوم الباقيين — يعني حوالي <b class="num">${fmt(o.perDay)}</b> جنيه في اليوم.</div>`
+      : `<div class="plan-line total"><span>🛒 متاح للمصروف اليومي</span><b class="num ${o.varBudget < 0 ? 'neg' : 'pos'}">${fmt(o.varBudget)}</b></div>
+    <div class="muted" style="margin-top:6px; line-height:1.8">${o.r.start > todayS() ? `يعني حوالي <b class="num">${fmt(o.varBudget / o.r.days)}</b> جنيه في اليوم على مدار ${o.r.days} يوم.` : `اتصرف منه <b class="num">${fmt(o.varSpent)}</b> — ${o.free >= 0 ? `وفضل <b class="num pos">${fmt(o.free)}</b>` : `وزاد <b class="num neg">${fmt(-o.free)}</b>`}.`}</div>`}
     ${splitBar(o)}
     ${o.recvExpected > 0.5 ? `<div class="note">🤝 متوقع يرجعلك الشهر ده <b class="num">${fmt(o.recvExpected)}</b> ج من فلوس عند الناس — مش محسوبين في الخطة لحد ما يوصلوا فعلًا.</div>` : ''}
     ${o.varBudget < 0 ? `<div class="note">⚠️ الدخل مش مغطي الخطة بـ <b class="num">${fmt(-o.varBudget)}</b> جنيه. قلّل التحويش الشهري للهدف، أو راجع الالتزامات، أو زوّد مصدر دخل.</div>` : ''}
