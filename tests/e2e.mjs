@@ -117,7 +117,7 @@ await test('معدل الاستهلاك بيتعلم من الجرد، والع�
     S.counts.push({ id: 'd', ts: 4, itemId: mk.id, date: '2026-10-09', qty: 0.9 });
     save();
     const x = shopList().find(s => s.it.id === mk.id);
-    return { rice: Math.round(learnedDaily(rz) * 30), buy: qtyPlain(mk, x.qty), cost: Math.round(x.cost) };
+    return { rice: Math.round(learnedDaily(rz) * 30), buy: qtyPlain(mk, x.qty).replace(/[\u2066\u2069]/g, ''), cost: Math.round(x.cost) };
   });
   assert.deepEqual(r, { rice: 12, buy: '9 كيس (4.05 KG)', cost: 135 });
 });
@@ -308,6 +308,39 @@ await test('فاضل للمصروف من الخزنة: المحجوز + اللي
   });
   // رصيد = 8000 − 3000 − 500 = 4500 · الخزنة 7500 · لسه عليك النت 1000 · فاضل 3500 — والدخل اللي لسه ما نزلش مش بيزوّده
   assert.deepEqual(r, { safe: 7500, res: 3000, owed: 1000, free: 3500, gap: -2000, sum: 7500, free2: 3500, pending: 5000 });
+});
+
+await test('مراجعة الاستوك: صفر+صفر، تغيير العبوة، المبلغ المقترح، تعديل الشراء', async page => {
+  const r = await ev(page, () => {
+    // صفر وبعده صفر: يرجع للتقديري ويفضل في قايمة الشراء
+    S.items.push({ id: 'z', name: 'سكر', group: 'تموين', base: 'PCS', monthly: 30, price: 2 });
+    S.counts.push({ id: 'a', ts: 1, itemId: 'z', date: '2026-09-20', qty: 0 }, { id: 'b', ts: 2, itemId: 'z', date: '2026-10-09', qty: 0 });
+    S.items.push({ id: 'm', name: 'مكرونة', group: 'تموين', base: 'KG', pu: 'كيس', pf: 0.45, monthly: 4.5, price: 100 / 3 });
+    save();
+    return { rate: dailyRate(byId(S.items, 'z')).v, buy: shopList().find(x => x.it.id === 'z').qty };
+  });
+  assert.deepEqual(r, { rate: 1, buy: 33 });
+  // تغيير العبوة من كيس 0.45 لكرتونة 4.5 من غير لمس الأرقام: القيمة بالكيلو ما تتغيرش
+  await ev(page, () => itemForm('m'));
+  await page.selectOption('#sheetBody [name="pu"]', 'كرتونة'); await fill(page, 'pf', '4.5');
+  await page.dispatchEvent('#sheetBody [name="pf"]', 'change');
+  await submit(page);
+  assert.deepEqual(await ev(page, () => { const it = byId(S.items, 'm'); return [it.pf, +it.monthly.toFixed(3), +it.price.toFixed(2)]; }), [4.5, 4.5, 33.33]);
+  // فتح الصنف وحفظه من غير تغيير ما يزحزحش الأرقام
+  await ev(page, () => { byId(S.items, 'z').monthly = 1; byId(S.items, 'z').pu = 'طبق'; byId(S.items, 'z').pf = 30; save(); itemForm('z'); });
+  await submit(page);
+  assert.equal(await ev(page, () => byId(S.items, 'z').monthly), 1);
+  // الشراء بالمبلغ المقترح زي ما هو ما يغيرش السعر، والكمية بتحدّث المبلغ
+  await ev(page, () => { byId(S.items, 'm').pu = 'كيس'; byId(S.items, 'm').pf = 0.5; byId(S.items, 'm').price = 30; save(); buyItem('m'); });
+  await fill(page, 'qty', 3);
+  assert.equal(await page.inputValue('#sheetBody [name="amount"]'), '45');
+  await submit(page);
+  assert.deepEqual(await ev(page, () => [S.tx.at(-1).qty, S.tx.at(-1).amount, byId(S.items, 'm').price]), [1.5, 45, 30]);
+  // تعديل الشراء: الكمية بالكيس، والسعر يتظبط لو دي آخر مرة
+  await ev(page, () => quickAdd({ tx: S.tx.at(-1) }));
+  assert.equal(await page.inputValue('#sheetBody [name="qty"]'), '3');
+  await fill(page, 'qty', 2); await fill(page, 'amount', 40); await submit(page);
+  assert.deepEqual(await ev(page, () => [S.tx.at(-1).qty, byId(S.items, 'm').price]), [1, 40]);
 });
 
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {

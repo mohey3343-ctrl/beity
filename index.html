@@ -585,8 +585,9 @@ const packF = it => hasPack(it) ? it.pf : 1;
 const entryUnit = it => hasPack(it) ? it.pu : BASES[baseOf(it)].en;
 function qtyPlain(it, q){
   const en = BASES[baseOf(it)].en;
-  if(!hasPack(it)) return `${fmtQ(q)} ${en}`;
-  return `${fmtQ(q / it.pf)} ${it.pu}` + (baseOf(it) === 'PCS' && it.pf === 1 ? '' : ` (${fmtQ(q)} ${en})`);
+  // ⁦…⁩ بيعزل "0.9 KG" عشان ما يتقلبش لـ "KG 0.9" جوه الكلام العربي
+  if(!hasPack(it)) return `\u2066${fmtQ(q)} ${en}\u2069`;
+  return `${fmtQ(q / it.pf)} ${it.pu}` + (baseOf(it) === 'PCS' && it.pf === 1 ? '' : ` (\u2066${fmtQ(q)} ${en}\u2069)`);
 }
 function qtyTxt(it, q){
   const en = BASES[baseOf(it)].en, ltr = x => `<span dir="ltr" style="unicode-bidi:isolate">${fmtQ(x)} ${en}</span>`;
@@ -782,13 +783,15 @@ function learnedDaily(it){
     if(d >= 7 && d <= 125){ first = c; break; }
   }
   if(!first){
-    for(let i = cs.length - 2; i >= 0; i--) if(diffDays(cs[i].date, last.date) >= 7){ first = cs[i]; break; }
+    for(let i = cs.length - 2; i >= 0; i--){ const d = diffDays(cs[i].date, last.date); if(d >= 7 && d <= 365){ first = cs[i]; break; } }
   }
   if(!first) return null;
   const fk = evKey(first), lk = evKey(last);
   const bought = sum(itemBuys(it).filter(t => { const k = evKey(t); return k > fk && k <= lk; }), t => t.qty);
   const used = first.qty + bought - last.qty;
   if(used < 0) return null;
+  // كان خلصان ولسه خلصان (جرد صفر + صفر) — مفيش معلومة عن الاستهلاك، نرجع للرقم التقديري
+  if(used < 1e-9 && last.qty < 1e-9) return null;
   return used / diffDays(first.date, last.date);
 }
 const dailyRate = memo(dailyRateRaw, it => it.id);
@@ -2274,7 +2277,8 @@ function quickAdd(preset){
   }
   body += `<label class="fld"><input class="amount" name="amount" inputmode="decimal" placeholder="0" value="${t ? Math.abs(t.amount) : ''}" autofocus></label>`;
   if(type === 'exp' && !(t && t.itemId)) body += `<div class="catpick">${cats}</div>`;
-  if(t && t.itemId) body += Fd.num('qty', 'الكمية', t.qty);
+  const eit = t && t.itemId ? byId(S.items, t.itemId) : null;
+  if(t && t.itemId) body += eit ? Fd.num('qty', `الكمية (بالـ${esc(entryUnit(eit))})`, +(t.qty / packF(eit)).toFixed(3)) : Fd.num('qty', 'الكمية', t.qty);
   if(t && t.grp){
     const g = S.tx.filter(x => x.grp === t.grp);
     if(g.length > 1) body += `<div class="note">🧾 جزء من فاتورة فيها <b class="num">${g.length}</b> حاجة بإجمالي <b class="num">${fmt(sum(g, x => x.amount))}</b> ج
@@ -2294,7 +2298,12 @@ function quickAdd(preset){
       t.note = v.note.trim(); t.date = v.date || t.date;
       if(v.wallet) t.walletId = v.wallet;
       if(v.cat) t.cat = v.cat;
-      if(t.itemId && v.qty !== undefined) t.qty = num(v.qty);
+      if(t.itemId && v.qty !== undefined){
+        t.qty = num(v.qty) * (eit ? packF(eit) : 1);
+        // لو دي آخر مرة اشتريته، السعر يتظبط على التعديل
+        const lastBuy = eit && itemBuys(eit).filter(x => x.amount > 0).sort((a, b) => evKey(a) < evKey(b) ? -1 : 1).pop();
+        if(lastBuy === t && t.qty > 0) eit.price = Math.round(t.amount / t.qty * 10000) / 10000;
+      }
       save(); toast('اتعدّل');
     }else{
       S.tx.push({id:uid(), ts:Date.now(), type, amount, cat:type === 'exp' ? (v.cat || 'other') : undefined, note:v.note.trim(), date:v.date || todayS()});
@@ -2334,7 +2343,8 @@ function itemForm(id, preset){
   body += `<div class="fld2"><label class="fld"><span>بتشتريه في (العبوة)</span><select name="pu" data-ilbl data-pick="packs" data-label="العبوة" data-prev="${esc(pu)}">
       <option value="" ${!pu ? 'selected' : ''}>— من غير عبوة —</option>${packs.map(o => `<option value="${esc(o)}" ${o === pu ? 'selected' : ''}>${esc(o)}</option>`).join('')}<option value="__new">➕ إضافة جديد…</option></select></label>
     <label class="fld" data-l="pfWrap"><span data-l="pf">العبوة فيها كام</span><input name="pf" inputmode="decimal" value="${it && hasPack(it) ? it.pf : (it ? '' : 1)}" data-ilbl></label></div>`;
-  body += `<div class="fld2">${Fd.num('monthly', '<span data-l="monthly">بتستهلك كام في الشهر</span>', it && it.monthly ? +(it.monthly / f).toFixed(3) : '')}${Fd.num('price', '<span data-l="price">السعر</span>', it && it.price ? +(it.price * f).toFixed(2) : '')}</div>`;
+  const m0 = it && it.monthly ? String(+(it.monthly / f).toFixed(4)) : '', p0 = it && it.price ? String(+(it.price * f).toFixed(2)) : '';
+  body += `<div class="fld2">${Fd.num('monthly', '<span data-l="monthly">بتستهلك كام في الشهر</span>', m0)}${Fd.num('price', '<span data-l="price">السعر</span>', p0)}</div>`;
   body += `<div class="muted" data-l="conv" style="margin:-4px 0 10px"></div>`;
   if(!it) body += Fd.num('stock', '<span data-l="stock">الموجود عندك دلوقتي (اختياري)</span>', '');
   if(it){
@@ -2348,6 +2358,7 @@ function itemForm(id, preset){
       <div class="btns" style="margin-top:10px"><button type="button" class="btn good" data-act="buyItem" data-id="${it.id}">سجّل شراء</button><button type="button" class="btn" data-act="countItem" data-id="${it.id}">جرد الصنف ده</button><button type="button" class="btn danger" data-act="itemOut" data-id="${it.id}">خلص 🚫</button></div>`;
   }
   body += Fd.foot(it ? 'حفظ' : 'إضافة', it ? {act:'delItem', id:it.id} : null);
+  const f0 = f;
   openSheet(it ? it.name : 'صنف جديد', body, v => {
     if(!need(v.name.trim(), 'اكتب اسم الصنف')) return false;
     const pu = v.pu && v.pu !== '__new' ? v.pu.trim() : '';
@@ -2360,8 +2371,11 @@ function itemForm(id, preset){
     if(it && (v.base || 'PCS') !== baseOf(it) && (S.counts.some(c => c.itemId === it.id) || itemBuys(it).length)
       && !confirm(`الجرد والمشتريات القديمة لـ${it.name} متسجلة بالـ${BASES[baseOf(it)].en}، وبعد التغيير هتتقري ${(BASES[v.base] || BASES.PCS).en}.\nكمّل؟ وبعدها اجرده تاني عشان الرقم يتظبط.`)) return false;
     const o = it || {id:uid(), createdAt:todayS()};
+    // لو الرقم ما اتغيرش والعبوة زي ما هي، نسيب القيمة المحفوظة (من غير ما التقريب يزحزحها كل مرة)
+    const same = it && f === f0 && (v.base || 'PCS') === baseOf(it);
     Object.assign(o, {name:v.name.trim(), group:v.group.trim() || 'تاني', base:v.base || 'PCS', pu:pu || undefined, pf:pu ? pf : undefined,
-      monthly:num(v.monthly) * f, price:Math.round(num(v.price) / f * 1000) / 1000});
+      monthly:same && String(v.monthly).trim() === m0 ? it.monthly : num(v.monthly) * f,
+      price:same && String(v.price).trim() === p0 ? it.price : Math.round(num(v.price) / f * 10000) / 10000});
     if(!it){
       S.items.push(o);
       if(String(v.stock || '').trim() !== '') S.counts.push({id:uid(), ts:Date.now(), itemId:o.id, date:todayS(), qty:num(v.stock) * f});
@@ -2374,6 +2388,7 @@ function itemForm(id, preset){
       if(row) row.scrollIntoView({block:'center'});
     }, 50);
   });
+  $('#sheetBody').dataset.f = f;
   itemLabels();
 }
 /* بيحدّث عناوين خانات الصنف حسب المقياس والعبوة المختارين */
@@ -2382,6 +2397,13 @@ function itemLabels(){
   if(!q('base')) return;
   const base = BASES[q('base').value] || BASES.PCS, pu = q('pu').value && q('pu').value !== '__new' ? q('pu').value : '';
   const unit = pu || base.en, pf = num(q('pf').value) || 1;
+  // العبوة اتغيرت: نحوّل الاستهلاك والسعر والموجود للعبوة الجديدة عشان القيمة الحقيقية (بالكيلو/القطعة) تفضل زي ما هي
+  const fNow = pu ? pf : 1, fPrev = num($('#sheetBody').dataset.f) || 1;
+  if(fNow !== fPrev){
+    const sc = (n, k) => { const el = q(n); if(el && el.value.trim() !== '' && num(el.value) > 0) el.value = +(num(el.value) * k).toFixed(4); };
+    sc('monthly', fPrev / fNow); sc('stock', fPrev / fNow); sc('price', fNow / fPrev);
+    $('#sheetBody').dataset.f = fNow;
+  }
   L('pfWrap').style.display = pu ? '' : 'none';
   L('pf').textContent = pu ? `الـ${pu} فيه كام ${base.en}` : '';
   L('monthly').textContent = `بتستهلك كام ${unit} في الشهر`;
@@ -2410,14 +2432,15 @@ const unitShort = (it, u) => !u.base && itemUnits(it).filter(x => x.name === u.n
 function buyItem(id){
   const it = byId(S.items, id); if(!it) return;
   const x = shopList().find(s_ => s_.it.id === id), base = BASES[baseOf(it)], units = itemUnits(it);
-  const f0 = units[0].f, q0 = x && x.qty > 0 ? +(x.qty / f0).toFixed(2) : 1;
+  const u0 = hasPack(it) ? units[0] : units.find(u => u.base);   // من غير عبوة أساسية: الافتراضي بالكيلو/القطعة
+  const f0 = u0.f, q0 = x && x.qty > 0 ? +(x.qty / f0).toFixed(2) : 1;
   const packs = Array.from(new Set([...PACKS, ...(S.settings.packs || [])]));
-  const body = `<label class="fld"><span>اشتريته بإيه؟</span><select name="bu" data-bl>${units.map(u => `<option value="${u.k}">${esc(unitLabel(it, u))}</option>`).join('')}<option value="__new">➕ عبوة تانية (كرتونة، علبة بحجم تاني…)</option></select></label>
+  const body = `<label class="fld"><span>اشتريته بإيه؟</span><select name="bu" data-bl>${units.map(u => `<option value="${u.k}" ${u === u0 ? 'selected' : ''}>${esc(unitLabel(it, u))}</option>`).join('')}<option value="__new">➕ عبوة تانية (كرتونة، علبة بحجم تاني…)</option></select></label>
     <div data-bl-pack style="display:none"><div class="fld2"><label class="fld" data-bl-new><span>العبوة</span><select name="npu" data-bl data-pick="packs" data-label="العبوة" data-prev="${esc(packs[0])}">${packs.map(p_ => `<option>${esc(p_)}</option>`).join('')}<option value="__new">➕ إضافة جديد…</option></select></label>
       ${Fd.num('npf', `<span data-bl-l="npf">فيها كام ${base.en}</span>`, '', 'data-bl')}</div>
       <div class="muted" data-bl-l="sizeNote" style="margin:-6px 0 10px"></div>
       <label class="switch" data-bl-new style="margin:-4px 0 10px"><input type="checkbox" name="main" ${hasPack(it) ? '' : 'checked'}> <span>خليها العبوة الأساسية لـ${esc(it.name)} (في الجرد وقايمة الشراء)</span></label></div>
-    <div class="fld2">${Fd.num('qty', '<span data-bl-l="qty">الكمية</span>', q0, 'autofocus data-bl')}${Fd.num('amount', 'دفعت كام إجمالي', it.price ? Math.round(q0 * f0 * it.price) : '')}</div>
+    <div class="fld2">${Fd.num('qty', '<span data-bl-l="qty">الكمية</span>', q0, 'autofocus data-bl')}${Fd.num('amount', 'دفعت كام إجمالي', it.price ? Math.round(q0 * f0 * it.price) : '', 'data-amt')}</div>
     <div class="muted" data-bl-l="conv" style="margin:-4px 0 10px"></div>
     ${Fd.date('date', 'التاريخ', todayS())}<div class="muted">هيتسجّل كمصروف "استوك البيت"، والكمية هتتضاف للموجود، والسعر هيتحدّث. والعبوة الجديدة بتتحفظ للصنف عشان تلاقيها المرة الجاية.</div>${Fd.foot('سجّل الشراء')}`;
   NEXT_WALLET = {label:'دفعت من'};
@@ -2430,14 +2453,14 @@ function buyItem(id){
       if(!need(pu && pu !== '__new', 'اختار العبوة')) return false;
       if(!need(num(v.npf) > 0, `اكتب الـ${pu} فيها كام ${base.en}`)) return false;
       f = num(v.npf);
-      if(v.main){ if(hasPack(it)) addAltUnit(it, it.pu, it.pf); it.pu = pu; it.pf = f; it.alt = (it.alt || []).filter(a_ => !(a_.pu === pu && a_.pf === f)); }
+      if(v.main){ const old = hasPack(it) ? {pu:it.pu, pf:it.pf} : null; it.pu = pu; it.pf = f; it.alt = (it.alt || []).filter(a_ => !(a_.pu === pu && a_.pf === f)); if(old) addAltUnit(it, old.pu, old.pf); }
       else addAltUnit(it, pu, f);
     }else{
       const u = unitOf(it, v.bu);
       // الحجم ممكن يختلف من مرة للتانية (جركن 4 لتر ومرة 4.6) — بيتحسب للمرة دي بس
       f = u.base ? 1 : num(v.npf) > 0 ? num(v.npf) : u.f;
     }
-    recordBuy(it, q * f, a, v.date || todayS());
+    recordBuy(it, q * f, a, v.date || todayS(), !$('#sheetBody [name="amount"]').dataset.dirty);
     save(); toast('اتسجّل الشراء');
   });
   $('#sheetBody').dataset.item = it.id;
@@ -2462,6 +2485,8 @@ function buyLabels(it){
   L('npf').textContent = `حجم الـ${unit} (كام ${base.en})`;
   const qty = num(q('qty').value);
   L('conv').innerHTML = f > 0 && (isNew || !u.base) ? `${fmtQ(qty)} ${esc(unit)} = <b class="num">${fmtQ(qty * f)}</b> ${base.en}` : '';
+  // المبلغ المقترح بيتحسب من الكمية لحد ما تكتب انت المبلغ
+  const am = q('amount'); if(am && !am.dataset.dirty && it.price > 0 && qty > 0 && f > 0) am.value = Math.round(qty * f * it.price);
 }
 /* ---- تسجيل كذا حاجة مع بعض (فاتورة) ----
    كل حاجة سطر: تصنيف + مبلغ. لو التصنيف "استوك البيت" تختار الصنف والكمية فتتضاف للمخزون.
@@ -2525,10 +2550,11 @@ function multiAdd(preset){
   setTimeout(() => { const f = document.querySelector('#mlines [data-f="amount"]'); if(f && !$('#sheetBody').contains(document.activeElement)) f.focus(); }, 80);
 }
 
-function recordBuy(it, q, a, date){
+function recordBuy(it, q, a, date, keepPrice){
   if(a > 0){
     S.tx.push({id:uid(), ts:Date.now(), type:'exp', cat:'house', itemId:it.id, qty:q, amount:a, note:it.name, date});
-    it.price = Math.round(a / q * 100) / 100;
+    // السعر بيتحدّث من اللي دفعته فعلًا — إلا لو سبت المبلغ المقترح زي ما هو (تقديري)
+    if(!keepPrice) it.price = Math.round(a / q * 10000) / 10000;
   }else{
     // اتشرى بس من غير مبلغ (هدية مثلًا) — نضيفه للجرد كحركة شراء بصفر
     S.tx.push({id:uid(), ts:Date.now(), type:'exp', cat:'house', itemId:it.id, qty:q, amount:0, note:it.name, date});
@@ -2539,8 +2565,8 @@ function buyMany(){
   let body = `<div class="muted" style="margin-bottom:8px">عدّل الكمية والسعر الفعلي، وشيل علامة ✓ من اللي ما اشترتهوش.</div><table class="tbl"><tr><th></th><th>الصنف</th><th>الكمية</th><th>دفعت</th></tr>`;
   L.forEach(x => {
     body += `<tr><td><input type="checkbox" name="k_${x.it.id}" checked style="width:20px;height:20px;accent-color:var(--gold)"></td><td><b>${esc(x.it.name)}</b><div class="muted">بالـ${esc(entryUnit(x.it))}</div></td>
-      <td><input name="q_${x.it.id}" inputmode="decimal" value="${+(x.qty / packF(x.it)).toFixed(2)}" style="width:64px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center"></td>
-      <td><input name="c_${x.it.id}" inputmode="decimal" value="${x.cost ? Math.round(x.cost) : ''}" style="width:78px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center"></td></tr>`;
+      <td><input name="q_${x.it.id}" data-bm="${x.it.id}" data-up="${(x.it.price || 0) * packF(x.it)}" inputmode="decimal" value="${+(x.qty / packF(x.it)).toFixed(2)}" style="width:64px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center"></td>
+      <td><input name="c_${x.it.id}" data-amt inputmode="decimal" value="${x.cost ? Math.round(x.cost) : ''}" style="width:78px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center"></td></tr>`;
   });
   body += `</table>${Fd.date('date', 'التاريخ', todayS())}${Fd.foot('سجّل كل ده')}`;
   NEXT_WALLET = {label:'دفعت من'};
@@ -2549,7 +2575,7 @@ function buyMany(){
     L.forEach(x => {
       if(!v['k_' + x.it.id]) return;
       const q = num(v['q_' + x.it.id]), a = num(v['c_' + x.it.id]);
-      if(q > 0){ recordBuy(x.it, q * packF(x.it), a, v.date || todayS()); n++; tot += a; }
+      if(q > 0){ recordBuy(x.it, q * packF(x.it), a, v.date || todayS(), !$(`#sheetBody [name="c_${x.it.id}"]`).dataset.dirty); n++; tot += a; }
     });
     if(!n){ toast('مفيش حاجة متعلّمة', true); return false; }
     save(); toast(`اتسجّل ${n} صنف بـ ${fmt(tot)} ج`);
@@ -3369,6 +3395,12 @@ document.addEventListener('change', e => {
   if(el.dataset.act === 'rollDebts'){ const g = byId(S.goals, el.dataset.id); if(g){ g.rollDebts = el.checked; save(); } }
 });
 document.addEventListener('input', e => {
+  // مبلغ كتبته بإيدك ما بيتغيرش لوحده، والمقترح بيتحسب من الكمية
+  if(e.target.hasAttribute && e.target.hasAttribute('data-amt')) e.target.dataset.dirty = '1';
+  if(e.target.dataset && e.target.dataset.bm){
+    const c = $(`#sheetBody [name="c_${e.target.dataset.bm}"]`), up = num(e.target.dataset.up);
+    if(c && !c.dataset.dirty && up > 0) c.value = Math.round(num(e.target.value) * up);
+  }
   if(e.target.hasAttribute && e.target.hasAttribute('data-bl')) buyLabels();
   if(e.target.matches && e.target.matches('input[inputmode="decimal"]')) markField(e.target);
   if(e.target.dataset && e.target.dataset.q){ listFilter(e.target.dataset.q, e.target.value); return; }
