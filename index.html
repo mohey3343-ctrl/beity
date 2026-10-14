@@ -3235,9 +3235,13 @@ const ACT = {
     const countedToday = new Set(S.counts.filter(c => c.date === todayS()).map(c => c.itemId));
     const left = S.items.filter(it => !done.has(it.id) && !countedToday.has(it.id) && (estStock(it) || 0) > 0.001);
     if(!left.length) return jardCommit(filled, []);
-    const body = `<div class="muted" style="line-height:1.8; margin-bottom:6px">${filled.length ? `كتبت جرد <b class="num">${filled.length}</b> صنف. ` : ''}فيه <b class="num">${left.length}</b> صنف سبتهم فاضيين، والبرنامج فاكر إن عندك منهم — هيفضلوا زي ما هم.<br><b>لو فيهم حاجة خلصت علّم عليها</b> وهتتسجّل صفر.</div>
-      ${groupsOf().map(g => { const L = left.filter(it => (it.group || 'تاني') === g); return L.length ? `<div class="group-h">${esc(g)}</div>` + L.map(it => `<label class="jard-row" style="cursor:pointer"><input type="checkbox" name="z_${it.id}" style="width:22px; height:22px; padding:0; flex:none; accent-color:var(--bad)"><div class="nm">${esc(it.name)}<small>متوقع ${qtyTxt(it, estStock(it))}</small></div><span class="muted">خلص</span></label>`).join('') : ''; }).join('')}
-      ${Fd.foot('احفظ الجرد')}`;
+    const list = groupsOf().map(g => { const L = left.filter(it => (it.group || 'تاني') === g); return L.length ? `<div class="group-h">${esc(g)}</div>` + L.map(it => `<label class="jard-row" style="cursor:pointer"><input type="checkbox" name="z_${it.id}" style="width:22px; height:22px; padding:0; flex:none; accent-color:var(--bad)"><div class="nm">${esc(it.name)}<small>متوقع ${qtyTxt(it, estStock(it))}</small></div><span class="muted">خلص</span></label>`).join('') : ''; }).join('');
+    // زرار الحفظ فوق على طول — والقايمة مقفولة لو طويلة (مش لازم تعلّم على حاجة)
+    const body = `<div class="muted" style="line-height:1.8; margin-bottom:10px">${filled.length ? `كتبت جرد <b class="num">${filled.length}</b> صنف. ` : ''}الـ <b class="num">${left.length}</b> صنف التانيين هيفضلوا زي ما هم.</div>
+      <button type="submit" class="btn primary block" style="width:100%; margin-bottom:12px">احفظ الجرد</button>
+      <details ${left.length <= 12 ? 'open' : ''} class="note" style="padding:10px 12px"><summary style="cursor:pointer; font-weight:600">فيه حاجة منهم خلصت؟ افتح وعلّم عليها (اختياري)</summary>
+        <div style="margin-top:8px">${list}</div>
+        <button type="submit" class="btn primary block" style="width:100%; margin-top:10px">احفظ الجرد</button></details>`;
     openSheet('قبل ما تحفظ', body, v => {
       const zeros = left.filter(it => v['z_' + it.id]);
       if(!filled.length && !zeros.length){ toast('ما كتبتش أي كمية', true); return false; }
