@@ -403,6 +403,27 @@ await test('مراجعة التسجيل: مسح دفعة ميعاد، تعديل
   assert.ok(!head.includes('−-'), head);
 });
 
+await test('جرد صنف لوحده: الاستهلاك بيتحسب بالساعة من آخر جرد، ورسالة بالنتيجة', async page => {
+  await ev(page, () => {
+    S.items.push({ id: 's', name: 'سكر', group: 'تموين', base: 'KG', pu: 'كيس', pf: 1, monthly: 2, price: 30 });
+    S.counts.push({ id: 'p', ts: new Date('2026-10-03T04:00:00').getTime(), itemId: 's', date: '2026-10-03', qty: 1.8 }); save(); countItem('s');
+  });
+  await fill(page, 'qty', '1.5'); await submit(page);
+  const msg = (await page.textContent('#toast')).replace(/[\u2066\u2069]/g, '');
+  assert.match(msg, /6 يوم و6 ساعة/); assert.match(msg, /استهلكت 1.5 كيس|استهلكت 0.3/);
+  assert.match(msg, /1.44/);
+  // معدل متعلَّم بالساعة، والمتوقع بيقل بالساعة
+  const r = await ev(page, () => {
+    S.counts.push({ id: 'a', ts: new Date('2026-10-01T10:00:00').getTime(), itemId: 'z', date: '2026-10-01', qty: 2 },
+      { id: 'b', ts: new Date('2026-10-09T08:00:00').getTime(), itemId: 'z', date: '2026-10-09', qty: 1.2 });
+    S.items.push({ id: 'z', name: 'رز', group: 'تموين', base: 'KG', monthly: 30 }); save();
+    const it = byId(S.items, 'z');
+    return [+(learnedDaily(it)).toFixed(4), +estStock(it).toFixed(4)];
+  });
+  // 0.8 كيلو في 7 يوم و22 ساعة = 0.10105/يوم · من 8 الصبح لـ 10 = ساعتين
+  assert.deepEqual(r, [+(0.8 / (7 + 22 / 24)).toFixed(4), +(1.2 - 0.8 / (7 + 22 / 24) * 2 / 24).toFixed(4)]);
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });

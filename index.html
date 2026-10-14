@@ -227,6 +227,7 @@
   .ml-sub select, .ml-sub input{flex:1;} .ml-sub input[data-f="qty"]{flex:.6; text-align:center;}
   .ml-u{font-size:12px; min-width:34px;}
   .plan-line > b{white-space:nowrap; flex:none;}
+  .toast.long{border-radius:18px !important; width:min(92vw, 560px); max-width:none; text-align:right; line-height:1.75; padding:12px 16px;}
   #refreshBtn{font-size:20px;} #refreshBtn.spin{animation:spin 1s linear infinite; pointer-events:none;}
   @keyframes spin{to{transform:rotate(360deg);}}
   .mpick{display:flex; gap:5px;} .mpick select:first-child{flex:1.35;} .fld .mpick select{flex:1; min-width:0; padding:11px 8px 11px 2px; font-size:14px;}
@@ -773,6 +774,25 @@ function goalPlanMonthly(g){ return goalMonthlyAt(g, curKey()); }
 const evKey = e => e.date + '|' + String(e.ts || 0).padStart(15, '0');
 function itemCounts(it){ return S.counts.filter(c => c.itemId === it.id).sort((a, b) => evKey(a) < evKey(b) ? -1 : 1); }
 function itemBuys(it){ return S.tx.filter(t => t.itemId === it.id && t.qty > 0); }
+/* الفرق بين جردين بالأيام — بالساعة والدقيقة لو وقت التسجيل متسجل (6.2 يوم مثلًا)، وإلا بالتاريخ */
+const tsOk = c => c && c.ts > 1e12 && ds(new Date(c.ts)) === c.date;
+const evGap = (a, b) => tsOk(a) && tsOk(b) ? Math.max(0, (b.ts - a.ts) / 864e5) : diffDays(a.date, b.date);
+const nowEv = () => ({date:todayS(), ts:Date.now()});
+function durTxt(g){
+  const d = Math.floor(g + 1e-9), h = Math.round((g - d) * 24);
+  return d ? `${d} يوم${h ? ` و${h} ساعة` : ''}` : `${Math.max(1, h)} ساعة`;
+}
+/* بعد جرد صنف: استهلكت كام من آخر جرد، ويطلع كام في الشهر */
+function sinceLastTxt(it, c){
+  const cs = itemCounts(it).filter(x => x.id !== c.id && evKey(x) < evKey(c)), prev = cs[cs.length - 1];
+  if(!prev) return '';
+  const g = evGap(prev, c); if(g < 1 / 24) return '';
+  const bought = sum(itemBuys(it).filter(t => evKey(t) > evKey(prev) && evKey(t) <= evKey(c)), t => t.qty);
+  const used = prev.qty + bought - c.qty;
+  if(used < -1e-9) return `${it.name}: معاك أكتر من آخر جرد — في شراء ما اتسجلش؟`;
+  return `${it.name}: من آخر جرد (${durTxt(g)}) استهلكت ${qtyPlain(it, used)}` + (g >= 1 ? ` — يعني حوالي ${qtyPlain(it, used / g * 30)} في الشهر` : '')
+    + (g < 7 ? '. البرنامج هيعتمد المعدل لما يعدّي أسبوع على الأقل بين جردين.' : '.');
+}
 function learnedDaily(it){
   const cs = itemCounts(it);
   if(cs.length < 2) return null;
@@ -793,7 +813,7 @@ function learnedDaily(it){
   if(used < 0) return null;
   // كان خلصان ولسه خلصان (جرد صفر + صفر) — مفيش معلومة عن الاستهلاك، نرجع للرقم التقديري
   if(used < 1e-9 && last.qty < 1e-9) return null;
-  return used / diffDays(first.date, last.date);
+  return used / Math.max(evGap(first, last), 1e-6);
 }
 const dailyRate = memo(dailyRateRaw, it => it.id);
 const estStock = memo(estStockRaw, it => it.id);
@@ -809,7 +829,7 @@ function estStockRaw(it){
   if(!cs.length) return null;
   const last = cs[cs.length - 1], lk = evKey(last);
   const bought = sum(itemBuys(it).filter(t => evKey(t) > lk), t => t.qty);
-  const days = Math.max(0, diffDays(last.date, todayS()));
+  const days = evGap(last, nowEv());   // من وقت آخر جرد بالساعة
   return Math.max(0, last.qty + bought - dailyRate(it).v * days);
 }
 function daysLeft(it){
@@ -1537,7 +1557,8 @@ function jardCommit(filled, zeros){
   zeros.forEach((it, i) => S.counts.push({id:uid(), ts:ts + filled.length + i, itemId:it.id, date, qty:0}));
   try{ localStorage.removeItem(JDRAFT_KEY); }catch(e){}
   SUB.stock = 'shop'; LISTQ.jard = ''; save(); window.scrollTo(0, 0);
-  toast(`اتسجّل جرد ${filled.length + zeros.length} صنف` + (zeros.length ? ` (${zeros.length} خلصوا)` : ''));
+  const one = filled.length === 1 && !zeros.length ? sinceLastTxt(filled[0].it, S.counts[S.counts.length - 1]) : '';
+  toast(one || `اتسجّل جرد ${filled.length + zeros.length} صنف` + (zeros.length ? ` (${zeros.length} خلصوا)` : ''), false, one ? 7000 : 0);
 }
 function jardHtml(){
   const jv = S.settings.jardView === 'base' ? 'base' : 'pack';
@@ -2619,8 +2640,9 @@ function countItem(id){
       ${jardUnitSel(it, jv, `name="ju" data-junit="${it.id}"`)}<input name="qty" data-item="${it.id}" inputmode="decimal" autofocus placeholder="${e != null ? fmtQ(e / jardF(it, jv)) : ''}"></div>` + Fd.foot('حفظ');
   openSheet('جرد ' + it.name, body, v => {
     if(!need(String(v.qty).trim() !== '', 'اكتب الكمية')) return false;
-    S.counts.push({id:uid(), ts:Date.now(), itemId:id, date:todayS(), qty:num(v.qty) * jardF(it, v.ju || 'pack')});
-    save(); toast('اتسجّل الجرد');
+    const c = {id:uid(), ts:Date.now(), itemId:id, date:todayS(), qty:num(v.qty) * jardF(it, v.ju || 'pack')};
+    S.counts.push(c); save();
+    const msg = sinceLastTxt(it, c); toast(msg || 'اتسجّل الجرد', false, msg ? 7000 : 0);
   });
 }
 
@@ -3516,9 +3538,9 @@ function replaceAll(ns){
   VIEW = periodOf(todayS()); save();
 }
 let toastT = null;
-function toast(msg, err){
-  const t = $('#toast'); t.textContent = msg; t.className = 'toast show' + (err ? ' err' : '');
-  clearTimeout(toastT); toastT = setTimeout(() => t.className = 'toast', 2200);
+function toast(msg, err, ms){
+  const t = $('#toast'); t.textContent = msg; t.className = 'toast show' + (err ? ' err' : '') + (msg.length > 70 ? ' long' : '');
+  clearTimeout(toastT); toastT = setTimeout(() => t.className = 'toast', ms || 2200);
 }
 
 /* ===================== المزامنة مع جوجل شيت (اختياري) =====================
