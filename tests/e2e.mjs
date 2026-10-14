@@ -424,6 +424,26 @@ await test('جرد صنف لوحده: الاستهلاك بيتحسب بالسا
   assert.deepEqual(r, [+(0.8 / (7 + 22 / 24)).toFixed(4), +(1.2 - 0.8 / (7 + 22 / 24) * 2 / 24).toFixed(4)]);
 });
 
+await test('جرد صنف واحد بس بيحدّث قايمة الشراء على طول (من الجرد ومن جرد الصنف)', async page => {
+  const buy = n => ev(page, n => { const x = shopList().find(y => y.it.name === n); return [+x.have.toFixed(2), x.qty]; }, n);
+  await ev(page, () => { ACT.seedItems(); S.items.forEach(it => { it.monthly = 3; it.price = 20; }); const t = new Date('2026-10-02T10:00:00').getTime();
+    S.items.forEach((it, i) => S.counts.push({ id: 'k' + i, ts: t + i, itemId: it.id, date: '2026-10-02', qty: it.monthly * 2 })); save();
+    ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'jard' }); });
+  const before = await buy('سكر'), other = await buy('رز');
+  assert.equal(before[1], 0, 'قبل الجرد: عنده كفاية');
+  const id = await ev(page, () => S.items.find(i => i.name === 'سكر').id);
+  await page.fill(`#jardForm input[data-item="${id}"]`, '0.5'); await page.click('[data-act="saveJard"]');
+  if (await page.isVisible('#sheetWrap.open')) await submit(page);
+  const after = await buy('سكر');
+  assert.ok(after[0] < 0.6 && after[1] > 0, 'السكر لازم يدخل القايمة: ' + after);
+  assert.deepEqual(await buy('رز'), other, 'الأصناف التانية ما تتغيرش');
+  // ومن "جرد الصنف ده"
+  await ev(page, () => countItem(S.items.find(i => i.name === 'رز').id)); await fill(page, 'qty', '0'); await submit(page);
+  assert.ok((await buy('رز'))[1] > 0);
+  await ev(page, () => ACT.sub({ k: 'stock', v: 'shop' }));
+  assert.ok(await page.isVisible('text=سكر') && await page.isVisible('text=رز'));
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });
