@@ -3172,9 +3172,10 @@ const ACT = {
   itemOut:(d) => {
     const it = byId(S.items, d.id); if(!it) return;
     const before = JSON.parse(JSON.stringify(S));
-    S.counts.push({id:uid(), ts:Date.now(), itemId:it.id, date:todayS(), qty:0});
-    closeSheet(); save();
-    const u = undoDiff(before);
+    const c = {id:uid(), ts:Date.now(), itemId:it.id, date:todayS(), qty:0};
+    S.counts.push(c); closeSheet(); save();
+    const u = undoDiff(before), msg = sinceLastTxt(it, c);   // نفس رسالة الجرد: استهلكت كام من آخر جرد
+    if(msg) toast(msg, false, 7000);
     setTimeout(() => showUndo(u, `${it.name} خلص — اتضاف لقايمة الشراء`), 30);
   },
   itemSort:(d) => { S.settings.itemSort = d.v; save(); },

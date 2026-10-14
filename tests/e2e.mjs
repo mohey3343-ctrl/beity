@@ -228,6 +228,7 @@ await test('جركن بحجم مختلف للمرة دي بس، و"خلص" بض�
   // خلص من قايمة الأصناف
   await ev(page, () => { ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'items' }); });
   await page.click('.list-item[data-id="sb"] [data-act="itemOut"]');
+  assert.match(await page.textContent('#toast'), /صابون سايل: من آخر جرد \(8 يوم\)/);
   assert.equal(await ev(page, () => estStock(byId(S.items, 'sb'))), 0);
   assert.ok(await ev(page, () => shopList().find(x => x.it.id === 'sb').qty > 0), 'لازم يدخل قايمة الشراء');
   await page.click('#undoBar [data-act="undo"]');
