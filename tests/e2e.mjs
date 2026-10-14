@@ -15,13 +15,13 @@ const NOW = new Date('2026-10-09T10:00:00');
 
 /* جوجل شيت مزيّف على /exec — نفس قواعد Code.gs بالظبط (stale + shrink بالحجم وبعدد الحركات)،
    ومعاه تأخير اختياري عشان نجرب "الصفحة لسه بتحمّل" */
-const FAKE = { value: null, updatedAt: 0, delay: 0, posts: 0 };
+const FAKE = { value: null, updatedAt: 0, delay: 0, postDelay: 0, posts: 0 };
 const txCount = j => { try { return (JSON.parse(j).tx || []).length; } catch (e) { return 0; } };
 function fakeSheet(req, res) {
   const H = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };
   const send = o => { res.writeHead(200, H); res.end(JSON.stringify(o)); };
   if (req.method === 'GET') return setTimeout(() => send({ ok: true, value: FAKE.value, updatedAt: FAKE.updatedAt }), FAKE.delay);
-  let body = ''; req.on('data', c => body += c); req.on('end', () => {
+  let body = ''; req.on('data', c => body += c); req.on('end', () => setTimeout(() => {
     const b = JSON.parse(body); FAKE.posts++;
     if (!b.force) {
       if (FAKE.updatedAt && b.updatedAt < FAKE.updatedAt) return send({ ok: false, code: 'stale' });
@@ -30,7 +30,7 @@ function fakeSheet(req, res) {
       if (o >= 10 && n < o * 0.8) return send({ ok: false, code: 'shrink' });
     }
     FAKE.value = b.value; FAKE.updatedAt = b.updatedAt; send({ ok: true });
-  });
+  }, FAKE.postDelay));
 }
 
 // سيرفر صغير للملفات (عشان localStorage و Service Worker يشتغلوا زي الحقيقة)
@@ -500,6 +500,81 @@ await test('المزامنة: جهاز جديد وهو بيحمّل ما يمس�
   await ev(page, sync => { S = fresh(); S.settings.syncUrl = sync; S.updatedAt = Date.now(); persist(); pushRemote(false); }, SYNC);
   await page.waitForTimeout(1200);
   assert.equal(txCount(FAKE.value), 41, 'نسخة فاضية اترفعت فوق الشيت');
+});
+
+// جهازين حقيقيين (متصفحين) على نفس الشيت
+async function device(){
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
+  const page = await ctx.newPage(); page.on('dialog', d => d.accept());
+  await page.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await page.goto(URL_); return { ctx, page };
+}
+const amounts = () => JSON.parse(FAKE.value || '{"tx":[]}').tx.map(t => t.amount).sort((a, b) => a - b);
+const addExp = (page, a) => ev(page, a => { S.tx.push({ id: 'e' + a, ts: Date.now(), type: 'exp', cat: 'food', amount: a, date: todayS() }); save(); }, a);
+const settle = page => page.waitForFunction(() => !syncBusy && !syncTimer, null, { timeout: 8000 }).catch(() => {}).then(() => page.waitForTimeout(2200));
+async function syncTest(name, fn){
+  Object.assign(FAKE, { value: null, updatedAt: 0, delay: 0, postDelay: 0, posts: 0 });
+  const A = await device(), B = await device();
+  try{ await fn(A.page, B.page); console.log('  ✅', name); passed++; }
+  catch(e){ console.log('  ❌', name, '\n     ', e.message.split('\n').slice(0, 10).join('\n      ')); failed++; }
+  await A.ctx.close(); await B.ctx.close();
+}
+const connect = (page, a) => ev(page, url => { S.settings.syncUrl = url; S.settings.syncSecret = ''; save(); pullRemote(true); }, URL_ + 'exec');
+
+await syncTest('مزامنة جهازين: كل جهاز يسجّل، والشيت فيه الاتنين (مفيش حد يكتب فوق التاني)', async (A, B) => {
+  await addExp(A, 1); await connect(A); await settle(A);
+  await connect(B); await settle(B);
+  await addExp(A, 11); await settle(A);
+  await addExp(B, 22); await settle(B);
+  assert.deepEqual(amounts(), [1, 11, 22]);
+  await ev(A, () => pullRemote(false)); await settle(A);
+  assert.deepEqual(await ev(A, () => S.tx.map(t => t.amount).sort((a, b) => a - b)), [1, 11, 22]);
+});
+
+await syncTest('تسجيل وإحنا بنرفع: التسجيل التاني بيترفع بعدها', async (A) => {
+  await addExp(A, 1); await connect(A); await settle(A);
+  FAKE.postDelay = 1500;
+  await addExp(A, 11); await A.waitForTimeout(1800);   // الرفع بدأ وبطيء
+  await addExp(A, 22);
+  FAKE.postDelay = 0; await A.waitForTimeout(5000); await settle(A);
+  assert.deepEqual(amounts(), [1, 11, 22]);
+});
+
+await syncTest('توصيل المزامنة على جهاز فيه دخل وفواتير بس ما يمسحهمش', async (A, B) => {
+  await addExp(A, 5); await connect(A); await settle(A);
+  await ev(B, () => { S.incomes.push({ id: 'in', name: 'مرتب', amount: 1000, day: 1 }); S.bills.push({ id: 'bl', name: 'نت', amount: 100, dueDay: 5 }); save(); });
+  await connect(B); await settle(B);
+  assert.deepEqual(await ev(B, () => [S.incomes.length, S.bills.length, S.tx.length]), [1, 1, 1]);
+});
+
+await syncTest('شاشة تعديل مفتوحة والمزامنة جت: التعديل ما يضيعش', async (A, B) => {
+  await addExp(A, 100); await connect(A); await settle(A);
+  await connect(B); await settle(B);
+  await ev(B, () => quickAdd({ tx: S.tx.find(t => t.amount === 100) }));
+  await addExp(A, 7); await settle(A);              // جهاز تاني رفع وانا فاتح الشاشة
+  await ev(B, () => pullRemote(false)); await B.waitForTimeout(500);
+  await fill(B, 'amount', 250); await submit(B); await settle(B); await B.waitForTimeout(1500); await settle(B);
+  assert.deepEqual(await ev(B, () => S.tx.map(t => t.amount).sort((a, b) => a - b)), [7, 250]);
+  assert.deepEqual(amounts(), [7, 250]);
+});
+
+await syncTest('التراجع بيرجّع المتمسوح بس، وما يمسحش اللي اتسجل بعده — وما يرجعش يتمسح من جهاز تاني', async (A, B) => {
+  await addExp(A, 1); await addExp(A, 2); await connect(A); await settle(A);
+  await connect(B); await settle(B);
+  await ev(A, () => ACT.delTx({ id: 'e1' })); await A.waitForTimeout(100);
+  await addExp(A, 77);
+  await ev(A, () => ACT.undo()); await settle(A);
+  assert.deepEqual(await ev(A, () => S.tx.map(t => t.amount).sort((a, b) => a - b)), [1, 2, 77]);
+  await ev(B, () => pullRemote(false)); await settle(B);
+  await addExp(B, 3); await settle(B);
+  assert.deepEqual(amounts(), [1, 2, 3, 77]);
+});
+
+await syncTest('مسح حاجات كتير بإيدك بيترفع عادي (مش بيتقفل كـ"الشيت أكبر")', async (A) => {
+  for (let i = 1; i <= 12; i++) await ev(A, i => S.tx.push({ id: 'x' + i, ts: i, type: 'exp', cat: 'food', amount: i, date: todayS(), grp: i > 9 ? 'g' : undefined }), i);
+  await ev(A, () => save()); await connect(A); await settle(A);
+  await ev(A, () => ACT.delGroup({ id: 'g' })); await settle(A); await A.waitForTimeout(1000); await settle(A);
+  assert.equal(amounts().length, 9);
 });
 
 await browser.close();
