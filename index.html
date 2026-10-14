@@ -1425,7 +1425,8 @@ function logFiltered(o){
   if(LOGF !== 'all') list = list.filter(t => t.type === LOGF);
   if(LOGCAT) list = list.filter(t => t.cat === LOGCAT);
   const q = normNum(LOGQ).toLowerCase() || LOGQ.trim().toLowerCase();
-  if(LOGQ.trim()) list = list.filter(t => txSearchText(t).includes(LOGQ.trim().toLowerCase()) || (q && String(t.amount).includes(q)));
+  const qa = normAr(LOGQ);
+  if(LOGQ.trim()) list = list.filter(t => normAr(txSearchText(t)).includes(qa) || (q && String(t.amount).includes(q)));
   return list.sort((a, b) => evKey(a) < evKey(b) ? 1 : -1);
 }
 function logListHtml(o){
@@ -1437,7 +1438,7 @@ function logListHtml(o){
   list.forEach(t => {
     if(t.date !== cur){
       cur = t.date;
-      const dayOut = sum(list.filter(x => x.date === cur && x.type !== 'inc' && x.type !== 'xfer'), x => x.amount);
+      const dayOut = sum(list.filter(x => x.date === cur && x.type !== 'inc' && x.type !== 'xfer' && x.amount > 0), x => x.amount);
       h += `<div class="day-h"><span>${dayLabel(cur)}${LOGALL && pd(cur).getFullYear() !== new Date().getFullYear() ? ' ' + pd(cur).getFullYear() : ''}</span><span class="num">${dayOut ? '−' + fmt(dayOut) : ''}</span></div>`;
     }
     h += txRow(t);
@@ -2319,7 +2320,7 @@ function quickAdd(preset){
   body += Fd.date('date', 'التاريخ', t ? t.date : (preset.date || todayS()));
   body += Fd.foot(t ? 'حفظ التعديل' : 'سجّل', t ? {act:'delTx', id:t.id} : null);
   const title = t ? 'تعديل: ' + txInfo(t).title : isInc ? 'دخل إضافي' : 'مصروف جديد';
-  NEXT_WALLET = {sel:t && t.walletId, label:t && t.type === 'inc' ? 'دخلوا في' : 'دفعت من'};
+  NEXT_WALLET = {sel:t ? walletOf(t) : undefined, label:t && t.type === 'inc' ? 'دخلوا في' : 'دفعت من'};
   openSheet(title, body, v => {
     const amount = num(v.amount);
     if(!need(amount > 0, 'اكتب المبلغ')) return false;
@@ -2473,7 +2474,7 @@ function buyItem(id){
       <label class="switch" data-bl-new style="margin:-4px 0 10px"><input type="checkbox" name="main" ${hasPack(it) ? '' : 'checked'}> <span>خليها العبوة الأساسية لـ${esc(it.name)} (في الجرد وقايمة الشراء)</span></label></div>
     <div class="fld2">${Fd.num('qty', '<span data-bl-l="qty">الكمية</span>', q0, 'autofocus data-bl')}${Fd.num('amount', 'دفعت كام إجمالي', it.price ? Math.round(q0 * f0 * it.price) : '', 'data-amt')}</div>
     <div class="muted" data-bl-l="conv" style="margin:-4px 0 10px"></div>
-    ${Fd.date('date', 'التاريخ', todayS())}<div class="muted">هيتسجّل كمصروف "استوك البيت"، والكمية هتتضاف للموجود، والسعر هيتحدّث. والعبوة الجديدة بتتحفظ للصنف عشان تلاقيها المرة الجاية.</div>${Fd.foot('سجّل الشراء')}`;
+    ${Fd.date('date', 'التاريخ', defaultDate())}<div class="muted">هيتسجّل كمصروف "استوك البيت"، والكمية هتتضاف للموجود، والسعر هيتحدّث. والعبوة الجديدة بتتحفظ للصنف عشان تلاقيها المرة الجاية.</div>${Fd.foot('سجّل الشراء')}`;
   NEXT_WALLET = {label:'دفعت من'};
   openSheet('اشتريت ' + it.name, body, v => {
     const q = num(v.qty), a = num(v.amount);
@@ -2599,7 +2600,7 @@ function buyMany(){
       <td><input name="q_${x.it.id}" data-bm="${x.it.id}" data-up="${(x.it.price || 0) * packF(x.it)}" inputmode="decimal" value="${+(x.qty / packF(x.it)).toFixed(2)}" style="width:64px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center"></td>
       <td><input name="c_${x.it.id}" data-amt inputmode="decimal" value="${x.cost ? Math.round(x.cost) : ''}" style="width:78px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center"></td></tr>`;
   });
-  body += `</table>${Fd.date('date', 'التاريخ', todayS())}${Fd.foot('سجّل كل ده')}`;
+  body += `</table>${Fd.date('date', 'التاريخ', defaultDate())}${Fd.foot('سجّل كل ده')}`;
   NEXT_WALLET = {label:'دفعت من'};
   openSheet('اشتريت من القائمة', body, v => {
     let n = 0, tot = 0;
@@ -2706,8 +2707,8 @@ function dueForm(id, preset){
     if(!need(num(v.amount) > 0, 'اكتب المبلغ')) return false;
     if(!need(/^\d{4}-\d{2}-\d{2}$/.test(v.date), 'اختار الميعاد')) return false;
     const o = d || {id:uid(), createdAt:todayS(), debtId:debtId || undefined};
-    const oldDate = o.date;
-    Object.assign(o, {name:v.name.trim(), amount:num(v.amount), baseAmount:num(v.amount), date:v.date, repeat:+v.repeat || 0, dom:pd(v.date).getDate()});
+    const oldDate = o.date, paidPart = d ? Math.max(0, (d.baseAmount || d.amount) - d.amount) : 0;   // اللي اتدفع من الميعاد ده قبل كده
+    Object.assign(o, {name:v.name.trim(), amount:Math.max(0, num(v.amount) - paidPart), baseAmount:num(v.amount), date:v.date, repeat:+v.repeat || 0, dom:pd(v.date).getDate()});
     // لو الميعاد اتغيّر، اللي اتشال يفضل محسوب للميعاد الجديد
     if(d && oldDate && oldDate !== o.date) S.tx.forEach(t => { if(t.type === 'reserve' && t.dueId === o.id && t.dueDate === oldDate) t.dueDate = o.date; });
     if(!d){
@@ -2762,7 +2763,7 @@ function reserveDue(id){
   const d = byId(S.dues, id), l = summary(periodOf(todayS())).dueLines.find(x => x.d.id === id);
   const res = Math.max(0, dueReserved(d)), sug = Math.min(d.amount - res, l ? Math.max(l.per - l.resThis, 0) || l.per : d.amount - res);
   NEXT_WALLET = {label:'شلتهم من'};
-  openSheet('شلت لـ ' + dueName(d), `${Fd.num('amount', 'حطيت على جنب كام', Math.round(sug), 'autofocus', `جاهز <b class="num">${fmt(res)}</b> من <b class="num">${fmt(d.amount)}</b>`)}${Fd.date('date', 'التاريخ', todayS())}${Fd.foot('سجّل')}`, v => {
+  openSheet('شلت لـ ' + dueName(d), `${Fd.num('amount', 'حطيت على جنب كام', Math.round(sug), 'autofocus', `جاهز <b class="num">${fmt(res)}</b> من <b class="num">${fmt(d.amount)}</b>`)}${Fd.date('date', 'التاريخ', defaultDate())}${Fd.foot('سجّل')}`, v => {
     const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
     S.tx.push({id:uid(), ts:Date.now(), type:'reserve', dueId:id, dueDate:d.date, amount:a, note:'', date:v.date || todayS()});
     save(); toast(dueReserved(d) >= d.amount - 1 ? '✅ فلوس الميعاد ده بقت جاهزة' : 'اتسجّل ✔');
@@ -2772,13 +2773,15 @@ function payDue(id){
   const d = byId(S.dues, id), res = Math.max(0, dueReserved(d));
   const ev = d.kind === 'event';
   NEXT_WALLET = {label:'دفعت من'};
-  openSheet((ev ? 'صرفت على: ' : 'دفعت: ') + dueName(d), `${Fd.num('amount', ev ? 'صرفت كام' : 'المبلغ اللي اتدفع', d.amount, 'autofocus', res > 0 ? `منهم <b class="num">${fmt(res)}</b> كانوا محجوزين${ev ? ' — ولو صرفت أقل، الباقي يرجع لرصيدك' : ''}` : '')}${Fd.date('date', 'التاريخ', todayS())}${Fd.foot('سجّل')}`, v => {
+  openSheet((ev ? 'صرفت على: ' : 'دفعت: ') + dueName(d), `${Fd.num('amount', ev ? 'صرفت كام' : 'المبلغ اللي اتدفع', d.amount, 'autofocus', res > 0 ? `منهم <b class="num">${fmt(res)}</b> كانوا محجوزين${ev ? ' — ولو صرفت أقل، الباقي يرجع لرصيدك' : ''}` : '')}${Fd.date('date', 'التاريخ', defaultDate())}${Fd.foot('سجّل')}`, v => {
     const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
     const date = v.date || todayS(), ts = Date.now(), full = ev || a >= d.amount - 1;
-    if(ev) S.tx.push({id:uid(), ts, type:'exp', cat:d.cat || 'gifts', dueId:d.id, amount:a, note:d.name, date});
-    else S.tx.push({id:uid(), ts, type:d.debtId ? 'debt' : 'bill', debtId:d.debtId, dueId:d.id, amount:a, note:dueName(d), date});
+    // الدفعة بتفتكر الميعاد كان عامل إزاي، عشان لو اتمسحت من اليومية يرجع زي ما كان
+    const duePrev = {date:d.date, amount:d.amount, paidOn:d.paidOn || null}, payId = uid();
+    if(ev) S.tx.push({id:payId, ts, type:'exp', cat:d.cat || 'gifts', dueId:d.id, amount:a, note:d.name, date, duePrev});
+    else S.tx.push({id:payId, ts, type:d.debtId ? 'debt' : 'bill', debtId:d.debtId, dueId:d.id, amount:a, note:dueName(d), date, duePrev});
     const rel = full ? res : Math.min(res, a);
-    if(rel > 0) S.tx.push({id:uid(), ts:ts + 1, type:'reserve', dueId:d.id, dueDate:d.date, amount:-rel, note:'', date});
+    if(rel > 0) S.tx.push({id:uid(), ts:ts + 1, type:'reserve', dueId:d.id, dueDate:d.date, amount:-rel, note:'', date, pair:payId});
     if(full){
       if(d.repeat > 0){ d.date = addMonthsDate(d.date, d.repeat, d.dom || pd(d.date).getDate()); d.amount = d.baseAmount || d.amount; }
       else d.paidOn = date;
@@ -3029,7 +3032,7 @@ function transferForm(id){
     Object.assign(o, {from:v.from, to:v.to, amount:a, date:v.date || todayS(), note:v.note.trim()});
     if(!t){
       S.tx.push(o);
-      if(num(v.fee) > 0) S.tx.push({id:uid(), ts:Date.now() + 1, type:'exp', cat:'other', amount:num(v.fee), note:'رسوم تحويل', date:o.date, walletId:v.from});
+      if(num(v.fee) > 0) S.tx.push({id:uid(), ts:Date.now() + 1, type:'exp', cat:'other', amount:num(v.fee), note:'رسوم تحويل', date:o.date, walletId:v.from, feeOf:o.id});
     }
     save(); toast('اتحوّل ✔');
   });
@@ -3122,7 +3125,18 @@ const ACT = {
   transfer:() => transferForm(),
   walletForm:(d) => walletForm(d.id),
   delWallet:(d) => { if(!confirm('تمسح المحفظة دي؟')) return; S.wallets = S.wallets.filter(w => w.id !== d.id); closeSheet(); save(); },
-  delTx:(d) => { if(!confirm('تمسح الحركة دي؟')) return; S.tx = S.tx.filter(t => t.id !== d.id); closeSheet(); save(); toast('اتمسحت'); },
+  delTx:(d) => {
+    const t = byId(S.tx, d.id); if(!t) return;
+    const pay = t.duePrev ? t : t.pair ? byId(S.tx, t.pair) : null, du = pay && byId(S.dues || [], pay.dueId);
+    const linked = t.type === 'xfer' ? S.tx.filter(x => x.feeOf === t.id) : [];
+    if(!confirm(pay && du ? 'تمسح الدفعة دي؟ الميعاد هيرجع زي ما كان قبلها، والمحجوز يرجع محجوز.' : linked.length ? 'تمسح التحويل ده ورسومه؟' : 'تمسح الحركة دي؟')) return;
+    let drop = new Set([t.id, ...linked.map(x => x.id)]);
+    if(pay && du){
+      Object.assign(du, {date:pay.duePrev.date, amount:pay.duePrev.amount}); if(pay.duePrev.paidOn) du.paidOn = pay.duePrev.paidOn; else delete du.paidOn;
+      drop = new Set([...drop, pay.id, ...S.tx.filter(x => x.pair === pay.id).map(x => x.id)]);
+    }
+    S.tx = S.tx.filter(x => !drop.has(x.id)); closeSheet(); save(); toast('اتمسحت');
+  },
   hideOnboarding:() => { S.settings.hideOnboarding = true; save(); },
   noDebts:() => { S.settings.noDebts = true; save(); toast('أحسن حاجة 👌'); },
   carGoal:() => { TAB = 'goals'; render(); goalForm(null, {name:'العربية', icon:'🚗', deadline:'2027-12', target:'', monthly:''}); },
@@ -3441,7 +3455,7 @@ document.addEventListener('change', e => {
     if(![...el.options].some(o => o.value === v)){
       const o = document.createElement('option'); o.value = v; o.textContent = v;
       el.insertBefore(o, el.lastElementChild);
-      const key = el.dataset.pick; S.settings[key] = Array.from(new Set([...(S.settings[key] || []), v])); persist();
+      const key = el.dataset.pick; S.settings[key] = Array.from(new Set([...(S.settings[key] || []), v])); S.updatedAt = Date.now(); persist(); scheduleSync();
     }
     el.value = v; el.dataset.prev = v;
     if(el.hasAttribute('data-ilbl')) itemLabels();

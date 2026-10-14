@@ -380,6 +380,29 @@ await test('مراجعة الحسابات: السحب من الهدف، الشه
     paidDue: false, cap: [500, 500], dom: ['2027-02-28', '2027-03-31'], d31: '2026-09-30' });
 });
 
+await test('مراجعة التسجيل: مسح دفعة ميعاد، تعديل ميعاد مدفوع جزء منه، المحفظة في التعديل، عنوان اليوم', async page => {
+  await ev(page, () => { S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });
+    S.dues.push({ id: 'u', name: 'تأمين', amount: 3000, baseAmount: 3000, date: '2026-12-15', repeat: 0 });
+    S.tx.push({ id: 'r', ts: 2, type: 'reserve', dueId: 'u', dueDate: '2026-12-15', amount: 1000, date: '2026-10-09' }); save(); payDue('u'); });
+  await submit(page);
+  assert.deepEqual(await ev(page, () => [cashBalance().value, !!byId(S.dues, 'u').paidOn]), [7000, true]);
+  // مسح الدفعة من اليومية: الميعاد يرجع والمحجوز يرجع محجوز
+  await ev(page, () => ACT.delTx({ id: S.tx.find(t => t.type === 'bill').id }));
+  assert.deepEqual(await ev(page, () => [cashBalance().value, !!byId(S.dues, 'u').paidOn, totalReserved(), S.tx.length]), [9000, false, 1000, 1]);
+  // دفع جزء وبعدين فتح الميعاد وحفظه زي ما هو: الباقي يفضل 2500
+  await ev(page, () => payDue('u')); await fill(page, 'amount', 500); await submit(page);
+  await ev(page, () => dueForm('u')); await submit(page);
+  assert.equal(await ev(page, () => byId(S.dues, 'u').amount), 2500);
+  // تعديل حركة قديمة من غير محفظة: تفضل في محفظتها
+  const w = await ev(page, () => { S.wallets.push({ id: 'w2', name: 'بنك', icon: '🏦' }); S.settings.lastWallet = 'w2';
+    S.tx.push({ id: 'old', ts: 5, type: 'exp', cat: 'food', amount: 50, date: '2026-10-09' }); save(); quickAdd({ tx: byId(S.tx, 'old') }); return 0; });
+  await fill(page, 'note', 'ملاحظة'); await submit(page);
+  assert.equal(await ev(page, () => walletOf(byId(S.tx, 'old'))), 'w_main');
+  // عنوان اليوم ما يكتبش "−-200" لما فيه سحب من هدف
+  const head = await ev(page, () => { S.tx = [{ id: 'wd', ts: 6, type: 'save', goalId: 'x', amount: -200, date: '2026-10-07' }]; save(); ACT.tab({ tab: 'log' }); return document.querySelector('.day-h').textContent; });
+  assert.ok(!head.includes('−-'), head);
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });
