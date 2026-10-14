@@ -291,6 +291,22 @@ await test('خطة الشهر: المواعيد بتتخصم بس لما تشي�
   assert.deepEqual(r, [0, 1000, 400, 600, 1300]);
 });
 
+await test('فاضل للمصروف من الخزنة: المحجوز + اللي لسه عليك + الفاضل = الخزنة', async page => {
+  const r = await ev(page, () => {
+    S.incomes.push({ id: 'i', name: 'المرتب', amount: 10000, day: 1 });
+    S.bills.push({ id: 'bl', name: 'نت', amount: 1000, dueDay: 20 });
+    S.dues.push({ id: 'u', name: 'المدرسة', amount: 3000, baseAmount: 3000, date: '2026-12-15', repeat: 0 });
+    S.tx.push({ id: 'in', ts: 1, type: 'inc', incomeId: 'i', amount: 10000, date: '2026-10-01' });
+    S.cashCounts.push({ id: 'c', ts: 2, date: '2026-10-02', amount: 8000 });        // معاه أقل: 2000 اتصرفوا من غير تسجيل
+    S.tx.push({ id: 'rs', ts: 3, type: 'reserve', dueId: 'u', dueDate: '2026-12-15', amount: 3000, date: '2026-10-05' });
+    S.tx.push({ id: 'e', ts: 4, type: 'exp', cat: 'food', amount: 500, date: '2026-10-06' });
+    save(); const o = summary(VIEW);
+    return { safe: o.safe, res: o.reservedAll, owed: o.owedLeft, free: o.free, gap: Math.round(o.cashGap), sum: o.reservedAll + o.owedLeft + o.free - o.incPending };
+  });
+  // رصيد = 8000 − 3000 − 500 = 4500 · الخزنة 7500 · لسه عليك النت 1000 · فاضل 3500
+  assert.deepEqual(r, { safe: 7500, res: 3000, owed: 1000, free: 3500, gap: -2000, sum: 7500 });
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });
