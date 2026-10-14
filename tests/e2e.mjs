@@ -301,10 +301,13 @@ await test('فاضل للمصروف من الخزنة: المحجوز + اللي
     S.tx.push({ id: 'rs', ts: 3, type: 'reserve', dueId: 'u', dueDate: '2026-12-15', amount: 3000, date: '2026-10-05' });
     S.tx.push({ id: 'e', ts: 4, type: 'exp', cat: 'food', amount: 500, date: '2026-10-06' });
     save(); const o = summary(VIEW);
-    return { safe: o.safe, res: o.reservedAll, owed: o.owedLeft, free: o.free, gap: Math.round(o.cashGap), sum: o.reservedAll + o.owedLeft + o.free - o.incPending };
+    S.incomes.push({ id: 'i2', name: 'دخل تاني', amount: 5000, day: 25 }); save();   // دخل لسه ما نزلش
+    const o2 = summary(VIEW);
+    return { safe: o.safe, res: o.reservedAll, owed: o.owedLeft, free: o.free, gap: Math.round(o.cashGap), sum: o.reservedAll + o.owedLeft + o.free,
+      free2: o2.free, pending: o2.incPending };
   });
-  // رصيد = 8000 − 3000 − 500 = 4500 · الخزنة 7500 · لسه عليك النت 1000 · فاضل 3500
-  assert.deepEqual(r, { safe: 7500, res: 3000, owed: 1000, free: 3500, gap: -2000, sum: 7500 });
+  // رصيد = 8000 − 3000 − 500 = 4500 · الخزنة 7500 · لسه عليك النت 1000 · فاضل 3500 — والدخل اللي لسه ما نزلش مش بيزوّده
+  assert.deepEqual(r, { safe: 7500, res: 3000, owed: 1000, free: 3500, gap: -2000, sum: 7500, free2: 3500, pending: 5000 });
 });
 
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
