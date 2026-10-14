@@ -725,10 +725,10 @@ function periodLabel(p){
 }
 /* ميعاد يوم معيّن (زي يوم دفع فاتورة) جوه شهر مالي */
 function dueDateIn(r, day){
-  const s = pd(r.start);
-  let d = new Date(s.getFullYear(), s.getMonth(), day);
-  if(day < (S.settings.cycleDay || 1)) d = new Date(s.getFullYear(), s.getMonth() + 1, day);
-  let out = ds(d);
+  const s = pd(r.start), m = day < (S.settings.cycleDay || 1) ? s.getMonth() + 1 : s.getMonth();
+  // يوم 31 في شهر 30 يوم (أو فبراير) = آخر يوم في الشهر، مش أول الشهر اللي بعده
+  const last = new Date(s.getFullYear(), m + 1, 0).getDate();
+  let out = ds(new Date(s.getFullYear(), m, Math.min(day, last)));
   if(out > r.end) out = r.end;
   return out;
 }
@@ -760,9 +760,10 @@ const goalNotStarted = g => !!(g.start && curKey() < g.start);
 function goalMonthlyAt(g, key){
   if(g.doneOn) return 0;
   if(g.start && key < g.start) return 0;
-  if(g.kind === 'gameya' && key > g.deadline) return 0;
-  if(goalSaved(g) >= (g.target || 0)) return 0;
-  return g.monthly > 0 ? g.monthly : goalRequired(g);
+  if(key > g.deadline) return 0;
+  const left = (g.target || 0) - goalSaved(g);
+  if(left < 0.5) return 0;
+  return g.kind === 'gameya' ? g.monthly : Math.min(g.monthly > 0 ? g.monthly : goalRequired(g), left);
 }
 function goalPlanMonthly(g){ return goalMonthlyAt(g, curKey()); }
 
@@ -840,20 +841,28 @@ function shopList(){
    بنحسب تشيل كام كل شهر عشان يوم الميعاد تبقى الفلوس جاهزة:
    (المبلغ − اللي شلته قبل الشهر ده) ÷ عدد الشهور الباقية لحد الميعاد (شامل الشهر ده). */
 const REPEATS = {0:'مرة واحدة', 1:'كل شهر', 3:'كل 3 شهور', 6:'كل 6 شهور', 12:'كل سنة'};
-function addMonthsDate(s_, n){
-  const d = pd(s_), day = d.getDate(), x = new Date(d.getFullYear(), d.getMonth() + n, 1);
+function addMonthsDate(s_, n, dom){
+  // dom = يوم الشهر الأصلي (31 مثلًا) عشان ما يزحفش: 31 يناير → 28 فبراير → 31 مارس
+  const d = pd(s_), day = dom || d.getDate(), x = new Date(d.getFullYear(), d.getMonth() + n, 1);
   x.setDate(Math.min(day, new Date(x.getFullYear(), x.getMonth() + 1, 0).getDate()));
   return ds(x);
 }
 function periodsBetween(a, b){ return (b.y - a.y) * 12 + (b.m - a.m); }
-const activeDues = () => (S.dues || []).filter(d => !d.paidOn);
+// ميعاد مربوط بدين اتسدد كله (حتى لو اتدفع من غير الميعاد) مابقاش عليك
+const activeDues = () => (S.dues || []).filter(d => !d.paidOn && !(d.debtId && byId(S.debts, d.debtId) && debtRemaining(byId(S.debts, d.debtId)) < 0.5));
 const dueName = d => d.debtId && byId(S.debts, d.debtId) ? byId(S.debts, d.debtId).name + (d.name && d.name !== byId(S.debts, d.debtId).name ? ' — ' + d.name : '') : d.name;
 /* اللي اتشال للدورة الحالية من الميعاد ده */
 function dueReserved(d, upto, from){
   return sum(S.tx.filter(t => t.type === 'reserve' && t.dueId === d.id && t.dueDate === d.date && (!upto || t.date <= upto) && (!from || t.date >= from)), t => t.amount);
 }
 function duePerMonth(d, p){
-  const r = periodRange(p), before = dueReserved(d, addDays(r.start, -1));
+  const r = periodRange(p);
+  if(r.start > todayS()){
+    // شهر جاي: الباقي (بعد اللي اتشال لحد النهارده) يتقسم من الشهر الجاي لحد الميعاد
+    const n = Math.max(1, periodsBetween(periodOf(todayS()), periodOf(d.date)));
+    return Math.max(0, d.amount - Math.max(0, dueReserved(d))) / n;
+  }
+  const before = dueReserved(d, addDays(r.start, -1));
   const n = Math.max(1, periodsBetween(p, periodOf(d.date)) + 1);
   return Math.max(0, d.amount - before) / n;
 }
@@ -940,7 +949,9 @@ function goalProjection(g){
   // لو لسه ما بدأش: الشهور اللي قبل البداية مفيهاش تحويش
   const startOff = goalNotStarted(g) ? monthsUntil(g.start) - 1 : 0;
   const base = startOff ? goalMonthlyAt(g, g.start) : goalPlanMonthly(g);
-  const plan = g.rollDebts ? debtPlan(S.settings.debtExtra || 0) : null;
+  // أقساط الديون اللي بتخلص بتروح لأول هدف مفعّل عليه التحويل بس (مش لكل الأهداف مع بعض)
+  const roller = S.goals.find(x => x.rollDebts && !x.doneOn && x.kind !== 'gameya' && goalSaved(x) < (x.target || 0));
+  const plan = g.rollDebts && roller === g ? debtPlan(S.settings.debtExtra || 0) : null;
   const extraAt = i => {
     if(!plan) return 0;
     if(i < plan.freedAt.length) return plan.freedAt[i] || 0;
@@ -997,7 +1008,8 @@ function summaryRaw(p){
   });
   o.incExtra = sum(T.filter(t => t.type === 'inc' && !byId(S.incomes, t.incomeId)), t => t.amount);
   o.incReceived += o.incExtra;
-  o.income = o.incExpected + o.incExtra;
+  // شهر خلص: الدخل = اللي اتسجل فعلًا (مش المتوقع)
+  o.income = r.end < todayS() ? o.incReceived : o.incExpected + o.incExtra;
   // الالتزامات الثابتة
   o.billLines = S.bills.filter(b => !b.off).map(b => {
     const paidT = T.filter(t => t.type === 'bill' && t.billId === b.id);
@@ -1010,25 +1022,39 @@ function summaryRaw(p){
   o.debtLines = S.debts.map(d => {
     const paidT = T.filter(t => t.type === 'debt' && t.debtId === d.id);
     const paid = sum(paidT, t => t.amount);
-    const remBefore = debtRemaining(d, addDays(r.start, -1));
+    let remBefore = debtRemaining(d, addDays(r.start, -1));
+    if(r.start > todayS()){
+      // شهر جاي: نفترض إن الأقساط اللي قبله هتتدفع
+      const cur = periodRange(periodOf(todayS())), paidCur = debtPaidTotal(d) - debtPaidTotal(d, addDays(cur.start, -1));
+      const k = periodsBetween(periodOf(todayS()), p);
+      remBefore = Math.max(0, debtRemaining(d) - Math.max(0, (d.monthly || 0) - paidCur) - (d.monthly || 0) * (k - 1));
+    }
     const due = Math.min(d.monthly || 0, remBefore);
     return {d, paid, paidT, planned:Math.max(paid, due), remBefore, due:dueDateIn(r, d.dueDay || 1)};
   });
   o.debtPaid = sum(T.filter(t => t.type === 'debt'), t => t.amount);
   o.debtPlanned = sum(o.debtLines, l => l.planned) + (o.debtPaid - sum(o.debtLines, l => l.paid));
   // التحويش
+  const key = p.y + '-' + pad(p.m + 1);
   o.goalLines = S.goals.map(g => {
     const saved = sum(T.filter(t => t.type === 'save' && t.goalId === g.id), t => t.amount);
-    return {g, saved, planned:Math.max(saved, goalPlanMonthly(g))};
+    const need = goalMonthlyAt(g, key);
+    // need = المطلوب الشهر ده؛ السحب (سالب) ما بيزوّدش المطلوب
+    return {g, saved, need, planned:Math.max(saved, need)};
   });
   o.saved = sum(T.filter(t => t.type === 'save'), t => t.amount);
   o.savePlanned = sum(o.goalLines, l => l.planned) + (o.saved - sum(o.goalLines, l => l.saved));
   // مواعيد السداد: اللي المفروض يتشال الشهر ده
   const isCur = todayS() >= r.start && todayS() <= r.end;
-  o.dueLines = activeDues().filter(d => d.date >= r.start || isCur).map(d => {
-    const resThis = dueReserved(d, r.end, r.start), per = duePerMonth(d, p);
-    return {d, resThis, per, planned:Math.max(resThis, per), reserved:dueReserved(d)};
-  });
+  o.dueLines = activeDues().map(d => {
+    if(d.date >= r.start || isCur){
+      const resThis = dueReserved(d, r.end, r.start), per = duePerMonth(d, p);
+      return {d, resThis, per, planned:Math.max(resThis, per), reserved:dueReserved(d)};
+    }
+    // شهر جاي وميعاد بيتكرر ميعاده الجاي قبله: نحسب حصته الشهرية العادية (600 كل شهر مثلًا)
+    if(r.start > todayS() && d.repeat > 0){ const per = (d.baseAmount || d.amount) / d.repeat; return {d, resThis:0, per, planned:per, reserved:0}; }
+    return null;
+  }).filter(Boolean);
   o.reserveNet = sum(T.filter(t => t.type === 'reserve'), t => t.amount);
   // اللي فاضل تشيله للمواعيد ما بيتخصمش من الخطة غير لما تشيله فعلًا (الشهر الحالي واللي فات)؛ الشهور الجاية بنخطط بالمطلوب
   o.reserveToDo = sum(o.dueLines, l => Math.max(0, l.per - l.resThis));
@@ -1077,7 +1103,7 @@ function summaryRaw(p){
       o.safe = b.value + o.reservedAll;
       o.cashNow = b.value;
       o.owedParts = [['📋 التزامات لسه ما اتدفعتش', Math.max(0, o.billPlanned - o.billPaid)], ['💳 أقساط ديون لسه', Math.max(0, o.debtPlanned - o.debtPaid)],
-        ['🚗 تحويش لسه ما اتحوّشش', Math.max(0, o.savePlanned - o.saved)], ['🧺 استوك لسه هتشتريه لآخر الشهر', o.houseToBuy]].filter(x => x[1] > 0.5);
+        ['🚗 تحويش لسه ما اتحوّشش', sum(o.goalLines, l => Math.max(0, l.need - Math.max(0, l.saved)))], ['🧺 استوك لسه هتشتريه لآخر الشهر', o.houseToBuy]].filter(x => x[1] > 0.5);
       o.owedLeft = sum(o.owedParts, x => x[1]);
       o.incPending = Math.max(0, o.income - o.incReceived);
       o.free = b.value - o.owedLeft;
@@ -2041,19 +2067,20 @@ function forecast(N, withRecv){
       let need = goalMonthlyAt(g, p.y + '-' + pad(p.m + 1));
       if(isCur) need -= sum(S.tx.filter(t => t.type === 'save' && t.goalId === g.id && t.date >= r.start && t.date <= r.end), t => t.amount);
       const d = at(payday || r.start);
-      if(need > 1 && d <= end) evs.push({date:d, n:(g.icon || '🎯') + ' تحويش ' + g.name, a:-need});
+      if(need > 1 && d <= end) evs.push({date:d, n:(g.icon || '🎯') + ' تحويش ' + g.name, a:-need, goal:g.id});
     });
   }
   activeDues().forEach(d => {
     let dt = d.date, first = true;
     while(dt <= end){
       evs.push({date:at(dt), n:(d.kind === 'event' ? '🎂 ' : '📅 ') + dueName(d), a:-(first ? d.amount : (d.baseAmount || d.amount))});
-      first = false; if(!(d.repeat > 0)) break; dt = addMonthsDate(dt, d.repeat);
+      first = false; if(!(d.repeat > 0)) break; dt = addMonthsDate(dt, d.repeat, d.dom);
     }
   });
   if(withRecv) activeRecvs().forEach(rv => recvSchedule(rv).forEach(it => { if(it.left > 0.5 && it.date >= tom && it.date <= end) evs.push({date:it.date, n:'🤝 ' + rv.name, a:it.left}); }));
   evs.sort((x, y) => x.date < y.date ? -1 : x.date > y.date ? 1 : y.a - x.a);
   const rem = {}; S.debts.forEach(x => rem[x.id] = debtRemaining(x));
+  const remG = {}; S.goals.forEach(g => remG[g.id] = Math.max(0, (g.target || 0) - goalSaved(g)));
   const pts = [{date:td, bal:start, ev:[]}];
   let bal = start, k = 0;
   for(let i = 1; i <= N; i++){
@@ -2061,6 +2088,7 @@ function forecast(N, withRecv){
     while(k < evs.length && evs[k].date === date){
       const e = evs[k++];
       if(e.debt){ e.a = -Math.min(-e.a, rem[e.debt]); rem[e.debt] += e.a; if(e.a > -0.5) continue; }
+      if(e.goal){ e.a = -Math.min(-e.a, remG[e.goal]); remG[e.goal] += e.a; if(e.a > -0.5) continue; }
       bal += e.a; ev.push(e);
     }
     bal -= daily.v;
@@ -2679,7 +2707,7 @@ function dueForm(id, preset){
     if(!need(/^\d{4}-\d{2}-\d{2}$/.test(v.date), 'اختار الميعاد')) return false;
     const o = d || {id:uid(), createdAt:todayS(), debtId:debtId || undefined};
     const oldDate = o.date;
-    Object.assign(o, {name:v.name.trim(), amount:num(v.amount), baseAmount:num(v.amount), date:v.date, repeat:+v.repeat || 0});
+    Object.assign(o, {name:v.name.trim(), amount:num(v.amount), baseAmount:num(v.amount), date:v.date, repeat:+v.repeat || 0, dom:pd(v.date).getDate()});
     // لو الميعاد اتغيّر، اللي اتشال يفضل محسوب للميعاد الجديد
     if(d && oldDate && oldDate !== o.date) S.tx.forEach(t => { if(t.type === 'reserve' && t.dueId === o.id && t.dueDate === oldDate) t.dueDate = o.date; });
     if(!d){
@@ -2714,11 +2742,12 @@ function eventForm(id){
     if(!need(num(v.amount) > 0, 'اكتب هتصرف كام تقريبًا')) return false;
     let date = v.date;
     const repeat = +v.repeat || 0;
-    if(repeat) while(date < todayS()) date = addMonthsDate(date, repeat);   // أقرب ميعاد جاي
+    const dom = pd(date).getDate();
+    if(repeat) while(date < todayS()) date = addMonthsDate(date, repeat, dom);   // أقرب ميعاد جاي
     else if(date < todayS() && !confirm('التاريخ ده عدّى — متأكد؟')) return false;
     const o = d || {id:uid(), createdAt:todayS(), kind:'event'};
     const oldDate = o.date;
-    Object.assign(o, {name:v.name.trim(), amount:num(v.amount), baseAmount:num(v.amount), date, repeat, cat:v.cat || 'gifts'});
+    Object.assign(o, {name:v.name.trim(), amount:num(v.amount), baseAmount:num(v.amount), date, repeat, cat:v.cat || 'gifts', dom});
     if(d && oldDate && oldDate !== o.date) S.tx.forEach(t => { if(t.type === 'reserve' && t.dueId === o.id && t.dueDate === oldDate) t.dueDate = o.date; });
     if(!d){
       S.dues = S.dues || []; S.dues.push(o);
@@ -2751,7 +2780,7 @@ function payDue(id){
     const rel = full ? res : Math.min(res, a);
     if(rel > 0) S.tx.push({id:uid(), ts:ts + 1, type:'reserve', dueId:d.id, dueDate:d.date, amount:-rel, note:'', date});
     if(full){
-      if(d.repeat > 0){ d.date = addMonthsDate(d.date, d.repeat); d.amount = d.baseAmount || d.amount; }
+      if(d.repeat > 0){ d.date = addMonthsDate(d.date, d.repeat, d.dom || pd(d.date).getDate()); d.amount = d.baseAmount || d.amount; }
       else d.paidOn = date;
     }else d.amount = Math.round((d.amount - a) * 100) / 100;
     save(); toast(full ? (d.repeat > 0 ? 'اتسجّل ✔ — الجاي ' + dayLabel(d.date) + ' ' + pd(d.date).getFullYear() : '🎉 اتسدد') : `اتسجّل — فاضل ${fmt(d.amount)}`);
@@ -3228,19 +3257,19 @@ const ACT = {
   },
   payDebt:(d) => payDebt(d.id),
   delDebt:(d) => {
-    const has = S.tx.some(t => t.type === 'debt' && t.debtId === d.id);
-    if(!confirm(has ? 'تمسح الدين ده وكل سداداته؟' : 'تمسح الدين ده؟')) return;
-    const dueIds = (S.dues || []).filter(x => x.debtId === d.id).map(x => x.id);
+    const dues = (S.dues || []).filter(x => x.debtId === d.id), res = sum(dues, x => Math.max(0, dueReserved(x)));
+    if(!confirm('تمسح الدين ده؟' + (res > 0 ? ` الـ ${fmt(res)} المحجوزين لمواعيده هيرجعوا لرصيدك.` : '') + ' (اللي اتدفع قبل كده هيفضل متسجل في اليومية)')) return;
+    // اللي اتدفع فعلًا يفضل متسجل (الفلوس خرجت)، والمحجوز يرجع للرصيد
+    dues.forEach(x => { const r0 = Math.max(0, dueReserved(x)); if(r0 > 0) S.tx.push({id:uid(), ts:Date.now(), type:'reserve', dueId:x.id, dueDate:x.date, amount:-r0, note:'إلغاء الحجز', date:todayS()}); });
     S.debts = S.debts.filter(x => x.id !== d.id);
-    S.tx = S.tx.filter(t => !(t.type === 'debt' && t.debtId === d.id) && !(t.type === 'reserve' && dueIds.includes(t.dueId)));
-    S.dues = (S.dues || []).filter(x => !dueIds.includes(x.id)); closeSheet(); save();
+    S.dues = (S.dues || []).filter(x => x.debtId !== d.id); closeSheet(); save();
   },
   saveDebtExtra:() => { S.settings.debtExtra = num($('#debtExtraIn').value); save(); },
   goalForm:(d) => goalForm(d.id),
   goalMove:(d) => goalMove(d.id, +d.s),
   delGoal:(d) => {
-    if(!confirm('تمسح الهدف ده وكل التحويش المتسجل ليه؟')) return;
-    S.goals = S.goals.filter(g => g.id !== d.id); S.tx = S.tx.filter(t => !(t.type === 'save' && t.goalId === d.id)); closeSheet(); save();
+    if(!confirm('تمسح الهدف ده؟ (التحويش اللي اتسجل قبل كده هيفضل في اليومية)')) return;
+    S.goals = S.goals.filter(g => g.id !== d.id); closeSheet(); save();
   },
   incomeForm:(d) => incomeForm(d.id),
   cashCount,

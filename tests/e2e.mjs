@@ -343,6 +343,43 @@ await test('مراجعة الاستوك: صفر+صفر، تغيير العبوة
   assert.deepEqual(await ev(page, () => [S.tx.at(-1).qty, byId(S.items, 'm').price]), [1, 40]);
 });
 
+await test('مراجعة الحسابات: السحب من الهدف، الشهور الجاية، سقف التحويش، الديون المسددة، التواريخ', async page => {
+  const r = await ev(page, () => {
+    const out = {};
+    // سحب من هدف: المطلوب ما يزيدش والفلوس تفضل في "فاضل"
+    S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });
+    S.goals.push({ id: 'g', name: 'عربية', target: 100000, initial: 40000, deadline: '2027-09' });
+    S.tx.push({ id: 'w', ts: 2, type: 'save', goalId: 'g', amount: -3000, date: '2026-10-09' });
+    save(); let o = summary(VIEW); out.withdraw = [Math.round(o.owedLeft), Math.round(o.free)];
+    S.goals = []; S.tx = []; S.cashCounts = [];
+    // الشهور الجاية: هدف بيبدأ يناير، ميعاد 3000 في ديسمبر شايل له 400، ميعاد شهري 600، دين 3000 بقسط 1000
+    S.goals.push({ id: 'g2', name: 'عربية', target: 120000, deadline: '2027-12', start: '2027-01' });
+    S.dues.push({ id: 'u', name: 'مدرسة', amount: 3000, baseAmount: 3000, date: '2026-12-15', repeat: 0 });
+    S.dues.push({ id: 'm', name: 'نادي', amount: 600, baseAmount: 600, date: '2026-10-20', repeat: 1, dom: 20 });
+    S.tx.push({ id: 'rs', ts: 3, type: 'reserve', dueId: 'u', dueDate: '2026-12-15', amount: 400, date: '2026-10-09' });
+    S.debts.push({ id: 'd', name: 'سلفة', total: 3000, monthly: 1000, dueDay: 5 });
+    save();
+    const at = k => summary(addMonths(VIEW, k));
+    out.goalJan = Math.round(at(3).savePlanned);
+    out.duesNovDec = [1, 2].map(k => Math.round(sum(at(k).dueLines.filter(l => l.d.id === 'u'), l => l.planned)));
+    out.monthly = [1, 2].map(k => Math.round(sum(at(k).dueLines.filter(l => l.d.id === 'm'), l => l.planned)));
+    out.debt = [0, 1, 2, 3, 4].map(k => Math.round(at(k).debtPlanned));
+    // دين اتسدد كله من غير الميعاد: الميعاد بتاعه يختفي
+    S.dues.push({ id: 'dd', name: '', debtId: 'd', amount: 3000, baseAmount: 3000, date: '2026-12-01', repeat: 0 });
+    S.tx.push({ id: 'pd', ts: 4, type: 'debt', debtId: 'd', amount: 3000, date: '2026-10-09' }); save();
+    out.paidDue = activeDues().some(d => d.id === 'dd');
+    // سقف التحويش: فاضل 500 بس
+    S.goals = [{ id: 'g3', name: 'موبايل', target: 3000, initial: 2500, monthly: 2000, deadline: '2027-06' }]; save();
+    out.cap = [Math.round(goalPlanMonthly(S.goals[0])), Math.round(-sum(forecast(90).pts.flatMap(p => p.ev).filter(e => e.goal), e => e.a))];
+    // التواريخ: يوم 31 ما يزحفش، ولما الشهر بيبدأ 25 فاتورة يوم 31 تيجي آخر سبتمبر
+    out.dom = [addMonthsDate('2027-01-31', 1, 31), addMonthsDate('2027-02-28', 1, 31)];
+    S.settings.cycleDay = 25; out.d31 = dueDateIn(periodRange({ y: 2026, m: 8 }), 31); S.settings.cycleDay = 1;
+    return out;
+  });
+  assert.deepEqual(r, { withdraw: [5000, 8000], goalJan: 10000, duesNovDec: [1300, 1300], monthly: [600, 600], debt: [1000, 1000, 1000, 0, 0],
+    paidDue: false, cap: [500, 500], dom: ['2027-02-28', '2027-03-31'], d31: '2026-09-30' });
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });
