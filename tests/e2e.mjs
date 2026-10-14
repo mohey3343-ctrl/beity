@@ -266,6 +266,18 @@ await test('هدف لسه ما بدأش: مش بيتخصم من خطة الشه�
   assert.equal(await ev(page, () => Math.round(summary(VIEW).savePlanned)), Math.round(120000 / 15));
 });
 
+await test('خطة الشهر: الاستوك = اللي اتصرف + اللي فاضل تشتريه لآخر الشهر', async page => {
+  const r = await ev(page, () => {
+    S.items.push({ id: 'z', name: 'رز', group: 'تموين', base: 'KG', monthly: 30, price: 10 });   // كيلو في اليوم
+    S.counts.push({ id: 'k', ts: 1, itemId: 'z', date: '2026-10-09', qty: 5 });
+    S.tx.push({ id: 'b', ts: 2, type: 'exp', cat: 'house', itemId: 'z', qty: 2, amount: 50, date: '2026-10-09' });
+    save(); const o = summary(VIEW);
+    return [o.houseSpent, Math.round(o.houseToBuy), Math.round(o.houseReserved), Math.round(o.houseMonthly)];
+  });
+  // من 9 لـ 31 أكتوبر = 23 يوم → محتاج 23 كيلو، عندك 7 → تشتري 16 × 10 = 160
+  assert.deepEqual(r, [50, 160, 210, 300]);
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });

@@ -1028,8 +1028,16 @@ function summaryRaw(p){
   o.reserveNet = sum(T.filter(t => t.type === 'reserve'), t => t.amount);
   o.reservePlanned = sum(o.dueLines, l => l.planned) + (o.reserveNet - sum(o.dueLines, l => l.resThis));
   // استوك البيت
-  o.houseBudget = houseMonthlyCost();
+  // الشهر الحالي: اللي اتصرف + اللي فاضل تشتريه لآخر الشهر (حسب الموجود ومعدل الاستهلاك)
+  // شهر فات: اللي اتصرف بس · شهر جاي: تكلفة الشهر كله
+  o.houseMonthly = houseMonthlyCost();
   o.houseSpent = sum(T.filter(t => t.type === 'exp' && t.cat === 'house'), t => t.amount);
+  o.houseToBuy = 0;
+  if(isCur){
+    const left = diffDays(todayS(), r.end) + 1;
+    o.houseToBuy = sum(S.items, it => { const need = dailyRate(it).v * left - (estStock(it) || 0); return need > 0 ? need * (it.price || 0) : 0; });
+    o.houseBudget = o.houseSpent + o.houseToBuy;
+  }else o.houseBudget = r.start > todayS() ? o.houseMonthly : o.houseSpent;
   o.houseReserved = Math.max(o.houseBudget, o.houseSpent);
   // المصروف اليومي (المتغير)
   const varT = T.filter(t => t.type === 'exp' && t.cat !== 'house' && !t.dueId);
@@ -1207,8 +1215,10 @@ PAGES.home = function(){
     <div class="plan-line"><span>📋 الالتزامات الثابتة</span><b class="num">− ${fmt(o.billPlanned)}</b></div>
     <div class="plan-line"><span>💳 أقساط الديون</span><b class="num">− ${fmt(o.debtPlanned)}</b></div>
     <div class="plan-line"><span>🚗 التحويش للأهداف</span><b class="num">− ${fmt(o.savePlanned)}</b></div>
-    ${o.reservePlanned ? `<div class="plan-line"><span>📅 تتشال لمواعيد السداد</span><b class="num">− ${fmt(o.reservePlanned)}</b></div>` : ''}
-    <div class="plan-line"><span>🧺 استوك البيت</span><b class="num">− ${fmt(o.houseReserved)}</b></div>
+    ${(() => { const done = Math.max(0, o.reserveNet), rest = Math.max(0, o.reservePlanned - done);
+      return (done > 0.5 ? `<div class="plan-line"><span>📅 اتشال لمواعيد السداد</span><b class="num">− ${fmt(done)}</b></div>` : '')
+        + (rest > 0.5 ? `<div class="plan-line"><span>📅 فاضل تشيله للمواعيد الشهر ده</span><b class="num">− ${fmt(rest)}</b></div>` : ''); })()}
+    <div class="plan-line"><span>🧺 استوك البيت${o.isCurrent && o.houseToBuy > 0.5 ? `<div class="muted" style="font-size:11.5px">اتصرف ${fmt(o.houseSpent)} + فاضل تشتري بـ ${fmt(o.houseToBuy)} لآخر الشهر</div>` : ''}</span><b class="num">− ${fmt(o.houseReserved)}</b></div>
     <div class="plan-line total"><span>🛒 متاح للمصروف اليومي</span><b class="num ${o.varBudget < 0 ? 'neg' : 'pos'}">${fmt(o.varBudget)}</b></div>
     <div class="muted" style="margin-top:6px; line-height:1.8">${o.isCurrent
       ? `اتصرف منه <b class="num">${fmt(o.varSpent)}</b>، وفاضل <b class="num ${o.free < 0 ? 'neg' : ''}">${fmt(o.free)}</b> للـ <b class="num">${o.daysLeft}</b> يوم الباقيين — يعني حوالي <b class="num">${fmt(o.perDay)}</b> جنيه في اليوم.`
@@ -1831,7 +1841,7 @@ function insights(p){
     }
   });
   // ٤) استوك البيت
-  if(o.houseBudget > 0 && o.houseSpent > o.houseBudget * 1.1) out.push(['warn', '🧺', `مشتريات استوك البيت <b class="num">${fmt(o.houseSpent)}</b>، أكتر من المتوقع (<span class="num">${fmt(o.houseBudget)}</span>). راجع الكميات، أو اعمل جرد عشان معدلات الاستهلاك تتظبط.`]);
+  if(o.houseMonthly > 0 && o.houseSpent > o.houseMonthly * 1.1) out.push(['warn', '🧺', `مشتريات استوك البيت <b class="num">${fmt(o.houseSpent)}</b>، أكتر من المتوقع (<span class="num">${fmt(o.houseMonthly)}</span>). راجع الكميات، أو اعمل جرد عشان معدلات الاستهلاك تتظبط.`]);
   // ٥) نسبة التحويش وسداد الديون من الدخل
   if(o.incReceived > 0){
     const rate = (o.saved + o.debtPaid) / o.incReceived;
