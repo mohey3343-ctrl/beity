@@ -272,11 +272,12 @@ await test('خطة الشهر: الاستوك = اللي اتصرف + اللي �
     S.items.push({ id: 'z', name: 'رز', group: 'تموين', base: 'KG', monthly: 30, price: 10 });   // كيلو في اليوم
     S.counts.push({ id: 'k', ts: 1, itemId: 'z', date: '2026-10-09', qty: 5 });
     S.tx.push({ id: 'b', ts: 2, type: 'exp', cat: 'house', itemId: 'z', qty: 2, amount: 50, date: '2026-10-09' });
+    S.settings.coverMode = 'period'; S.settings.bufferDays = 3;
     save(); const o = summary(VIEW);
-    return [o.houseSpent, Math.round(o.houseToBuy), Math.round(o.houseReserved), Math.round(o.houseMonthly)];
+    return [o.houseSpent, Math.round(o.houseToBuy), Math.round(o.houseReserved), Math.round(o.houseMonthly), Math.round(sum(shopList(), x => x.cost))];
   });
-  // من 9 لـ 31 أكتوبر = 23 يوم → محتاج 23 كيلو، عندك 7 → تشتري 16 × 10 = 160
-  assert.deepEqual(r, [50, 160, 210, 300]);
+  // من 9 لـ 31 أكتوبر = 23 يوم + 3 احتياطي = 26 كيلو، عندك 7 → تشتري 19 × 10 = 190 — نفس قايمة الشراء بالظبط
+  assert.deepEqual(r, [50, 190, 240, 300, 190]);
 });
 
 await test('خطة الشهر: المواعيد بتتخصم بس لما تشيل فعلًا', async page => {
