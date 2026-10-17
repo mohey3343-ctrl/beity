@@ -477,6 +477,22 @@ await test('إيقاف صنف: "مش الشهر ده" و"موسمي" بيطلع�
   assert.deepEqual(await inList(), ['mg']);
 });
 
+await test('البيت بيتكلف كام في الشهر: التزامات + استوك بالمجموعات + التصنيفات المختارة بس', async page => {
+  const r = await ev(page, () => {
+    S.bills.push({ id: 'el', name: 'كهربا', amount: 600, dueDay: 5 }, { id: 'ph', name: 'باقة موبايل', amount: 200, dueDay: 5 });
+    S.items.push({ id: 'a', name: 'رز', group: 'تموين', base: 'KG', monthly: 10, price: 30 }, { id: 'b', name: 'صابون', group: 'منظفات', base: 'L', monthly: 2, price: 50 },
+      { id: 'c', name: 'مانجا', group: 'فاكهة', base: 'KG', monthly: 3, price: 60, pause: 'always' });
+    S.tx.push({ id: 'm', ts: 1, type: 'exp', cat: 'market', amount: 900, date: '2026-10-05' }, { id: 't', ts: 2, type: 'exp', cat: 'transport', amount: 500, date: '2026-10-05' });
+    S.settings.homeBillsOff = ['ph']; save();
+    const H = homeCost();
+    return { total: Math.round(H.total), names: H.lines.map(l => l.name) };
+  });
+  // كهربا 600 + تموين 300 + منظفات 100 + خضار: 900 في 9 أيام → 3100 متوقع للشهر · من غير الموبايل والمواصلات والمانجا الموسمية
+  assert.deepEqual(r, { total: 4100, names: ['سوبر ماركت وخضار', 'كهربا', 'استوك: تموين', 'استوك: منظفات'] });
+  await ev(page, () => ACT.tab({ tab: 'report' }));
+  assert.ok(await page.isVisible('text=البيت بيتكلف كام في الشهر'));
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });

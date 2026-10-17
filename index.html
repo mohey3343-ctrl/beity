@@ -1281,7 +1281,7 @@ PAGES.home = function(){
     ${stat('الالتزامات', '📋', o.billPlanned, o.billPaid, 'اتدفع', '')}
     ${stat('أقساط الديون', '💳', o.debtPlanned, o.debtPaid, 'اتسدد', 'purple')}
     ${stat('التحويش', '🚗', o.savePlanned, o.saved, 'اتحوّش', 'gold')}
-    ${stat('استوك البيت', '🧺', o.houseBudget, o.houseSpent, 'اتصرف', 'warn')}
+    ${stat('استوك البيت الشهر ده', '🧺', o.houseBudget, o.houseSpent, 'اتصرف', 'warn')}
     ${stat('المصروف اليومي', '🛒', Math.max(0, o.varBudget), o.varSpent, 'اتصرف', '')}
   </div>`;
 
@@ -1505,8 +1505,10 @@ function groupsOf(){ const g = []; S.items.forEach(it => { const k = it.group ||
 function itemsHtml(){
   const cost = houseMonthlyCost();
   const incomplete = S.items.filter(it => dailyRate(it).src === 'none' || !(it.price > 0)).length;
-  let h = `<div class="card"><div class="row"><div><div class="muted">تكلفة استوك البيت في الشهر</div><div style="font-size:22px">${money(cost)}</div></div>
+  const cur = summary(periodOf(todayS()));
+  let h = `<div class="card"><div class="row"><div><div class="muted">البيت بيستهلك من الاستوك في الشهر</div><div style="font-size:22px">${money(cost)}</div></div>
     <button class="btn dark" data-act="itemForm">+ صنف</button></div>
+    <div class="muted" style="line-height:1.7; margin-top:4px">ده تمن شهر كامل استهلاك. أما <b>الشهر ده</b> فهتدفع <b class="num">${fmt(cur.houseBudget)}</b> بس (اتصرف <span class="num">${fmt(cur.houseSpent)}</span> + قايمة الشراء <span class="num">${fmt(cur.houseToBuy)}</span>) — أقل عشان عندك حاجات في البيت من قبل.</div>
     ${incomplete ? `<div class="note">فيه <b>${incomplete}</b> صنف ناقصهم الاستهلاك الشهري أو السعر — دوس على الصنف وكمّله عشان الحسابات تبقى مظبوطة.</div>` : ''}
     <div class="note">💡 اعمل <b>جرد</b> كل أسبوعين تقريبًا (اكتب اللي عندك)، والبرنامج هيتعلم معدل استهلاكك الحقيقي لوحده بدل الرقم التقديري.</div></div>
     ${searchBox('items', true)}`;
@@ -1994,6 +1996,52 @@ function rowVal(o, k){
   return expByCat(o.T)[k] || 0;
 }
 
+/* ===================== البيت بيتكلف كام في الشهر =====================
+   الالتزامات (كهربا، غاز، نت…) + استهلاك الاستوك بأسعاره (مقسوم بالمجموعات: تموين، منظفات…)
+   + التصنيفات اللي انت تختارها (خضار وسوبر ماركت، صيانة…) بمتوسط آخر 3 شهور.
+   من غير مواصلات وزيارات وخروجات إلا لو اخترتها. */
+const homeCats = () => S.settings.homeCats || ['market', 'fix'];
+function homeCost(){
+  const lines = [];
+  const offB = new Set(S.settings.homeBillsOff || []);
+  S.bills.filter(b => !b.off && !offB.has(b.id)).forEach(b => lines.push({k:'bill', icon:'📋', name:b.name, v:b.amount || 0}));
+  const byG = {};
+  S.items.filter(it => it.pause !== 'always').forEach(it => { const g = it.group || 'تاني'; byG[g] = (byG[g] || 0) + dailyRate(it).v * 30 * (it.price || 0); });
+  Object.entries(byG).filter(([, v]) => v > 0.5).forEach(([g, v]) => lines.push({k:'stock', icon:'🧺', name:'استوك: ' + g, v}));
+  // التصنيفات: متوسط آخر 3 شهور فيهم تسجيلات، ولو لسه مفيش — الشهر ده متوقع على الشهر كله
+  const p = periodOf(todayS()), bl = baseline(p, 3), cur = summary(p), el = elapsedDays(cur);
+  const curBy = expByCat(cur.T.filter(t => !t.dueId));
+  homeCats().filter(id => id !== 'house').forEach(id => {
+    const c = catOf(id), v = bl.n ? (bl.avg[id] || 0) : (curBy[id] || 0) / Math.max(1, el) * cur.r.days;
+    if(v > 0.5) lines.push({k:'cat', icon:c.icon, name:c.name, v, est:!bl.n});
+  });
+  lines.sort((a, b) => b.v - a.v);
+  return {lines, total:sum(lines, l => l.v), months:bl.n};
+}
+function homeCostCard(){
+  const H = homeCost();
+  if(!H.lines.length) return '';
+  const top = H.lines[0].v;
+  return `<div class="card"><div class="row"><h3 style="margin:0">🏠 البيت بيتكلف كام في الشهر</h3><button class="btn sm" data-act="homeCostPick">اختار إيه يتحسب</button></div>
+    <div style="font-size:26px; margin:6px 0 2px">${money(H.total)}</div>
+    <div class="muted" style="margin-bottom:10px">يعني حوالي <b class="num">${fmt(H.total / 30)}</b> ج في اليوم — من غير مواصلات وزيارات وخروجات (إلا لو اخترتهم)</div>
+    ${H.lines.map(l => `<div class="cat-row"><div class="row"><span>${l.icon} ${esc(l.name)}${l.est ? ' <span class="tag">متوقع</span>' : ''}</span><span><b class="num">${fmt(l.v)}</b> <span class="muted num">${Math.round(l.v / H.total * 100)}%</span></span></div>
+      <div class="bar"><i style="width:${l.v / top * 100}%"></i></div></div>`).join('')}
+    <div class="muted" style="margin-top:8px; line-height:1.7">📋 الالتزامات بقيمتها الشهرية · 🧺 الاستوك = استهلاكك في الشهر × السعر · والتصنيفات ${H.months ? `بمتوسط آخر <span class="num">${H.months}</span> شهر` : 'متوقعة من صرف الشهر ده (لحد ما يبقى فيه شهور كاملة)'}.</div></div>`;
+}
+function homeCostPick(){
+  const cats = S.cats.filter(c => c.id !== 'house'), on = new Set(homeCats()), offB = new Set(S.settings.homeBillsOff || []);
+  const row = (name, label, checked) => `<label class="jard-row" style="cursor:pointer"><input type="checkbox" name="${name}" ${checked ? 'checked' : ''} style="width:22px; height:22px; padding:0; flex:none; accent-color:var(--gold)"><div class="nm">${label}</div></label>`;
+  const body = `<div class="muted" style="margin-bottom:6px">علّم على اللي يعتبر من مصاريف البيت. استوك البيت محسوب دايمًا.</div>
+    <div class="group-h">التصنيفات</div>${cats.map(c => row('c_' + c.id, c.icon + ' ' + esc(c.name), on.has(c.id))).join('')}
+    ${S.bills.length ? `<div class="group-h">الالتزامات</div>${S.bills.filter(b => !b.off).map(b => row('b_' + b.id, '📋 ' + esc(b.name) + ` <small class="num">${fmt(b.amount || 0)}</small>`, !offB.has(b.id))).join('')}` : ''}
+    ${Fd.foot('حفظ')}`;
+  openSheet('🏠 مصاريف البيت', body, v => {
+    S.settings.homeCats = cats.filter(c => v['c_' + c.id]).map(c => c.id);
+    S.settings.homeBillsOff = S.bills.filter(b => !b.off && !v['b_' + b.id]).map(b => b.id);
+    save(); toast('اتحفظ');
+  });
+}
 PAGES.report = function(){
   const o = summary(VIEW), prevFull = summary(addMonths(VIEW, -1)), base = baseline(VIEW, 3), el = elapsedDays(o);
   const prev = o.isCurrent ? firstDays(prevFull, el) : prevFull;
@@ -2011,6 +2059,7 @@ PAGES.report = function(){
     <div class="stat"><div class="t">📅 متوسط الصرف في اليوم</div><div class="v">${money(expTotal / el)}</div><div class="s">على <span class="num">${el}</span> يوم</div></div>
   </div>`;
 
+  h += homeCostCard();
   const ins = insights(VIEW);
   h += `<div class="card"><h3>💡 نقاط التحسين</h3>${ins.length ? ins.map(insightHtml).join('') : '<div class="muted">لسه البيانات قليلة. كمّل تسجيل كام يوم كمان وهتظهر هنا ملاحظات.</div>'}</div>`;
 
@@ -3219,6 +3268,7 @@ const ACT = {
     closeSheet(); save(); toast(`⏸️ ${it.name}: ${pauseTxt(it)} — تقدر ترجّعه من آخر قايمة الشراء`);
   },
   itemResume:(d) => { const it = byId(S.items, d.id); if(!it) return; delete it.pause; closeSheet(); save(); toast(`▶️ ${it.name} رجع للقايمة`); },
+  homeCostPick,
   itemNew:(d) => itemForm(null, {name:(LISTQ[d.k] || '').trim(), from:d.k}),
   delItem:(d) => {
     if(!confirm('تمسح الصنف ده؟ (مشترياته هتفضل في اليومية)')) return;
