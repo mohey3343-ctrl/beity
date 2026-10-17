@@ -460,6 +460,23 @@ await test('من غير جرد: "خلص" ← شراء ← "خلص" بيحسب ا
   assert.deepEqual(r, { perMonth: +(1.5 / 18.5 * 30).toFixed(2), src: 'learned' });
 });
 
+await test('إيقاف صنف: "مش الشهر ده" و"موسمي" بيطلعوه من القايمة والخطة، و"رجّعه" بيرجّعه', async page => {
+  await ev(page, () => { S.items.push({ id: 'mg', name: 'مانجا', group: 'فاكهة', base: 'KG', monthly: 3, price: 60 }, { id: 'tm', name: 'طماطم', group: 'خضار', base: 'KG', monthly: 6, price: 20 }); save();
+    ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'shop' }); });
+  const inList = () => ev(page, () => shopList().filter(x => x.qty > 0).map(x => x.it.id).sort());
+  const toBuy = () => ev(page, () => Math.round(summary(VIEW).houseToBuy));
+  assert.deepEqual(await inList(), ['mg', 'tm']);
+  const all = await toBuy();
+  await page.click('tr[data-id="mg"] [data-act="itemPause"]'); await page.click('#sheetBody [data-v="always"]');
+  assert.deepEqual(await inList(), ['tm']);
+  assert.ok(await toBuy() < all, 'المانجا لازم تطلع من الخطة');
+  assert.ok(await page.isVisible('text=موسمي — لحد ما ترجّعه'));
+  await page.click('tr[data-id="tm"] [data-act="itemPause"]'); await page.click('#sheetBody [data-v="month"]');
+  assert.deepEqual([await inList(), await ev(page, () => byId(S.items, 'tm').pause)], [[], '2026-10-31']);
+  await page.click('[data-act="itemResume"][data-id="mg"]');
+  assert.deepEqual(await inList(), ['mg']);
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });

@@ -227,6 +227,7 @@
   .ml-sub select, .ml-sub input{flex:1;} .ml-sub input[data-f="qty"]{flex:.6; text-align:center;}
   .ml-u{font-size:12px; min-width:34px;}
   .plan-line > b{white-space:nowrap; flex:none;}
+  .pause-btn{min-height:22px !important; padding:0 7px; font-size:10.5px; margin-top:3px; color:var(--soft); white-space:nowrap; border-radius:8px !important;}
   .toast.long{border-radius:18px !important; width:min(92vw, 560px); max-width:none; text-align:right; line-height:1.75; padding:12px 16px;}
   #refreshBtn{font-size:20px;} #refreshBtn.spin{animation:spin 1s linear infinite; pointer-events:none;}
   @keyframes spin{to{transform:rotate(360deg);}}
@@ -837,7 +838,10 @@ function daysLeft(it){
   if(e == null || r <= 0) return null;
   return e / r;
 }
-function houseMonthlyCost(){ return sum(S.items, it => dailyRate(it).v * 30 * (it.price || 0)); }
+/* صنف متوقف: "مش الشهر ده" (لحد آخر الشهر المالي) أو "موسمي" (لحد ما ترجّعه) — مش بيدخل قايمة الشراء ولا الخطة */
+const isPaused = it => !!it.pause && (it.pause === 'always' || todayS() <= it.pause);
+const pauseTxt = it => it.pause === 'always' ? 'موقوف (موسمي)' : 'مش الشهر ده';
+function houseMonthlyCost(){ return sum(S.items.filter(it => it.pause !== 'always'), it => dailyRate(it).v * 30 * (it.price || 0)); }
 function coverDays(){
   if(S.settings.coverMode === 'period'){
     const r = periodRange(periodOf(todayS()));
@@ -847,7 +851,7 @@ function coverDays(){
 }
 function shopList(){
   const cover = coverDays() + (S.settings.bufferDays || 0);
-  return S.items.map(it => {
+  return S.items.filter(it => !isPaused(it)).map(it => {
     const rate = dailyRate(it), est = estStock(it), have = est == null ? 0 : est;
     const need = rate.v * cover - have;
     let qty = 0;
@@ -1399,7 +1403,7 @@ function alertsHtml(o){
     if(l.pct >= 1) out.push(['bad', l.c.icon, `${esc(l.c.name)} عدّى الحد الشهري: <b class="num">${fmt(l.spent)}</b> من <span class="num">${fmt(l.c.limit)}</span>`]);
     else if(l.pct >= 0.8) out.push(['warn', l.c.icon, `${esc(l.c.name)} وصل <b class="num">${Math.round(l.pct * 100)}%</b> من الحد — فاضل <span class="num">${fmt(l.c.limit - l.spent)}</span> لآخر الشهر`]);
   });
-  const low = S.items.map(it => ({it, d:daysLeft(it)})).filter(x => x.d != null && x.d <= 5).sort((a, b) => a.d - b.d);
+  const low = S.items.filter(it => !isPaused(it)).map(it => ({it, d:daysLeft(it)})).filter(x => x.d != null && x.d <= 5).sort((a, b) => a.d - b.d);
   if(low.length) out.push(['warn', '🧺', `هيخلصوا قريب: ${low.slice(0, 4).map(x => esc(x.it.name) + ' (' + Math.max(0, Math.floor(x.d)) + ' يوم)').join('، ')}${low.length > 4 ? '…' : ''}`, `<button class="btn sm dark" data-act="goShop">قائمة الشراء</button>`]);
   // امبارح ما اتسجلش فيه ولا مصروف
   const yd = addDays(td, -1), firstExp = S.tx.filter(t => t.type === 'exp').map(t => t.date).sort()[0];
@@ -1524,7 +1528,7 @@ function itemRowHtml(it, showGroup){
   const cls = d == null ? '' : d <= 5 ? 'bad' : d <= 12 ? 'warn' : 'good';
   const pc = priceChange(it);
   const priceTag = pc && Math.abs(pc.pct) >= 5 ? ` <span class="tag ${pc.pct > 0 ? 'bad' : 'good'}">${pc.pct > 0 ? '▲' : '▼'} ${Math.abs(Math.round(pc.pct))}%</span>` : '';
-  const srcTag = priceTag + ' ' + (r.src === 'learned' ? '<span class="tag good">محسوب من الجرد</span>' : r.src === 'manual' ? '<span class="tag">تقديري</span>' : '<span class="tag bad">ناقص الاستهلاك</span>');
+  const srcTag = (isPaused(it) ? `<span class="tag warn">⏸️ ${pauseTxt(it)}</span> ` : '') + priceTag + ' ' + (r.src === 'learned' ? '<span class="tag good">محسوب من الجرد</span>' : r.src === 'manual' ? '<span class="tag">تقديري</span>' : '<span class="tag bad">ناقص الاستهلاك</span>');
   return `<div class="list-item" data-act="itemForm" data-id="${it.id}" data-nm="${esc(it.name)}" data-grp="${esc(it.group || 'تاني')}" ${hideIf(!qHit('items', it))}>
     <div class="li-main"><div class="li-title">${esc(it.name)} ${srcTag}</div>${showGroup ? `<div class="li-sub">${esc(it.group || 'تاني')}</div>` : ''}
       <div class="li-sub">بتستهلك ${qtyTxt(it, r.v * 30)}/شهر${it.price > 0 ? ` · <span class="num">${fmt(it.price * packF(it))}</span> ج لل${esc(entryUnit(it))}` : ' · <span class="neg">من غير سعر</span>'}</div>
@@ -1649,17 +1653,24 @@ function shopHtml(){
         <button type="button" class="${S.settings.shopView === 'base' ? 'on' : ''}" data-act="shopView" data-v="base">KG / L / PCS</button></div></div>
     ${unknown ? `<div class="note">⚠️ <b>${unknown}</b> صنف ما اتعملهمش جرد، فبنعتبر الموجود منهم صفر. <a href="#" data-act="sub" data-k="stock" data-v="jard">اعمل جرد</a></div>` : ''}
   </div>`;
-  if(!need.length) return h + `<div class="card empty"><div class="e-ic">✅</div>البيت مكفي للمدة دي — مش محتاج تشتري حاجة.</div>`;
+  if(!need.length) return h + `<div class="card empty"><div class="e-ic">✅</div>البيت مكفي للمدة دي — مش محتاج تشتري حاجة.</div>` + pausedHtml();
   h += `<div class="card"><div class="row" style="margin-bottom:8px"><div><div class="muted">التكلفة المتوقعة</div><div style="font-size:22px">${money(total)}</div></div>
     <div class="btns"><button class="btn" data-act="shareList">مشاركة</button><button class="btn primary" data-act="buyMany">اشتريتهم</button></div></div>
     <table class="tbl"><tr><th>الصنف</th><th>عندي</th><th>محتاج</th><th>اشتري</th><th>التكلفة</th></tr>
     ${need.map(x => { const sv = S.settings.shopView, alt = sv === 'base' ? (hasPack(x.it) ? shopQty(x.it, x.qty, 'pack', true) : '') : (hasPack(x.it) ? shopQty(x.it, x.qty, 'base', true) : '');
-      return `<tr data-act="buyItem" data-id="${x.it.id}" style="cursor:pointer"><td><b>${esc(x.it.name)}</b></td>
+      return `<tr data-act="buyItem" data-id="${x.it.id}" style="cursor:pointer"><td><b>${esc(x.it.name)}</b><div><button type="button" class="btn sm ghost pause-btn" data-act="itemPause" data-id="${x.it.id}">⏸️ مش دلوقتي</button></div></td>
       <td>${x.est == null ? '؟' : shopQty(x.it, x.have, sv, true)}</td><td>${shopQty(x.it, x.rate.v * (cover + (S.settings.bufferDays || 0)), sv, true)}</td>
       <td><b>${shopQty(x.it, x.qty, sv, true)}</b>${alt ? `<div class="muted" style="font-size:11px">${alt}</div>` : ''}</td>
       <td class="num">${x.it.price > 0 ? fmt(x.cost) : '<span class="neg">؟</span>'}</td></tr>`; }).join('')}
-    </table><div class="muted" style="margin-top:8px">دوس على أي صنف عشان تسجّل إنك اشتريته بالسعر الفعلي.</div></div>`;
-  return h;
+    </table><div class="muted" style="margin-top:8px">دوس على أي صنف عشان تسجّل إنك اشتريته بالسعر الفعلي. ولو مش هتجيبه دلوقتي دوس ⏸️.</div></div>`;
+  return h + pausedHtml();
+}
+function pausedHtml(){
+  const P = S.items.filter(isPaused);
+  if(!P.length) return '';
+  return `<div class="card"><h3>⏸️ متوقفين <span class="muted">(مش داخلين في القايمة ولا الخطة)</span></h3>
+    ${P.map(it => `<div class="list-item"><div class="li-main"><div class="li-title">${esc(it.name)}</div><div class="li-sub">${it.pause === 'always' ? 'موسمي — لحد ما ترجّعه' : 'لحد آخر الشهر (' + dayLabel(it.pause) + ')'}</div></div>
+      <div class="li-end"><button class="btn sm" data-act="itemResume" data-id="${it.id}">▶️ رجّعه</button></div></div>`).join('')}</div>`;
 }
 
 /* ===================== الالتزامات والديون ===================== */
@@ -2408,7 +2419,8 @@ function itemForm(id, preset){
       ${bs.length ? '<br><b>آخر شراء:</b> ' + bs.map(b => `${dayLabel(b.date)}: ${esc(qtyPlain(it, b.qty))} بـ ${fmt(b.amount)}ج`).join(' · ') : ''}
       ${(() => { const ph = priceHistory(it); if(ph.length < 2) return ''; const ch = (ph[ph.length - 1].p / ph[0].p - 1) * 100;
         return `<br><b>💲 سعر الـ${esc(entryUnit(it))}:</b> ` + ph.slice(-6).map(x => `<span class="num">${fmtQ(x.p)}</span>`).join(' ← ') + ` <span class="tag ${ch > 3 ? 'bad' : ch < -3 ? 'good' : ''}">${ch > 0 ? '▲' : '▼'} ${Math.abs(Math.round(ch))}% من أول مرة</span>`; })()}</div>
-      <div class="btns" style="margin-top:10px"><button type="button" class="btn good" data-act="buyItem" data-id="${it.id}">سجّل شراء</button><button type="button" class="btn" data-act="countItem" data-id="${it.id}">جرد الصنف ده</button><button type="button" class="btn danger" data-act="itemOut" data-id="${it.id}">خلص 🚫</button></div>`;
+      <div class="btns" style="margin-top:10px"><button type="button" class="btn good" data-act="buyItem" data-id="${it.id}">سجّل شراء</button><button type="button" class="btn" data-act="countItem" data-id="${it.id}">جرد الصنف ده</button><button type="button" class="btn danger" data-act="itemOut" data-id="${it.id}">خلص 🚫</button>${isPaused(it) ? `<button type="button" class="btn" data-act="itemResume" data-id="${it.id}">▶️ رجّعه للقايمة</button>` : `<button type="button" class="btn" data-act="itemPause" data-id="${it.id}">⏸️ إيقاف</button>`}</div>
+      ${isPaused(it) ? `<div class="note" style="margin-top:8px">⏸️ ${pauseTxt(it)} — مش داخل في قايمة الشراء ولا الخطة.</div>` : ''}`;
   }
   body += Fd.foot(it ? 'حفظ' : 'إضافة', it ? {act:'delItem', id:it.id} : null);
   const f0 = f;
@@ -3194,6 +3206,19 @@ const ACT = {
     }catch(e){}
     location.reload();
   },
+  itemPause:(d) => {
+    const it = byId(S.items, d.id); if(!it) return;
+    const end = periodRange(periodOf(todayS())).end;
+    openSheet('⏸️ ' + it.name, `<div class="muted" style="margin-bottom:10px; line-height:1.8">الصنف هيفضل موجود بالجرد والسعر بتوعه، بس مش هيدخل قايمة الشراء ولا خطة الشهر.</div>
+      <button type="button" class="btn primary block" style="width:100%; margin-bottom:8px" data-act="itemPauseSet" data-id="${it.id}" data-v="month">مش هجيبه الشهر ده<div style="font-size:11px; opacity:.85">يرجع لوحده بعد ${dayLabel(end)}</div></button>
+      <button type="button" class="btn block" style="width:100%" data-act="itemPauseSet" data-id="${it.id}" data-v="always">موقوف — موسمي<div style="font-size:11px; opacity:.85">لحد ما ترجّعه انت</div></button>`, null);
+  },
+  itemPauseSet:(d) => {
+    const it = byId(S.items, d.id); if(!it) return;
+    it.pause = d.v === 'always' ? 'always' : periodRange(periodOf(todayS())).end;
+    closeSheet(); save(); toast(`⏸️ ${it.name}: ${pauseTxt(it)} — تقدر ترجّعه من آخر قايمة الشراء`);
+  },
+  itemResume:(d) => { const it = byId(S.items, d.id); if(!it) return; delete it.pause; closeSheet(); save(); toast(`▶️ ${it.name} رجع للقايمة`); },
   itemNew:(d) => itemForm(null, {name:(LISTQ[d.k] || '').trim(), from:d.k}),
   delItem:(d) => {
     if(!confirm('تمسح الصنف ده؟ (مشترياته هتفضل في اليومية)')) return;
@@ -3234,7 +3259,7 @@ const ACT = {
     // الأصناف اللي سبتها فاضية والبرنامج فاكر إن عندك منها: نسألك لو فيها حاجة خلصت
     const done = new Set(filled.map(x => x.it.id));
     const countedToday = new Set(S.counts.filter(c => c.date === todayS()).map(c => c.itemId));
-    const left = S.items.filter(it => !done.has(it.id) && !countedToday.has(it.id) && (estStock(it) || 0) > 0.001);
+    const left = S.items.filter(it => !done.has(it.id) && !countedToday.has(it.id) && !isPaused(it) && (estStock(it) || 0) > 0.001);
     if(!left.length) return jardCommit(filled, []);
     const list = groupsOf().map(g => { const L = left.filter(it => (it.group || 'تاني') === g); return L.length ? `<div class="group-h">${esc(g)}</div>` + L.map(it => `<label class="jard-row" style="cursor:pointer"><input type="checkbox" name="z_${it.id}" style="width:22px; height:22px; padding:0; flex:none; accent-color:var(--bad)"><div class="nm">${esc(it.name)}<small>متوقع ${qtyTxt(it, estStock(it))}</small></div><span class="muted">خلص</span></label>`).join('') : ''; }).join('');
     // زرار الحفظ فوق على طول — والقايمة مقفولة لو طويلة (مش لازم تعلّم على حاجة)
@@ -3544,7 +3569,7 @@ function replaceAll(ns){
 }
 let toastT = null;
 function toast(msg, err, ms){
-  const t = $('#toast'); t.textContent = msg; t.className = 'toast show' + (err ? ' err' : '') + (msg.length > 70 ? ' long' : '');
+  const t = $('#toast'); t.textContent = msg; t.className = 'toast show' + (err ? ' err' : '') + (msg.length > 45 ? ' long' : '');
   clearTimeout(toastT); toastT = setTimeout(() => t.className = 'toast', ms || 2200);
 }
 
