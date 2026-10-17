@@ -1272,7 +1272,7 @@ PAGES.home = function(){
           <div>صرفت النهاردة <b class="num">${fmt(o.spentToday)}</b></div>
           <div>مسموح النهاردة <b class="num">${fmt(o.perDay)}</b></div>
           ${o.daysLeft > 1 ? `<div>ومن بكرة <b class="num">${fmt(o.free / (o.daysLeft - 1))}</b> في اليوم</div>` : ''}
-          <div>فاضل <b class="num">${o.daysLeft}</b> يوم في الشهر</div>
+          <div>${o.daysLeft > 1 ? `فاضل <b class="num">${o.daysLeft - 1}</b> يوم بعد النهاردة` : 'النهاردة آخر يوم في الشهر'}</div>
         </div>
       </div>
       ${o.todayLeft < 0 && o.perDay > 0 ? `<div class="alert warn"><span class="ic">✋</span><span class="tx">عديت مصروف النهاردة بـ <b class="num">${fmt(-o.todayLeft)}</b> — المسموح للأيام الجاية هيقل لوحده.</span></div>` : ''}
