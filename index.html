@@ -1270,7 +1270,8 @@ PAGES.home = function(){
           <div class="muted">جنيه للمصروف اليومي</div></div>
         <div class="today-side">
           <div>صرفت النهاردة <b class="num">${fmt(o.spentToday)}</b></div>
-          <div>المسموح في اليوم <b class="num">${fmt(o.perDay)}</b></div>
+          <div>مسموح النهاردة <b class="num">${fmt(o.perDay)}</b></div>
+          ${o.daysLeft > 1 ? `<div>ومن بكرة <b class="num">${fmt(o.free / (o.daysLeft - 1))}</b> في اليوم</div>` : ''}
           <div>فاضل <b class="num">${o.daysLeft}</b> يوم في الشهر</div>
         </div>
       </div>
@@ -1304,7 +1305,11 @@ PAGES.home = function(){
     <div class="plan-line" style="border-bottom:0"><span>🛒 <b>متاح للمصروف اليومي</b></span><b class="num ${o.varAvail < 0 ? 'neg' : ''}">${fmt(o.varAvail)}</b></div>
     ${o.isCurrent ? `<div class="plan-line"><span>🧾 اتصرف لحد دلوقتي</span><b class="num">− ${fmt(o.varSpent)}</b></div>
     <div class="plan-line total"><span>💵 فاضل للمصروف</span><b class="num ${o.free < 0 ? 'neg' : 'pos'}">${fmt(o.free)}</b></div>
-    <div class="muted" style="margin-top:6px; line-height:1.8">للـ <b class="num">${o.daysLeft}</b> يوم الباقيين — يعني حوالي <b class="num">${fmt(o.perDay)}</b> جنيه في اليوم.</div>
+    <div class="muted" style="margin-top:6px; line-height:1.8">${(() => {
+      // لو صرفت النهاردة: النهاردة خلص، فالفاضل يتقسم على الأيام من بكرة؛ ولو لسه ما صرفتش: من النهاردة
+      const fromTomorrow = o.spentToday > 0 && o.daysLeft > 1, days = fromTomorrow ? o.daysLeft - 1 : o.daysLeft;
+      return `<span class="num">${fmt(o.free)}</span> ÷ <b class="num">${days}</b> يوم (${fromTomorrow ? 'من بكرة' : 'من النهاردة'} لآخر الشهر) = حوالي <b class="num">${fmt(o.free / days)}</b> جنيه في اليوم.`;
+    })()}</div>
     ${o.cashKnown ? `<div class="note" style="margin-top:10px; line-height:1.9">🧮 <b>في الخزنة <span class="num">${fmt(o.safe)}</span></b> =
       محجوز للمواعيد <b class="num">${fmt(o.reservedAll)}</b>
       ${o.owedLeft > 0.5 ? ` + لسه عليك الشهر ده <b class="num">${fmt(o.owedLeft)}</b> <span class="muted">(${o.owedParts.map(x => x[0].replace(/^\S+\s/, '')).join('، ')})</span>` : ''}
