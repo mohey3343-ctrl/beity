@@ -493,6 +493,14 @@ await test('البيت بيتكلف كام في الشهر: التزامات + �
   assert.ok(await page.isVisible('text=البيت بيتكلف كام في الشهر'));
 });
 
+await test('حذف تصنيف: تختار المصروفات تتنقل لأنهي تصنيف، وتقدر تتراجع', async page => {
+  await ev(page, () => { S.cats.push({ id: 'cafe', name: 'كافيه', icon: '☕' }); S.tx.push({ id: 'x', ts: 1, type: 'exp', cat: 'cafe', amount: 40, date: '2026-10-09' }); save(); ACT.delCat({ id: 'cafe' }); });
+  await page.selectOption('#sheetBody [name="to"]', 'food'); await submit(page);
+  assert.deepEqual(await ev(page, () => [S.cats.some(c => c.id === 'cafe'), byId(S.tx, 'x').cat]), [false, 'food']);
+  await page.click('#undoBar [data-act="undo"]');
+  assert.deepEqual(await ev(page, () => [S.cats.some(c => c.id === 'cafe'), byId(S.tx, 'x').cat]), [true, 'cafe']);
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });

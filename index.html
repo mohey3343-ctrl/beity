@@ -3398,11 +3398,22 @@ const ACT = {
     Object.entries(base).forEach(([c, v]) => { const el = $(`#sheetBody [name="l_${c}"]`); if(el && v > 0) el.value = Math.round(v * 0.9 / 50) * 50; });
   },
   delCat:(d) => {
-    if(!confirm('تمسح التصنيف؟ المصروفات اللي عليه هتتنقل لـ "متنوع".')) return;
-    S.tx.forEach(t => { if(t.cat === d.id) t.cat = 'other'; });
+    const c = byId(S.cats, d.id); if(!c) return;
+    const n = S.tx.filter(t => t.cat === d.id).length;
+    if(!n){ if(confirm(`تمسح تصنيف "${c.name}"؟`)) ACT.delCatDo({id:d.id}); return; }
+    // عليه مصروفات: تختار تتنقل لأنهي تصنيف (تدمج اتنين في واحد)
+    const others = S.cats.filter(x => x.id !== d.id && x.id !== 'house');
+    openSheet('🗑 حذف ' + c.icon + ' ' + c.name, `<div class="muted" style="margin-bottom:10px; line-height:1.8">عليه <b class="num">${n}</b> مصروف. هيتنقلوا للتصنيف اللي تختاره، ومش هيضيعوا من الحسابات.</div>
+      <label class="fld"><span>انقل مصروفاته لـ</span><select name="to">${others.map(x => `<option value="${x.id}" ${x.id === 'other' ? 'selected' : ''}>${x.icon} ${esc(x.name)}</option>`).join('')}</select></label>
+      ${Fd.foot('احذف وانقل')}`, v => { ACT.delCatDo({id:d.id, to:v.to}); });
+  },
+  delCatDo:(d) => {
+    const to = d.to && byId(S.cats, d.to) ? d.to : 'other';
+    S.tx.forEach(t => { if(t.cat === d.id) t.cat = to; });
     S.cats = S.cats.filter(c => c.id !== d.id);
     if(!S.cats.some(c => c.id === 'other')) S.cats.push({id:'other', name:'متنوع', icon:'🧾'});
-    closeSheet(); save();
+    if(S.settings.homeCats) S.settings.homeCats = S.settings.homeCats.filter(x => x !== d.id);
+    closeSheet(); save(); toast('اتحذف التصنيف' + (d.to ? ` — المصروفات اتنقلت لـ ${catOf(to).name}` : ''));
   },
   saveSync:async () => {
     S.settings.syncUrl = $('#syncUrlIn').value.trim(); S.settings.syncSecret = $('#syncSecretIn').value.trim();
