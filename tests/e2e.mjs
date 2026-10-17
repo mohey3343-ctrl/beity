@@ -501,6 +501,31 @@ await test('حذف تصنيف: تختار المصروفات تتنقل لأنه
   assert.deepEqual(await ev(page, () => [S.cats.some(c => c.id === 'cafe'), byId(S.tx, 'x').cat]), [true, 'cafe']);
 });
 
+await test('خطة الشهر: سطور الخطة بتتجمع بالظبط لـ"متاح" و"فاضل" = حر للصرف', async page => {
+  const r = await ev(page, () => {
+    S.incomes.push({ id: 'i', name: 'مرتب', amount: 20000, day: 1 }, { id: 'i2', name: 'تاني', amount: 3000, day: 25 });
+    S.bills.push({ id: 'b', name: 'كهربا', amount: 800, dueDay: 5 });
+    S.dues.push({ id: 'u', name: 'عيد ميلاد', kind: 'event', amount: 1000, baseAmount: 1000, date: '2026-12-01', repeat: 12 });
+    S.tx.push({ id: 'in', ts: 1, type: 'inc', incomeId: 'i', amount: 20000, date: '2026-10-01' }, { id: 'bp', ts: 2, type: 'bill', billId: 'b', amount: 800, date: '2026-10-05' },
+      { id: 'l', ts: 3, type: 'lend', amount: 500, date: '2026-10-06' }, { id: 'ev', ts: 4, type: 'exp', cat: 'gifts', dueId: 'u', amount: 300, date: '2026-10-06' },
+      { id: 'e', ts: 5, type: 'exp', cat: 'food', amount: 700, date: '2026-10-07' });
+    S.cashCounts.push({ id: 'c', ts: 10, date: '2026-10-08', amount: 15000 });
+    S.tx.push({ id: 'e2', ts: 11, type: 'exp', cat: 'food', amount: 200, date: '2026-10-09' });
+    save(); const o = summary(VIEW);
+    ACT.tab({ tab: 'home' });
+    const lines = [...document.querySelectorAll('.plan-line')].map(el => [el.querySelector('span').textContent.trim().split('\n')[0], el.querySelector('b.num') ? el.querySelector('b.num').textContent : '']);
+    const val = s => +s.replace(/[^\d.-]/g, '').replace(/^-?/, m => m) * (s.trim().startsWith('−') ? -1 : 1);
+    const nums = lines.map(([k, v]) => [k, val(v)]);
+    const idx = nums.findIndex(([k]) => k.includes('متاح للمصروف'));
+    const top = nums.slice(0, idx).reduce((a, [, v]) => a + v, 0);
+    return { top: Math.round(top), avail: Math.round(o.varAvail), card: Math.round(nums[idx][1]), free: Math.round(o.free), heroFree: document.querySelector('#heroMain').textContent.includes(fmt(o.free)) };
+  });
+  assert.equal(r.top, r.avail, 'مجموع السطور لازم = المتاح');
+  assert.equal(r.card, r.avail); assert.ok(r.heroFree, 'حر للصرف فوق لازم = فاضل للمصروف');
+  // معاه 15000 − 200 = 14800، مفيش حاجة لسه عليه → فاضل 14800
+  assert.equal(r.free, 14800);
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });

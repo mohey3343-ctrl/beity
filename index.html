@@ -1126,16 +1126,20 @@ function summaryRaw(p){
       o.reservedAll = totalReserved();
       o.safe = b.value + o.reservedAll;
       o.cashNow = b.value;
-      o.owedParts = [['📋 التزامات لسه ما اتدفعتش', Math.max(0, o.billPlanned - o.billPaid)], ['💳 أقساط ديون لسه', Math.max(0, o.debtPlanned - o.debtPaid)],
-        ['🚗 تحويش لسه ما اتحوّشش', sum(o.goalLines, l => Math.max(0, l.need - Math.max(0, l.saved)))], ['🧺 استوك لسه هتشتريه (قايمة الشراء)', o.houseToBuy]].filter(x => x[1] > 0.5);
+      o.owedParts = [['📋 التزامات', Math.max(0, o.billPlanned - o.billPaid)], ['💳 أقساط', Math.max(0, o.debtPlanned - o.debtPaid)],
+        ['🚗 تحويش', sum(o.goalLines, l => Math.max(0, l.need - Math.max(0, l.saved)))], ['🧺 قايمة الشراء', o.houseToBuy]].filter(x => x[1] > 0.5);
       o.owedLeft = sum(o.owedParts, x => x[1]);
       o.incPending = Math.max(0, o.income - o.incReceived);
       o.free = b.value - o.owedLeft;
       o.cashGap = o.free - o.planFree;
+      // الفرق بين الخطة على الورق والخزنة: دخل لسه ما نزلش (الورق حاسبه) + مصاريف ما اتسجلتش / فلوس زيادة
+      o.unrecorded = o.cashGap + o.incPending;
       o.perDay = (o.free + o.spentToday) / o.daysLeft;
     }
     o.todayLeft = o.perDay - o.spentToday;
   }
+  // المتاح للمصروف اليومي اللي بيظهر: من الخزنة لو فيه جرد فلوس (عشان كل الأرقام تمشي على حساب واحد)
+  o.varAvail = o.isCurrent && o.cashKnown ? o.free + o.varSpent : o.varBudget;
   return o;
 }
 
@@ -1282,7 +1286,7 @@ PAGES.home = function(){
     ${stat('أقساط الديون', '💳', o.debtPlanned, o.debtPaid, 'اتسدد', 'purple')}
     ${stat('التحويش', '🚗', o.savePlanned, o.saved, 'اتحوّش', 'gold')}
     ${stat('استوك البيت الشهر ده', '🧺', o.houseBudget, o.houseSpent, 'اتصرف', 'warn')}
-    ${stat('المصروف اليومي', '🛒', Math.max(0, o.varBudget), o.varSpent, 'اتصرف', '')}
+    ${stat('المصروف اليومي', '🛒', Math.max(0, o.varAvail), o.varSpent, 'اتصرف', '')}
   </div>`;
 
   h += `<div class="card"><h3>خطة الشهر <span class="muted">الفلوس رايحة فين</span></h3>
@@ -1293,19 +1297,18 @@ PAGES.home = function(){
     ${Math.abs(o.reservePlanned) > 0.5 ? `<div class="plan-line"><span>📅 ${o.reserveActual ? 'اتشال لمواعيد السداد' : 'تتشال لمواعيد السداد'}</span><b class="num">− ${fmt(o.reservePlanned)}</b></div>` : ''}
     ${o.isCurrent && o.reserveToDo > 0.5 ? `<div class="muted" style="font-size:12px; padding:4px 0 8px; border-bottom:1px solid var(--line)">⏳ لسه المفروض تشيل <b class="num">${fmt(o.reserveToDo)}</b> للمواعيد الشهر ده — مش متخصومة من الحساب لحد ما تشيلها فعلًا.</div>` : ''}
     <div class="plan-line"><span>🧺 استوك البيت${o.isCurrent && o.houseToBuy > 0.5 ? `<div class="muted" style="font-size:11.5px">اتصرف ${fmt(o.houseSpent)} + قايمة الشراء ${fmt(o.houseToBuy)}</div>` : ''}</span><b class="num">− ${fmt(o.houseReserved)}</b></div>
-    <div class="plan-line" style="border-bottom:0"><span>🛒 <b>متاح للمصروف اليومي</b></span><b class="num ${o.varBudget < 0 ? 'neg' : ''}">${fmt(o.varBudget)}</b></div>
+    ${o.lent > 0.5 ? `<div class="plan-line"><span>🤝 سلّفت حد</span><b class="num">− ${fmt(o.lent)}</b></div>` : ''}
+    ${o.eventSpent > 0.5 ? `<div class="plan-line"><span>🎂 اتصرف على مناسبات</span><b class="num">− ${fmt(o.eventSpent)}</b></div>` : ''}
+    ${o.isCurrent && o.cashKnown && o.incPending > 0.5 ? `<div class="plan-line"><span>💰 دخل لسه ما نزلش<div class="muted" style="font-size:11.5px">مش بيتحسب لحد ما يوصل</div></span><b class="num">− ${fmt(o.incPending)}</b></div>` : ''}
+    ${o.isCurrent && o.cashKnown && Math.abs(o.unrecorded) >= 1 ? `<div class="plan-line"><span>⚖️ ${o.unrecorded < 0 ? 'فلوس خرجت ومش متسجلة' : 'فلوس زيادة عن المتسجل'}<div class="muted" style="font-size:11.5px; line-height:1.6">الفرق بين الحساب والخزنة (جرد الفلوس ${dayLabel(o.cashLast.date)})${o.unrecorded < 0 ? ' — مصاريف ما اتسجلتش، أو اتصرفت قبل ما تبدأ تسجّل' : ' — غالبًا فاضلة من الشهر اللي فات'}</div></span><b class="num ${o.unrecorded < 0 ? 'neg' : 'pos'}">${o.unrecorded < 0 ? '− ' : '+ '}${fmt(Math.abs(o.unrecorded))}</b></div>` : ''}
+    <div class="plan-line" style="border-bottom:0"><span>🛒 <b>متاح للمصروف اليومي</b></span><b class="num ${o.varAvail < 0 ? 'neg' : ''}">${fmt(o.varAvail)}</b></div>
     ${o.isCurrent ? `<div class="plan-line"><span>🧾 اتصرف لحد دلوقتي</span><b class="num">− ${fmt(o.varSpent)}</b></div>
-    ${o.cashKnown ? `<div class="group-h" style="margin-top:14px">💵 الفعلي من الخزنة <span class="muted" style="font-weight:400">(حسب جرد الفلوس ${dayLabel(o.cashLast.date)})</span></div>
-    <div class="plan-line"><span>💰 معاك دلوقتي (بعد المحجوز للمواعيد)</span><b class="num">${fmt(o.cashNow)}</b></div>
-    ${o.owedParts.map(x => `<div class="plan-line"><span>${x[0]}</span><b class="num">− ${fmt(x[1])}</b></div>`).join('')}` : ''}
     <div class="plan-line total"><span>💵 فاضل للمصروف</span><b class="num ${o.free < 0 ? 'neg' : 'pos'}">${fmt(o.free)}</b></div>
     <div class="muted" style="margin-top:6px; line-height:1.8">للـ <b class="num">${o.daysLeft}</b> يوم الباقيين — يعني حوالي <b class="num">${fmt(o.perDay)}</b> جنيه في اليوم.</div>
     ${o.cashKnown ? `<div class="note" style="margin-top:10px; line-height:1.9">🧮 <b>في الخزنة <span class="num">${fmt(o.safe)}</span></b> =
       محجوز للمواعيد <b class="num">${fmt(o.reservedAll)}</b>
-      ${o.owedLeft > 0.5 ? ` + لسه عليك الشهر ده <b class="num">${fmt(o.owedLeft)}</b>` : ''}
-      + فاضل للمصروف <b class="num">${fmt(o.free)}</b>
-      ${o.incPending > 0.5 ? `<br>💡 ولسه هيجيلك دخل <b class="num">${fmt(o.incPending)}</b> الشهر ده — مش محسوب لحد ما ينزل.` : ''}
-      ${Math.abs(o.cashGap) >= 50 ? `<br><span class="muted">على الورق (من الخطة) كان المفروض يفضل <span class="num">${fmt(o.planFree)}</span> — الفرق <span class="num">${fmt(Math.abs(o.cashGap))}</span> ${o.cashGap < 0 ? 'غالبًا مصاريف ما اتسجلتش أو دخل لسه ما نزلش' : 'غالبًا فلوس فاضلة من الشهر اللي فات'}.</span>` : ''}</div>` : ''}`
+      ${o.owedLeft > 0.5 ? ` + لسه عليك الشهر ده <b class="num">${fmt(o.owedLeft)}</b> <span class="muted">(${o.owedParts.map(x => x[0].replace(/^\S+\s/, '')).join('، ')})</span>` : ''}
+      + فاضل للمصروف <b class="num">${fmt(o.free)}</b></div>` : ''}`
       : `<div class="plan-line total"><span>🛒 متاح للمصروف اليومي</span><b class="num ${o.varBudget < 0 ? 'neg' : 'pos'}">${fmt(o.varBudget)}</b></div>
     <div class="muted" style="margin-top:6px; line-height:1.8">${o.r.start > todayS() ? `يعني حوالي <b class="num">${fmt(o.varBudget / o.r.days)}</b> جنيه في اليوم على مدار ${o.r.days} يوم.` : `اتصرف منه <b class="num">${fmt(o.varSpent)}</b> — ${o.free >= 0 ? `وفضل <b class="num pos">${fmt(o.free)}</b>` : `وزاد <b class="num neg">${fmt(-o.free)}</b>`}.`}</div>`}
     ${splitBar(o)}
