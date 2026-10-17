@@ -446,6 +446,20 @@ await test('جرد صنف واحد بس بيحدّث قايمة الشراء ع�
   assert.ok(await page.isVisible('text=سكر') && await page.isVisible('text=رز'));
 });
 
+await test('من غير جرد: "خلص" ← شراء ← "خلص" بيحسب الاستهلاك الحقيقي', async page => {
+  const r = await ev(page, () => {
+    S.items.push({ id: 'f', name: 'فول', group: 'تموين', base: 'KG', pu: 'كيس', pf: 0.5, monthly: 1, price: 40 });
+    const at = s => new Date(s).getTime();
+    S.counts.push({ id: 'o1', ts: at('2026-09-20T20:00:00'), itemId: 'f', date: '2026-09-20', qty: 0 });            // خلص
+    S.tx.push({ id: 'b1', ts: at('2026-09-21T12:00:00'), type: 'exp', cat: 'house', itemId: 'f', qty: 1.5, amount: 120, date: '2026-09-21' });   // اشترى 3 أكياس
+    S.counts.push({ id: 'o2', ts: at('2026-10-09T08:00:00'), itemId: 'f', date: '2026-10-09', qty: 0 });            // خلص تاني
+    save(); const it = byId(S.items, 'f');
+    return { perMonth: +(learnedDaily(it) * 30).toFixed(2), src: dailyRate(it).src };
+  });
+  // 1.5 كيلو في 18.5 يوم → 2.43 كيلو في الشهر، محسوب من غير ولا جرد
+  assert.deepEqual(r, { perMonth: +(1.5 / 18.5 * 30).toFixed(2), src: 'learned' });
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });
