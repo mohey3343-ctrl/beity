@@ -227,6 +227,15 @@
   .ml-sub select, .ml-sub input{flex:1;} .ml-sub input[data-f="qty"]{flex:.6; text-align:center;}
   .ml-u{font-size:12px; min-width:34px;}
   .plan-line > b{white-space:nowrap; flex:none;}
+  #heroMain.mini{padding:10px 14px !important; border-radius:18px !important;}
+  .hero-mini{display:flex; flex-wrap:wrap; gap:6px 14px; justify-content:space-between; font-size:12.5px; color:var(--soft); cursor:pointer;}
+  .hero-mini b{color:var(--ink); font-size:15px; margin-inline-start:4px;}
+  .tabbar .in{align-items:center;}
+  .tabbar .fab{position:relative !important; left:auto !important; right:auto !important; bottom:auto !important; flex:none; width:54px !important; height:54px !important;
+    border-radius:18px !important; margin:-26px 4px 0; font-size:28px; line-height:1; display:flex; align-items:center; justify-content:center;
+    background:var(--grad) !important; color:#fff !important; border:1px solid rgba(255,255,255,.3) !important; box-shadow:0 0 22px rgba(124,92,255,.6) !important; gap:0; padding:0;}
+  .more-alerts{margin-bottom:12px;} .more-alerts > summary{cursor:pointer; color:var(--soft); font-size:13px; padding:6px 4px; list-style:none;}
+  .more-alerts > summary::-webkit-details-marker{display:none;} .more-alerts[open] > summary{margin-bottom:8px;}
   .evopt{display:block; text-align:center; padding:9px 6px; border-radius:13px; cursor:pointer; font-size:13.5px; color:var(--soft);}
   input[name="evdone"]:checked + .evopt{background:rgba(255,255,255,.14); color:var(--ink); font-weight:600;}
   .pause-btn{min-height:22px !important; padding:0 7px; font-size:10.5px; margin-top:3px; color:var(--soft); white-space:nowrap; border-radius:8px !important;}
@@ -474,11 +483,11 @@
 
 <main class="wrap" id="view"></main>
 
-<button class="fab" data-act="quickAdd" aria-label="سجّل مصروف">+</button>
 
 <nav class="tabbar"><div class="in">
   <button data-act="tab" data-tab="home"><span class="tb-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-6.5 8 6.5"/><path d="M6 9.5V20h12V9.5"/><path d="M10 20v-5h4v5"/></svg></span>الرئيسية</button>
   <button data-act="tab" data-tab="log"><span class="tb-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg></span>اليومية</button>
+  <button class="fab" data-act="quickAdd" aria-label="سجّل مصروف">+</button>
   <button data-act="tab" data-tab="stock"><span class="tb-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14l-1.2 11.2a2 2 0 0 1-2 1.8H8.2a2 2 0 0 1-2-1.8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg></span>استوك البيت</button>
   <button data-act="tab" data-tab="bills"><span class="tb-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M9 10h6M9 14h6M9 18h3"/></svg></span>التزامات وديون</button>
   <button data-act="tab" data-tab="goals"><span class="tb-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 16l1.6-5.2A2 2 0 0 1 8.5 9.4h7a2 2 0 0 1 1.9 1.4L19 16"/><rect x="3.5" y="16" width="17" height="3.5" rx="1.2"/><circle cx="7.5" cy="19.5" r="1.2"/><circle cx="16.5" cy="19.5" r="1.2"/></svg></span>الأهداف</button>
@@ -504,7 +513,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-19 · 19:40';
+const APP_VER = '2026-10-19 · 20:30';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -1165,6 +1174,16 @@ function renderHero(){
   const o = summary(VIEW);
   $('#periodLabel').innerHTML = periodLabel(VIEW) + (o.isCurrent ? '' : '<small>اضغط للرجوع للشهر الحالي</small>');
   const b = cashBalance();
+  // برا الرئيسية: سطر واحد صغير بدل الكارت الكبير، عشان محتوى الصفحة يبان من أول الشاشة
+  if(TAB !== 'home'){
+    $('#heroMain').innerHTML = `<div class="hero-mini" data-act="tab" data-tab="home">
+      <span>رصيدك <b class="num ${b.value < 0 ? 'neg' : ''}">${b.known ? fmt(b.value) : '—'}</b></span>
+      <span>حر للصرف <b class="num ${o.free < 0 ? 'neg' : ''}">${fmt(o.free)}</b></span>
+      ${totalReserved() > 0 ? `<span>محجوز <b class="num">${fmt(totalReserved())}</b></span>` : ''}</div>`;
+    $('#heroMain').classList.add('mini');
+    return;
+  }
+  $('#heroMain').classList.remove('mini');
   $('#heroMain').innerHTML = `
     <div class="lbl">رصيدك دلوقتي (الفلوس اللي معاك${totalReserved() > 0 ? ' — من غير المحجوز' : ' فعلًا'})</div>
     ${b.known
@@ -1433,7 +1452,10 @@ function alertsHtml(o){
     if(Date.now() - ex > 7 * 864e5) out.push(['info', '💾', 'اعمل نسخة احتياطية الأسبوع ده — دوسة واحدة تبعتها لنفسك على واتساب أو تحفظها في Files.', `<button class="btn sm dark" data-act="exportData">نسخة</button>`]);
   }
   if(!out.length) return '';
-  return out.map(a => `<div class="alert ${a[0]}"><span class="ic">${a[1]}</span><span class="tx">${a[2]}</span>${a[3] || ''}</div>`).join('');
+  const one = a => `<div class="alert ${a[0]}"><span class="ic">${a[1]}</span><span class="tx">${a[2]}</span>${a[3] || ''}</div>`;
+  // أول تنبيهين بس ظاهرين، والباقي مطوي — عشان الأرقام المهمة ما تنزلش لتحت
+  if(out.length <= 3) return out.map(one).join('');
+  return out.slice(0, 2).map(one).join('') + `<details class="more-alerts"><summary>🔔 ${out.length - 2} تنبيهات تانية</summary>${out.slice(2).map(one).join('')}</details>`;
 }
 
 /* ===================== اليومية ===================== */
@@ -1549,7 +1571,7 @@ function itemRowHtml(it, showGroup){
   const cls = d == null ? '' : d <= 5 ? 'bad' : d <= 12 ? 'warn' : 'good';
   const pc = priceChange(it);
   const priceTag = pc && Math.abs(pc.pct) >= 5 ? ` <span class="tag ${pc.pct > 0 ? 'bad' : 'good'}">${pc.pct > 0 ? '▲' : '▼'} ${Math.abs(Math.round(pc.pct))}%</span>` : '';
-  const srcTag = (isPaused(it) ? `<span class="tag warn">⏸️ ${pauseTxt(it)}</span> ` : '') + priceTag + ' ' + (r.src === 'learned' ? '<span class="tag good">محسوب من الجرد</span>' : r.src === 'manual' ? '<span class="tag">تقديري</span>' : '<span class="tag bad">ناقص الاستهلاك</span>');
+  const srcTag = (isPaused(it) ? `<span class="tag warn">⏸️ ${pauseTxt(it)}</span> ` : '') + priceTag + ' ' + (r.src === 'learned' ? '<span class="tag good">محسوب من الجرد</span>' : r.src === 'manual' ? '' : '<span class="tag bad">ناقص الاستهلاك</span>');
   return `<div class="list-item" data-act="itemForm" data-id="${it.id}" data-nm="${esc(it.name)}" data-grp="${esc(it.group || 'تاني')}" ${hideIf(!qHit('items', it))}>
     <div class="li-main"><div class="li-title">${esc(it.name)} ${srcTag}</div>${showGroup ? `<div class="li-sub">${esc(it.group || 'تاني')}</div>` : ''}
       <div class="li-sub">بتستهلك ${qtyTxt(it, r.v * 30)}/شهر${it.price > 0 ? ` · <span class="num">${fmt(it.price * packF(it))}</span> ج لل${esc(entryUnit(it))}` : ' · <span class="neg">من غير سعر</span>'}</div>
