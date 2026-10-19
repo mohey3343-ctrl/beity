@@ -529,6 +529,21 @@ await test('خطة الشهر: سطور الخطة بتتجمع بالظبط ل�
   assert.match(txt.replace(/[\u2066\u2069]/g, ''), /14,800 ÷ 22 يوم \(من بكرة لآخر الشهر\) = حوالي 673/);
 });
 
+await test('مناسبة: تصرف عليها على كذا مرة ("لسه هكمل")، وبعدين "خلصت" والباقي يرجع للرصيد', async page => {
+  await ev(page, () => { S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });
+    S.dues.push({ id: 'b', name: 'عيد ميلاد دودو', kind: 'event', cat: 'gifts', amount: 2000, baseAmount: 2000, date: '2026-10-31', repeat: 12, dom: 31 });
+    S.tx.push({ id: 'r', ts: 2, type: 'reserve', dueId: 'b', dueDate: '2026-10-31', amount: 2000, date: '2026-10-09' }); save(); payDue('b'); });
+  await fill(page, 'amount', 800); await submit(page);   // الافتراضي: لسه هكمل
+  const s1 = await ev(page, () => { const d = byId(S.dues, 'b'); return [d.amount, d.date, totalReserved(), cashBalance().value]; });
+  assert.deepEqual(s1, [1200, '2026-10-31', 1200, 8000]);
+  await ev(page, () => payDue('b'));
+  assert.match(await page.textContent('#sheetBody .note'), /اتصرف عليها قبل كده 800/);
+  await fill(page, 'amount', 900); await page.click('#sheetBody input[name="evdone"][value="1"] + .evopt'); await submit(page);
+  const s2 = await ev(page, () => { const d = byId(S.dues, 'b'); return [d.amount, d.date, totalReserved(), cashBalance().value]; });
+  // اتصرف 1700 من 2000 → الـ300 الباقيين رجعوا للرصيد، والمناسبة الجاية السنة الجاية بنفس الميزانية
+  assert.deepEqual(s2, [2000, '2027-10-31', 0, 8300]);
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });

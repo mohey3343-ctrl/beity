@@ -227,6 +227,8 @@
   .ml-sub select, .ml-sub input{flex:1;} .ml-sub input[data-f="qty"]{flex:.6; text-align:center;}
   .ml-u{font-size:12px; min-width:34px;}
   .plan-line > b{white-space:nowrap; flex:none;}
+  .evopt{display:block; text-align:center; padding:9px 6px; border-radius:13px; cursor:pointer; font-size:13.5px; color:var(--soft);}
+  input[name="evdone"]:checked + .evopt{background:rgba(255,255,255,.14); color:var(--ink); font-weight:600;}
   .pause-btn{min-height:22px !important; padding:0 7px; font-size:10.5px; margin-top:3px; color:var(--soft); white-space:nowrap; border-radius:8px !important;}
   .toast.long{border-radius:18px !important; width:min(92vw, 560px); max-width:none; text-align:right; line-height:1.75; padding:12px 16px;}
   #refreshBtn{font-size:20px;} #refreshBtn.spin{animation:spin 1s linear infinite; pointer-events:none;}
@@ -2864,9 +2866,14 @@ function payDue(id){
   const d = byId(S.dues, id), res = Math.max(0, dueReserved(d));
   const ev = d.kind === 'event';
   NEXT_WALLET = {label:'دفعت من'};
-  openSheet((ev ? 'صرفت على: ' : 'دفعت: ') + dueName(d), `${Fd.num('amount', ev ? 'صرفت كام' : 'المبلغ اللي اتدفع', d.amount, 'autofocus', res > 0 ? `منهم <b class="num">${fmt(res)}</b> كانوا محجوزين${ev ? ' — ولو صرفت أقل، الباقي يرجع لرصيدك' : ''}` : '')}${Fd.date('date', 'التاريخ', defaultDate())}${Fd.foot('سجّل')}`, v => {
+  // المناسبة: ممكن تصرف عليها على كذا مرة — تختار "لسه هكمل" (الميزانية تفضل مفتوحة) أو "خلصت" (الباقي يرجع لرصيدك)
+  const spentSoFar = ev ? Math.max(0, (d.baseAmount || d.amount) - d.amount) : 0;
+  const evChoice = ev ? `<div class="note" style="margin:-2px 0 10px">${spentSoFar > 0 ? `اتصرف عليها قبل كده <b class="num">${fmt(spentSoFar)}</b> · ` : ''}فاضل في ميزانيتها <b class="num">${fmt(d.amount)}</b></div>
+    <div class="seg" style="margin-bottom:6px"><label style="flex:1"><input type="radio" name="evdone" value="0" checked style="display:none"><span class="evopt">لسه هكمل صرف عليها</span></label><label style="flex:1"><input type="radio" name="evdone" value="1" style="display:none"><span class="evopt">خلصت — اقفلها</span></label></div>
+    <div class="muted" data-evhint style="margin-bottom:10px">الميزانية هتفضل مفتوحة بالباقي، وتكمّل تسجّل عليها.</div>` : '';
+  openSheet((ev ? 'صرفت على: ' : 'دفعت: ') + dueName(d), `${Fd.num('amount', ev ? 'صرفت كام المرة دي' : 'المبلغ اللي اتدفع', ev ? '' : d.amount, 'autofocus', !ev && res > 0 ? `منهم <b class="num">${fmt(res)}</b> كانوا محجوزين` : '')}${evChoice}${Fd.date('date', 'التاريخ', defaultDate())}${Fd.foot('سجّل')}`, v => {
     const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
-    const date = v.date || todayS(), ts = Date.now(), full = ev || a >= d.amount - 1;
+    const date = v.date || todayS(), ts = Date.now(), full = ev ? (v.evdone === '1' || a >= d.amount - 1) : a >= d.amount - 1;
     // الدفعة بتفتكر الميعاد كان عامل إزاي، عشان لو اتمسحت من اليومية يرجع زي ما كان
     const duePrev = {date:d.date, amount:d.amount, paidOn:d.paidOn || null}, payId = uid();
     if(ev) S.tx.push({id:payId, ts, type:'exp', cat:d.cat || 'gifts', dueId:d.id, amount:a, note:d.name, date, duePrev});
@@ -2877,7 +2884,8 @@ function payDue(id){
       if(d.repeat > 0){ d.date = addMonthsDate(d.date, d.repeat, d.dom || pd(d.date).getDate()); d.amount = d.baseAmount || d.amount; }
       else d.paidOn = date;
     }else d.amount = Math.round((d.amount - a) * 100) / 100;
-    save(); toast(full ? (d.repeat > 0 ? 'اتسجّل ✔ — الجاي ' + dayLabel(d.date) + ' ' + pd(d.date).getFullYear() : '🎉 اتسدد') : `اتسجّل — فاضل ${fmt(d.amount)}`);
+    save(); toast(full ? (ev ? '🎉 المناسبة اتقفلت' + (res > a ? ' — الباقي رجع لرصيدك' : '') + (d.repeat > 0 ? ' · الجاية ' + dayLabel(d.date) + ' ' + pd(d.date).getFullYear() : '') : d.repeat > 0 ? 'اتسجّل ✔ — الجاي ' + dayLabel(d.date) + ' ' + pd(d.date).getFullYear() : '🎉 اتسدد')
+      : ev ? `اتسجّل — فاضل في ميزانيتها ${fmt(d.amount)}` : `اتسجّل — فاضل ${fmt(d.amount)}`);
   });
 }
 
@@ -3565,6 +3573,7 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const el = e.target;
+  if(el.name === 'evdone'){ const h = $('#sheetBody [data-evhint]'); if(h) h.textContent = el.value === '1' ? 'المناسبة هتتقفل، واللي فاضل من ميزانيتها يرجع لرصيدك.' : 'الميزانية هتفضل مفتوحة بالباقي، وتكمّل تسجّل عليها.'; return; }
   if(el.dataset && el.dataset.mp){
     const box = el.closest('.fld'), g = k => box.querySelector(`[data-mpk="${k}"]`).value, h = box.querySelector(`input[name="${el.dataset.mp}"]`);
     h.value = g('y') + '-' + g('m'); h.dispatchEvent(new Event('input', {bubbles:true})); return;
