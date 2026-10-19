@@ -503,6 +503,8 @@
    ===================================================================== */
 
 const KEY = 'beity.v1';
+/* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
+const APP_VER = '2026-10-19 · 18:40';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -2279,7 +2281,8 @@ PAGES.cash = function(){
 /* ===================== الإعدادات ===================== */
 PAGES.settings = function(){
   const s = S.settings;
-  let h = `<div class="row" style="margin-bottom:10px"><h2 style="font-size:19px">⚙︎ الإعدادات</h2><button class="btn sm" data-act="tab" data-tab="home">رجوع</button></div>`;
+  let h = `<div class="row" style="margin-bottom:10px"><h2 style="font-size:19px">⚙︎ الإعدادات</h2><button class="btn sm" data-act="tab" data-tab="home">رجوع</button></div>
+    <div class="muted" style="margin:-4px 2px 10px">نسخة التطبيق: <b class="num">${APP_VER}</b></div>`;
   h += `<div class="card"><h3>💰 مصادر الدخل الشهرية <button class="btn sm dark" data-act="incomeForm">+ إضافة</button></h3>
     ${S.incomes.length ? S.incomes.map(i => `<div class="list-item" data-act="incomeForm" data-id="${i.id}"><div class="li-ic">💰</div><div class="li-main"><div class="li-title">${esc(i.name)}</div><div class="li-sub">بينزل يوم ${i.day || 1}</div></div><div class="li-end">${money(i.amount)}</div></div>`).join('') : '<div class="muted">لسه ما سجلتش مرتبك.</div>'}
   </div>`;
@@ -3283,6 +3286,7 @@ const ACT = {
       const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
       if(reg) await Promise.race([reg.update(), wait(5000)]);
     }catch(e){}
+    try{ sessionStorage.setItem('beity.verBefore', APP_VER); }catch(e){}
     location.reload();
   },
   itemPause:(d) => {
@@ -3818,6 +3822,11 @@ async function pullRemote(manual){
 document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') pullRemote(false); });
 
 /* ===================== تشغيل ===================== */
+// بعد زرار ↻: نقولك اتحدّث ولا انت على آخر نسخة
+try{
+  const vb = sessionStorage.getItem('beity.verBefore');
+  if(vb){ sessionStorage.removeItem('beity.verBefore'); setTimeout(() => toast(vb !== APP_VER ? `✔ اتحدّث للنسخة الجديدة (${APP_VER})` : `انت على آخر نسخة منشورة (${APP_VER}) — لو مستني تحديث استنى دقيقتين وجرّب تاني`, false, 5000), 400); }
+}catch(e){}
 load();
 VIEW = periodOf(todayS());
 render();

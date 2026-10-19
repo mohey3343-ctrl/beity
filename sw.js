@@ -3,7 +3,7 @@
      أكتر من 3 ثواني بتفتح من النسخة المحفوظة.
    - الأيقونات والخطوط: من المحفوظ على طول، وبتتحدث في الخلفية.
    - المزامنة مع جوجل شيت: من النت بس، عمرها ما بتتحفظ هنا. */
-const CACHE = 'beity-v2';
+const CACHE = 'beity-v3';
 const CORE = ['./', './index.html', './manifest.json', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png', './Code.gs'];
 
 self.addEventListener('install', e => {
@@ -31,7 +31,8 @@ self.addEventListener('fetch', e => {
 
   const isPage = req.mode === 'navigate' || (url.origin === location.origin && /\/(index\.html)?$/.test(url.pathname));
   if (isPage) {
-    const net = fetch(req).then(r => {
+    // من السيرفر على طول (من غير كاش المتصفح) عشان أي تحديث يوصل
+    const net = fetch(req.url, {cache:'no-cache', credentials:'same-origin'}).then(r => {
       if (r && r.ok) { const copy = r.clone(); caches.open(CACHE).then(c => c.put('./index.html', copy)); }
       return r;
     });
