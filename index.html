@@ -504,7 +504,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-19 · 19:10';
+const APP_VER = '2026-10-19 · 19:40';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -1044,7 +1044,9 @@ function summaryRaw(p){
     const paid = sum(paidT, t => t.amount);
     return {b, paid, paidT, planned:paidT.length ? paid : (b.amount || 0), due:dueDateIn(r, b.dueDay || 1)};
   });
-  o.billPaid = sum(T.filter(t => t.type === 'bill'), t => t.amount);
+  // دفع ميعاد سداد (مش مربوط بدين) بيتسجّل "bill" بس مكانه سطر المواعيد، مش الالتزامات الثابتة
+  o.billPaid = sum(T.filter(t => t.type === 'bill' && !t.dueId), t => t.amount);
+  o.duePaid = sum(T.filter(t => t.type === 'bill' && t.dueId), t => t.amount);
   o.billPlanned = sum(o.billLines, l => l.planned) + (o.billPaid - sum(o.billLines, l => l.paid));
   // أقساط الديون
   o.debtLines = S.debts.map(d => {
@@ -1107,11 +1109,11 @@ function summaryRaw(p){
   o.eventSpent = sum(T.filter(t => t.type === 'exp' && t.dueId), t => t.amount);
   o.varBudget = o.income - o.billPlanned - o.debtPlanned - o.savePlanned - o.reservePlanned - o.houseReserved;
   o.lent = sum(T.filter(t => t.type === 'lend'), t => t.amount);
-  o.varBudget -= o.lent + o.eventSpent;
+  o.varBudget -= o.lent + o.eventSpent + o.duePaid;
   // المتوقع يرجعلك الشهر ده (مش داخل في الخطة لحد ما يوصل فعلًا)
   o.recvExpected = sum(S.recvs || [], rv => sum(recvSchedule(rv).filter(it => it.date >= r.start && it.date <= r.end), it => it.left));
   o.recvGot = sum(T.filter(t => t.type === 'inc' && t.recvId), t => t.amount);
-  o.outActual = o.billPaid + o.debtPaid + o.saved + o.reserveNet + o.lent + o.eventSpent + o.houseSpent + o.varSpent;
+  o.outActual = o.billPaid + o.duePaid + o.debtPaid + o.saved + o.reserveNet + o.lent + o.eventSpent + o.houseSpent + o.varSpent;
   o.cash = o.income - o.outActual;
   o.free = o.varBudget - o.varSpent;
   const td = todayS();
@@ -1229,7 +1231,7 @@ function spendRows(o, mode){
 function splitBar(o){
   if(!(o.income > 0)) return '';
   // دفعات الديون اللي ليها مواعيد (بتتشال شهريًا) هي سداد ديون، مش "مواعيد" عادية
-  const debtRes = sum(o.dueLines.filter(l => l.d.debtId), l => o.reserveActual ? l.resThis : l.planned), otherRes = Math.max(0, o.reservePlanned - debtRes);
+  const debtRes = sum(o.dueLines.filter(l => l.d.debtId), l => o.reserveActual ? l.resThis : l.planned), otherRes = Math.max(0, o.reservePlanned + o.duePaid + o.eventSpent - debtRes);
   const parts = [
     ['📋 التزامات', o.billPlanned], ['💳 ديون', o.debtPlanned + debtRes], ['🏦 تحويش وجمعيات', o.savePlanned],
     ['📅 مواعيد ومناسبات', otherRes], ['🧺 استوك', o.houseReserved], ['🛒 مصروف يومي', Math.max(0, o.varBudget)],
@@ -1299,11 +1301,16 @@ PAGES.home = function(){
     <div class="plan-line"><span>📋 الالتزامات الثابتة</span><b class="num">− ${fmt(o.billPlanned)}</b></div>
     <div class="plan-line"><span>💳 أقساط الديون</span><b class="num">− ${fmt(o.debtPlanned)}</b></div>
     <div class="plan-line"><span>🚗 التحويش للأهداف</span><b class="num">− ${fmt(o.savePlanned)}</b></div>
-    ${Math.abs(o.reservePlanned) > 0.5 ? `<div class="plan-line"><span>📅 ${o.reserveActual ? 'اتشال لمواعيد السداد' : 'تتشال لمواعيد السداد'}</span><b class="num">− ${fmt(o.reservePlanned)}</b></div>` : ''}
+    ${(() => {
+      const tot = o.reservePlanned + o.duePaid + o.eventSpent;
+      if(Math.abs(tot) < 0.5) return '';
+      const parts = [o.duePaid > 0.5 ? `اتدفع ${fmt(o.duePaid)}` : '', o.eventSpent > 0.5 ? `اتصرف على مناسبات ${fmt(o.eventSpent)}` : '',
+        o.reserveActual && (o.duePaid > 0.5 || o.eventSpent > 0.5) ? `ولسه محجوز ${fmt(o.reservePlanned)}` : ''].filter(Boolean).join(' · ');
+      return `<div class="plan-line"><span>📅 ${o.reserveActual ? 'مواعيد السداد والمناسبات' : 'تتشال لمواعيد السداد'}${parts ? `<div class="muted" style="font-size:11.5px">${parts}</div>` : ''}</span><b class="num">− ${fmt(tot)}</b></div>`;
+    })()}
     ${o.isCurrent && o.reserveToDo > 0.5 ? `<div class="muted" style="font-size:12px; padding:4px 0 8px; border-bottom:1px solid var(--line)">⏳ لسه المفروض تشيل <b class="num">${fmt(o.reserveToDo)}</b> للمواعيد الشهر ده — مش متخصومة من الحساب لحد ما تشيلها فعلًا.</div>` : ''}
     <div class="plan-line"><span>🧺 استوك البيت${o.isCurrent && o.houseToBuy > 0.5 ? `<div class="muted" style="font-size:11.5px">اتصرف ${fmt(o.houseSpent)} + قايمة الشراء ${fmt(o.houseToBuy)}</div>` : ''}</span><b class="num">− ${fmt(o.houseReserved)}</b></div>
     ${o.lent > 0.5 ? `<div class="plan-line"><span>🤝 سلّفت حد</span><b class="num">− ${fmt(o.lent)}</b></div>` : ''}
-    ${o.eventSpent > 0.5 ? `<div class="plan-line"><span>🎂 اتصرف على مناسبات</span><b class="num">− ${fmt(o.eventSpent)}</b></div>` : ''}
     ${o.isCurrent && o.cashKnown && o.incPending > 0.5 ? `<div class="plan-line"><span>💰 دخل لسه ما نزلش<div class="muted" style="font-size:11.5px">مش بيتحسب لحد ما يوصل</div></span><b class="num">− ${fmt(o.incPending)}</b></div>` : ''}
     ${o.isCurrent && o.cashKnown && Math.abs(o.unrecorded) >= 1 ? `<div class="plan-line"><span>⚖️ ${o.unrecorded < 0 ? 'فلوس خرجت ومش متسجلة' : 'فلوس زيادة عن المتسجل'}<div class="muted" style="font-size:11.5px; line-height:1.6">الفرق بين الحساب والخزنة (جرد الفلوس ${dayLabel(o.cashLast.date)})${o.unrecorded < 0 ? ' — مصاريف ما اتسجلتش، أو اتصرفت قبل ما تبدأ تسجّل' : ' — غالبًا فاضلة من الشهر اللي فات'}</div></span><b class="num ${o.unrecorded < 0 ? 'neg' : 'pos'}">${o.unrecorded < 0 ? '− ' : '+ '}${fmt(Math.abs(o.unrecorded))}</b></div>` : ''}
     <div class="plan-line" style="border-bottom:0"><span>🛒 <b>متاح للمصروف اليومي</b></span><b class="num ${o.varAvail < 0 ? 'neg' : ''}">${fmt(o.varAvail)}</b></div>
@@ -1985,6 +1992,7 @@ const insightHtml = a => `<div class="alert ${a[0]}"><span class="ic">${a[1]}</s
 function outflowRows(o){
   const rows = [];
   if(o.billPaid) rows.push({k:'bill', name:'📋 الالتزامات', v:o.billPaid});
+  if(o.duePaid > 0) rows.push({k:'due', name:'📅 مواعيد سداد اتدفعت', v:o.duePaid});
   if(o.debtPaid) rows.push({k:'debt', name:'💳 أقساط الديون', v:o.debtPaid});
   if(o.saved > 0) rows.push({k:'save', name:'🏦 التحويش', v:o.saved});
   if(o.reserveNet > 0) rows.push({k:'reserve', name:'📥 اتشال لمواعيد السداد', v:o.reserveNet});
@@ -1997,10 +2005,12 @@ function outflowRows(o){
 function firstDays(o, n){
   const end = addDays(o.r.start, n - 1), T = o.T.filter(t => t.date <= end);
   const s_ = type => sum(T.filter(t => t.type === type), t => t.amount);
-  return {T, billPaid:s_('bill'), debtPaid:s_('debt'), saved:s_('save'), reserveNet:s_('reserve'), lent:s_('lend'), outActual:s_('bill') + s_('debt') + s_('save') + s_('reserve') + s_('lend') + s_('exp')};
+  const dueP = sum(T.filter(t => t.type === 'bill' && t.dueId), t => t.amount);
+  return {T, billPaid:s_('bill') - dueP, duePaid:dueP, debtPaid:s_('debt'), saved:s_('save'), reserveNet:s_('reserve'), lent:s_('lend'), outActual:s_('bill') + s_('debt') + s_('save') + s_('reserve') + s_('lend') + s_('exp')};
 }
 function rowVal(o, k){
   if(k === 'bill') return o.billPaid;
+  if(k === 'due') return o.duePaid || 0;
   if(k === 'debt') return o.debtPaid;
   if(k === 'save') return Math.max(0, o.saved);
   if(k === 'reserve') return Math.max(0, o.reserveNet || 0);

@@ -566,6 +566,18 @@ await test('جرد الفلوس بعد جرد قديم (اتعمل بالطري�
   assert.deepEqual(await ev(page, () => [cashBalance().value, totalReserved(), S.tx.filter(t => t.type === 'exp').length]), [3088, 5000, 0]);
 });
 
+await test('دفع ميعاد من المحجوز: بيظهر في سطر المواعيد مش في الالتزامات الثابتة', async page => {
+  await ev(page, () => { S.bills.push({ id: 'b', name: 'كهربا', amount: 1000, dueDay: 5 });
+    S.dues.push({ id: 'u', name: 'سلفة', amount: 8000, baseAmount: 8000, date: '2026-12-01', repeat: 0 });
+    S.tx.push({ id: 'r', ts: 1, type: 'reserve', dueId: 'u', dueDate: '2026-12-01', amount: 8000, date: '2026-10-05' }); save(); payDue('u'); });
+  await fill(page, 'amount', 4000); await submit(page);
+  const r = await ev(page, () => { const o = summary(VIEW); ACT.tab({ tab: 'home' });
+    const line = [...document.querySelectorAll('.plan-line')].find(el => el.textContent.includes('مواعيد السداد'));
+    return [o.billPlanned, o.duePaid, o.reservePlanned, line && line.querySelector('b.num').textContent.replace(/[^\d,]/g, '')]; });
+  // الالتزامات الثابتة = الكهربا بس، وسطر المواعيد = 4000 اتدفعوا + 4000 لسه محجوزين
+  assert.deepEqual(r, [1000, 4000, 4000, '8,000']);
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });
