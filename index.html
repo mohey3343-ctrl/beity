@@ -2870,13 +2870,15 @@ function payDue(id){
   const spentSoFar = ev ? Math.max(0, (d.baseAmount || d.amount) - d.amount) : 0;
   const evChoice = ev ? `<div class="note" style="margin:-2px 0 10px">${spentSoFar > 0 ? `اتصرف عليها قبل كده <b class="num">${fmt(spentSoFar)}</b> · ` : ''}فاضل في ميزانيتها <b class="num">${fmt(d.amount)}</b></div>
     <div class="seg" style="margin-bottom:6px"><label style="flex:1"><input type="radio" name="evdone" value="0" checked style="display:none"><span class="evopt">لسه هكمل صرف عليها</span></label><label style="flex:1"><input type="radio" name="evdone" value="1" style="display:none"><span class="evopt">خلصت — اقفلها</span></label></div>
-    <div class="muted" data-evhint style="margin-bottom:10px">الميزانية هتفضل مفتوحة بالباقي، وتكمّل تسجّل عليها.</div>` : '';
+    <div class="muted" data-evhint style="margin-bottom:10px">الميزانية هتفضل مفتوحة بالباقي، وتكمّل تسجّل عليها.</div>
+    <label class="fld"><span>التصنيف</span><select name="cat">${S.cats.filter(c => c.id !== 'house').map(c => `<option value="${c.id}" ${(d.cat || 'gifts') === c.id ? 'selected' : ''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></label>
+    ${Fd.text('note', 'اشتريت إيه؟ (اختياري)', '', 'placeholder="مثلًا: تورتة، هدية، زينة"')}` : '';
   openSheet((ev ? 'صرفت على: ' : 'دفعت: ') + dueName(d), `${Fd.num('amount', ev ? 'صرفت كام المرة دي' : 'المبلغ اللي اتدفع', ev ? '' : d.amount, 'autofocus', !ev && res > 0 ? `منهم <b class="num">${fmt(res)}</b> كانوا محجوزين` : '')}${evChoice}${Fd.date('date', 'التاريخ', defaultDate())}${Fd.foot('سجّل')}`, v => {
     const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
     const date = v.date || todayS(), ts = Date.now(), full = ev ? (v.evdone === '1' || a >= d.amount - 1) : a >= d.amount - 1;
     // الدفعة بتفتكر الميعاد كان عامل إزاي، عشان لو اتمسحت من اليومية يرجع زي ما كان
     const duePrev = {date:d.date, amount:d.amount, paidOn:d.paidOn || null}, payId = uid();
-    if(ev) S.tx.push({id:payId, ts, type:'exp', cat:d.cat || 'gifts', dueId:d.id, amount:a, note:d.name, date, duePrev});
+    if(ev) S.tx.push({id:payId, ts, type:'exp', cat:v.cat || d.cat || 'gifts', dueId:d.id, amount:a, note:[d.name, (v.note || '').trim()].filter(Boolean).join(' — '), date, duePrev});
     else S.tx.push({id:payId, ts, type:d.debtId ? 'debt' : 'bill', debtId:d.debtId, dueId:d.id, amount:a, note:dueName(d), date, duePrev});
     const rel = full ? res : Math.min(res, a);
     if(rel > 0) S.tx.push({id:uid(), ts:ts + 1, type:'reserve', dueId:d.id, dueDate:d.date, amount:-rel, note:'', date, pair:payId});
