@@ -557,6 +557,15 @@ await test('جرد الفلوس: بتكتب الخزنة كلها (شامل ال
   assert.deepEqual(await ev(page, () => [cashBalance().value, totalReserved()]), [6500, 3000]);
 });
 
+await test('جرد الفلوس بعد جرد قديم (اتعمل بالطريقة القديمة): ما يسجّلش المحجوز كمصاريف', async page => {
+  await ev(page, () => { S.dues.push({ id: 'u', name: 'سلفة', amount: 8000, baseAmount: 8000, date: '2026-12-01', repeat: 0 });
+    S.tx.push({ id: 'r', ts: 1, type: 'reserve', dueId: 'u', dueDate: '2026-12-01', amount: 5000, date: '2026-10-05' });
+    S.cashCounts.push({ id: 'old', ts: 2, date: '2026-10-08', amount: 8088 });   // جرد قديم: كتب الخزنة كلها
+    save(); cashCount(); });
+  await fill(page, 'amount', 8088); await submit(page);
+  assert.deepEqual(await ev(page, () => [cashBalance().value, totalReserved(), S.tx.filter(t => t.type === 'exp').length]), [3088, 5000, 0]);
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });

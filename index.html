@@ -504,7 +504,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-19 · 18:40';
+const APP_VER = '2026-10-19 · 19:10';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -3101,7 +3101,10 @@ function cashCount(){
     if(!need(entries.length, 'اكتب المبلغ')) return false;
     const neg = entries.find(e => e.amount < -0.5);
     if(neg && !confirm(`كتبت ${fmt(neg.total)} بس المحجوز للمواعيد ${fmt(neg.x.res)} — يعني اتصرف من المحجوز ${fmt(-neg.amount)}. أكمّل؟`)) return false;
-    const ts = Date.now(), short = entries.filter(e => e.x.known && e.x.value - e.amount > 1), over = entries.filter(e => e.x.known && e.amount - e.x.value > 1);
+    // الجرد اللي قبله لو اتعمل بالطريقة القديمة (من غير "total") مش مضمون إنه كان من غير المحجوز،
+    // فما نقارنش بيه ولا نسجّل "مصاريف ما اتسجلتش" — الجرد الجديد بيظبط الرصيد وخلاص
+    const trusted = e => e.x.known && e.x.last && e.x.last.total != null;
+    const ts = Date.now(), short = entries.filter(e => trusted(e) && e.x.value - e.amount > 1), over = entries.filter(e => trusted(e) && e.amount - e.x.value > 1);
     const shortSum = sum(short, e => e.x.value - e.amount);
     if(short.length && confirm(`فيه ${fmt(shortSum)} ج أقل من المتسجل — غالبًا مصاريف ما اتسجلتش.\nأسجّلهم كمصروف "متنوع" عشان الحسابات تتظبط؟`))
       short.forEach((e, i) => S.tx.push({id:uid(), ts:ts + i, type:'exp', cat:'other', amount:Math.round(e.x.value - e.amount), note:'فرق جرد الفلوس — مصاريف ما اتسجلتش', date:todayS(), walletId:e.x.w.id}));
