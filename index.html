@@ -3070,32 +3070,44 @@ function setCycleDay(d){
 }
 
 /* ---- جرد الفلوس ---- */
+/* المحجوز للمواعيد جوه كل محفظة (بيتشال من الرصيد، بس فلوسه لسه في الخزنة) */
+function reservedIn(w){
+  if(S.wallets.length < 2) return Math.max(0, totalReserved());
+  const act = new Set(activeDues().map(d => d.id));
+  return Math.max(0, sum(S.tx.filter(t => t.type === 'reserve' && act.has(t.dueId) && walletOf(t) === w.id), t => t.amount));
+}
+/* جرد الفلوس: بتكتب كل اللي في الخزنة (شامل المحجوز للمواعيد)، والبرنامج بيطرح المحجوز لوحده */
 function cashCount(){
-  const B = cashBalance(), multi = S.wallets.length > 1;
-  const resNote = totalReserved() > 0 ? `<br>⚠️ من غير الـ <b class="num">${fmt(totalReserved())}</b> اللي شايلهم لمواعيد السداد.` : '';
+  const B = cashBalance(), multi = S.wallets.length > 1, resAll = Math.max(0, totalReserved());
+  const W = B.wallets.map(x => Object.assign({}, x, {res:reservedIn(x.w), total:x.value + reservedIn(x.w)}));
+  const resNote = resAll > 0 ? `<br>اكتب <b>كل</b> الفلوس حتى اللي شايلها للمواعيد — البرنامج هيطرح الـ <b class="num">${fmt(resAll)}</b> المحجوزين لوحده.` : '';
   let body;
   if(multi){
     body = `<div class="muted" style="line-height:1.8; margin-bottom:8px">اكتب اللي في كل محفظة دلوقتي (سيب الفاضي لو مش هتجرده).${resNote}</div>` +
-      B.wallets.map(x => `<div class="jard-row"><div class="nm">${x.w.icon} ${esc(x.w.name)}${x.known ? `<small>المفروض ${fmt(x.value)}</small>` : ''}</div><input name="cw_${x.w.id}" inputmode="decimal" placeholder="${x.known ? fmt(x.value) : '—'}"></div>`).join('');
+      W.map(x => `<div class="jard-row"><div class="nm">${x.w.icon} ${esc(x.w.name)}${x.known ? `<small>المفروض ${fmt(x.total)}${x.res > 0 ? ` (منهم محجوز ${fmt(x.res)})` : ''}</small>` : ''}</div><input name="cw_${x.w.id}" inputmode="decimal" placeholder="${x.known ? fmt(x.total) : '—'}"></div>`).join('');
   }else{
-    const hint = B.known ? `حسب اللي متسجل المفروض معاك <b class="num">${fmt(B.value)}</b> ج.` : 'اجمع الكاش اللي معاك + اللي في البنك أو المحفظة (من غير فلوس التحويش لو حاططها لوحدها).';
-    body = Fd.num('amount', 'معاك كام فلوس دلوقتي؟', '', 'autofocus', hint + resNote);
+    const x = W[0], hint = B.known ? `حسب اللي متسجل المفروض معاك <b class="num">${fmt(x.total)}</b> ج${x.res > 0 ? ` (منهم <span class="num">${fmt(x.res)}</span> محجوزين للمواعيد)` : ''}.` : 'اجمع الكاش اللي معاك + اللي في البنك أو المحفظة (من غير فلوس التحويش لو حاططها لوحدها).';
+    body = Fd.num('amount', 'معاك كام فلوس دلوقتي؟ (الكل)', '', 'autofocus', hint + resNote);
   }
   body += Fd.text('note', 'ملاحظة (اختياري)', '') + Fd.foot('حفظ الرصيد');
   openSheet('جرد الفلوس', body, v => {
-    const entries = multi
-      ? B.wallets.filter(x => String(v['cw_' + x.w.id] || '').trim() !== '').map(x => ({x, amount:num(v['cw_' + x.w.id])}))
-      : (String(v.amount).trim() !== '' ? [{x:B.wallets[0], amount:num(v.amount)}] : []);
+    // اللي اتكتب = الخزنة كلها؛ اللي بيتسجّل = بعد طرح المحجوز (عشان الرصيد يفضل "من غير المحجوز")
+    const entries = (multi
+      ? W.filter(x => String(v['cw_' + x.w.id] || '').trim() !== '').map(x => ({x, total:num(v['cw_' + x.w.id])}))
+      : (String(v.amount).trim() !== '' ? [{x:W[0], total:num(v.amount)}] : [])).map(e => Object.assign(e, {amount:e.total - e.x.res}));
     if(!need(entries.length, 'اكتب المبلغ')) return false;
+    const neg = entries.find(e => e.amount < -0.5);
+    if(neg && !confirm(`كتبت ${fmt(neg.total)} بس المحجوز للمواعيد ${fmt(neg.x.res)} — يعني اتصرف من المحجوز ${fmt(-neg.amount)}. أكمّل؟`)) return false;
     const ts = Date.now(), short = entries.filter(e => e.x.known && e.x.value - e.amount > 1), over = entries.filter(e => e.x.known && e.amount - e.x.value > 1);
     const shortSum = sum(short, e => e.x.value - e.amount);
     if(short.length && confirm(`فيه ${fmt(shortSum)} ج أقل من المتسجل — غالبًا مصاريف ما اتسجلتش.\nأسجّلهم كمصروف "متنوع" عشان الحسابات تتظبط؟`))
       short.forEach((e, i) => S.tx.push({id:uid(), ts:ts + i, type:'exp', cat:'other', amount:Math.round(e.x.value - e.amount), note:'فرق جرد الفلوس — مصاريف ما اتسجلتش', date:todayS(), walletId:e.x.w.id}));
     S.cashCounts = S.cashCounts || [];
-    entries.forEach((e, i) => S.cashCounts.push({id:uid(), ts:ts + 10 + i, date:todayS(), amount:e.amount, walletId:e.x.w.id, note:v.note.trim()}));
+    entries.forEach((e, i) => S.cashCounts.push({id:uid(), ts:ts + 10 + i, date:todayS(), amount:e.amount, total:e.total, walletId:e.x.w.id, note:v.note.trim()}));
     save();
-    if(over.length) toast(`معاك ${fmt(sum(over, e => e.amount - e.x.value))} ج زيادة عن المتسجل — لو دخل فلوس سجّلها كدخل إضافي`);
-    else if(!short.length) toast('اتسجّل الرصيد ✔');
+    const tot = sum(entries, e => e.total), free = sum(entries, e => e.amount), res = tot - free;
+    if(over.length) toast(`معاك ${fmt(sum(over, e => e.amount - e.x.value))} ج زيادة عن المتسجل — لو دخل فلوس سجّلها كدخل إضافي`, false, 6000);
+    else if(!short.length) toast(res > 0.5 ? `اتسجّل ✔ في الخزنة ${fmt(tot)} — منهم ${fmt(res)} محجوز للمواعيد، ورصيدك ${fmt(free)}` : 'اتسجّل الرصيد ✔', false, res > 0.5 ? 6000 : 0);
   });
 }
 

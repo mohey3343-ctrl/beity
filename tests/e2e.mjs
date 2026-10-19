@@ -545,6 +545,18 @@ await test('مناسبة: تصرف عليها على كذا مرة ("لسه هك
   assert.deepEqual(s2, [2000, '2027-10-31', 0, 8300]);
 });
 
+await test('جرد الفلوس: بتكتب الخزنة كلها (شامل المحجوز) والبرنامج بيطرح المحجوز لوحده', async page => {
+  await ev(page, () => { S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });
+    S.dues.push({ id: 'u', name: 'مدرسة', amount: 5000, baseAmount: 5000, date: '2026-12-15', repeat: 0 });
+    S.tx.push({ id: 'r', ts: 2, type: 'reserve', dueId: 'u', dueDate: '2026-12-15', amount: 3000, date: '2026-10-08' }); save(); cashCount(); });
+  assert.match(await page.textContent('#sheetBody'), /المفروض معاك 10,000/);
+  await fill(page, 'amount', 10000); await submit(page);
+  assert.deepEqual(await ev(page, () => [cashBalance().value, totalReserved(), S.tx.filter(t => t.type === 'exp').length]), [7000, 3000, 0]);
+  // الخزنة فيها 9500 بس → 500 مصاريف ما اتسجلتش
+  await ev(page, () => cashCount()); await fill(page, 'amount', 9500); await submit(page);
+  assert.deepEqual(await ev(page, () => [cashBalance().value, totalReserved()]), [6500, 3000]);
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });
