@@ -513,7 +513,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-20 · 10:00';
+const APP_VER = '2026-10-20 · 14:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -837,14 +837,17 @@ function dailyRateRaw(it){
   if(it.monthly > 0) return {v:it.monthly / 30, src:'manual'};
   return {v:0, src:'none'};
 }
-/* الموجود المتوقع دلوقتي = آخر جرد + اللي اتشرى بعده − الاستهلاك من ساعتها */
+/* الموجود المتوقع دلوقتي = آخر جرد + اللي اتشرى بعده − الاستهلاك من ساعتها.
+   بنمشي بالترتيب: الاستوك ما بينزلش تحت الصفر، فلو كان خلص قبل الشراء
+   (العيش مثلًا) اللي اشتريته النهارده بيبان كامل وما يتاكلش في استهلاك أيام كان فيها خلصان. */
 function estStockRaw(it){
   const cs = itemCounts(it);
   if(!cs.length) return null;
-  const last = cs[cs.length - 1], lk = evKey(last);
-  const bought = sum(itemBuys(it).filter(t => evKey(t) > lk), t => t.qty);
-  const days = evGap(last, nowEv());   // من وقت آخر جرد بالساعة
-  return Math.max(0, last.qty + bought - dailyRate(it).v * days);
+  const last = cs[cs.length - 1], lk = evKey(last), r = dailyRate(it).v;
+  const buys = itemBuys(it).filter(t => evKey(t) > lk).sort((a, b) => evKey(a) < evKey(b) ? -1 : 1);
+  let s = last.qty, at = last;
+  for(const t of buys){ s = Math.max(0, s - r * evGap(at, t)) + t.qty; at = t; }
+  return Math.max(0, s - r * evGap(at, nowEv()));   // من آخر حركة لدلوقتي بالساعة
 }
 function daysLeft(it){
   const r = dailyRate(it).v, e = estStock(it);

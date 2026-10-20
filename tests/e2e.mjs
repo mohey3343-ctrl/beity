@@ -578,6 +578,23 @@ await test('دفع ميعاد من المحجوز: بيظهر في سطر الم
   assert.deepEqual(r, [1000, 4000, 4000, '8,000']);
 });
 
+await test('العيش خلص من أيام واشتريت كيس النهارده: المتوقع = الكيس، مش صفر', async page => {
+  const r = await ev(page, () => {
+    S.items.push({ id: 'b', name: 'عيش', group: 'تموين', base: 'PCS', pu: 'كيس', pf: 7, monthly: 56, price: 1.43 });
+    // جرد 7 رغيفات من 10 أيام — بمعدل 56 في الشهر كانوا يخلصوا في أقل من 4 أيام
+    S.counts.push({ id: 'c', ts: new Date('2026-09-29T09:00:00').getTime(), itemId: 'b', date: '2026-09-29', qty: 7 });
+    S.tx.push({ id: 't', ts: Date.now(), type: 'exp', cat: 'house', itemId: 'b', qty: 7, amount: 10, date: todayS() });
+    save(); const it = byId(S.items, 'b');
+    return [+estStock(it).toFixed(2), shopList().find(x => x.it.id === 'b').have.toFixed(2)];
+  });
+  assert.deepEqual(r, [7, '7.00']);
+  // ولو الشراء من يومين: الكيس يتحسب من يوم الشراء (7 − يومين استهلاك)
+  const r2 = await ev(page, () => { const t = byId(S.tx, 't'); t.date = addDays(todayS(), -2); t.ts = new Date(t.date + 'T09:00:00').getTime(); save();
+    return +estStock(byId(S.items, 'b')).toFixed(2); });
+  const left = 7 - 56 / 30 * ((new Date('2026-10-09T10:00:00') - new Date('2026-10-07T09:00:00')) / 864e5);
+  assert.ok(Math.abs(r2 - left) < 0.5, r2 + ' vs ' + left);
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });
