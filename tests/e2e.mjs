@@ -624,6 +624,15 @@ await test('العيش خلص من أيام واشتريت كيس النهارد
   assert.ok(Math.abs(r2 - left) < 0.5, r2 + ' vs ' + left);
 });
 
+await test('صنف ما اتجردش خالص واشتريته: المتوقع = اللي اشتريته ناقص الاستهلاك من يوم الشراء', async page => {
+  const r = await ev(page, () => {
+    S.items.push({ id: 'rm', name: 'رمان', group: 'خضار وفاكهة', base: 'KG', pu: 'كيس', pf: 1, monthly: 3, price: 34 });
+    S.tx.push({ id: 'b', ts: new Date('2026-10-08T10:00:00').getTime(), type: 'exp', cat: 'house', itemId: 'rm', qty: 1.74, amount: 60, date: '2026-10-08' });
+    save(); return [+estStock(byId(S.items, 'rm')).toFixed(2)];
+  });
+  assert.equal(r[0], +(1.74 - 3 / 30).toFixed(2));   // يوم استهلاك
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });
