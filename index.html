@@ -513,7 +513,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-20 · 14:00';
+const APP_VER = '2026-10-20 · 16:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -664,7 +664,7 @@ let S;
 function load(){
   try{
     const raw = localStorage.getItem(KEY);
-    if(raw){ S = migrate(JSON.parse(raw)); LASTJ = null; stampChanges(); return; }
+    if(raw){ S = migrate(JSON.parse(raw)); syncEvents(); LASTJ = null; stampChanges(); return; }
   }catch(e){}
   S = fresh(); LASTJ = null; stampChanges();
 }
@@ -702,6 +702,7 @@ function stampChanges(){
   LASTJ = next;
 }
 function persist(){
+  syncEvents();
   EPOCH++;
   stampChanges();
   takeSnapshot();
@@ -907,6 +908,17 @@ function duePerMonth(d, p){
   return Math.max(0, d.amount - before) / n;
 }
 function totalReserved(){ return sum(activeDues(), d => Math.max(0, dueReserved(d))); }
+/* المناسبة: اتصرف عليها كام في الدورة الحالية — من الحركات نفسها (كل دفعة فاكرة ميعادها) */
+const evPays = d => S.tx.filter(t => t.type === 'exp' && t.dueId === d.id);
+const evSpent = d => sum(evPays(d).filter(t => t.duePrev && t.duePrev.date === d.date), t => t.amount);
+/* الفاضل في ميزانية المناسبة = الميزانية − اللي اتصرف (بيتحسب من جديد بعد أي تعديل أو مسح أو ربط) */
+function syncEvents(){
+  (S.dues || []).forEach(d => {
+    if(d.kind !== 'event' || d.paidOn || !(d.baseAmount > 0) || !evPays(d).length) return;
+    const left = Math.max(0, Math.round((d.baseAmount - evSpent(d)) * 100) / 100);
+    if(d.amount !== left) d.amount = left;
+  });
+}
 function nextDueOfDebt(debt){ return activeDues().filter(d => d.debtId === debt.id).sort((a, b) => a.date < b.date ? -1 : 1)[0] || null; }
 
 /* ---- فلوس ليا عند الناس ----
@@ -1764,7 +1776,9 @@ function duesHtml(){
       <div class="li-main"><div class="li-title">${esc(dueName(d))} ${d.repeat ? `<span class="tag blue">${REPEATS[d.repeat] || ''}</span>` : ''}</div>
         <div class="li-sub">${dayLabel(d.date)} ${pd(d.date).getFullYear() !== new Date().getFullYear() ? pd(d.date).getFullYear() : ''} · ${left < 0 ? `<span class="neg">متأخر ${-left} يوم</span>` : left === 0 ? '<b>النهاردة</b>' : 'بعد <b class="num">' + left + '</b> يوم'}</div>
         <div class="bar ${ready ? 'good' : left <= 14 ? 'warn' : ''}" style="margin-top:6px"><i style="width:${pct}%"></i></div>
-        <div class="li-sub">جاهز <span class="num">${fmt(res)}</span> من <span class="num">${fmt(d.amount)}</span>${ready ? '' : ` · اشيل <b class="num">${fmt(l ? l.per : d.amount - res)}</b> في الشهر${remThis > 1 && remThis < (l ? l.per : 0) - 1 ? ` (فاضل الشهر ده <span class="num">${fmt(remThis)}</span>)` : ''}`}</div></div>
+        ${d.kind === 'event' && evSpent(d) > 0 ? `<div class="li-sub">اتصرف <span class="num">${fmt(evSpent(d))}</span> من <span class="num">${fmt(d.baseAmount)}</span> · فاضل <span class="num">${fmt(d.amount)}</span></div>` : ''}
+        <div class="li-sub">جاهز <span class="num">${fmt(Math.min(res, d.amount))}</span> من <span class="num">${fmt(d.amount)}</span>${ready ? '' : ` · اشيل <b class="num">${fmt(l ? l.per : d.amount - res)}</b> في الشهر${remThis > 1 && remThis < (l ? l.per : 0) - 1 ? ` (فاضل الشهر ده <span class="num">${fmt(remThis)}</span>)` : ''}`}</div>
+        ${res > d.amount + 1 ? `<div class="li-sub" style="margin-top:6px; display:flex; align-items:center; gap:8px; flex-wrap:wrap"><span class="neg">شايل زيادة <span class="num">${fmt(res - d.amount)}</span></span><button class="btn sm" data-act="unreserveExtra" data-id="${d.id}">رجّعها لرصيدك</button></div>` : ''}</div>
       <div class="li-end" style="display:flex;flex-direction:column;gap:5px">${ready ? '' : `<button class="btn sm good" data-act="reserveDue" data-id="${d.id}">شلت</button>`}<button class="btn sm dark" data-act="payDue" data-id="${d.id}">${d.kind === 'event' ? 'صرفت' : 'دفعت'}</button></div></div>`;
   });
   h += '</div>';
@@ -2438,6 +2452,11 @@ function quickAdd(preset){
   }
   body += `<label class="fld"><input class="amount" name="amount" inputmode="decimal" placeholder="0" value="${t ? Math.abs(t.amount) : ''}" autofocus></label>`;
   if(type === 'exp' && !(t && t.itemId)) body += `<div class="catpick">${cats}</div>`;
+  // مصروف اتسجل عادي وهو تبع مناسبة (أو العكس): تربطه بميزانيتها — بيتطرح من الفاضل فيها ومن المحجوز لها
+  const evNow = t && t.dueId ? byId(S.dues || [], t.dueId) : null;
+  const evLinkable = t && t.type === 'exp' && !t.itemId && (!t.dueId || (evNow && evNow.kind === 'event' && !evNow.paidOn && t.duePrev && t.duePrev.date === evNow.date));
+  const evOpen = (S.dues || []).filter(d => d.kind === 'event' && !d.paidOn);
+  if(evLinkable && evOpen.length) body += `<label class="fld"><span>🎂 من ميزانية مناسبة؟</span><select name="ev"><option value="">لأ — مصروف عادي</option>${evOpen.map(d => `<option value="${d.id}" ${t.dueId === d.id ? 'selected' : ''}>${esc(d.name)} (فاضل ${fmt(d.amount)})</option>`).join('')}</select></label>`;
   const eit = t && t.itemId ? byId(S.items, t.itemId) : null;
   // وحدات التعديل: الوحدة اللي اتشرى بيها فعلًا (لو متسجلة) + وحدات الصنف + المقياس (لتر/كيلو/قطعة)
   let EU = [];
@@ -2470,6 +2489,15 @@ function quickAdd(preset){
       t.note = v.note.trim(); t.date = v.date || t.date;
       if(v.wallet) t.walletId = v.wallet;
       if(v.cat) t.cat = v.cat;
+      if(evLinkable && v.ev !== undefined && v.ev !== (t.dueId || '')){
+        if(t.dueId){ S.tx = S.tx.filter(x => x.pair !== t.id); delete t.dueId; delete t.duePrev; }
+        const du = v.ev ? byId(S.dues, v.ev) : null;
+        if(du){
+          t.dueId = du.id; t.duePrev = {date:du.date, amount:du.amount, paidOn:null};
+          const rel = Math.min(Math.max(0, dueReserved(du)), t.amount);
+          if(rel > 0) S.tx.push({id:uid(), ts:Date.now(), type:'reserve', dueId:du.id, dueDate:du.date, amount:-rel, note:'', date:t.date, pair:t.id, walletId:t.walletId});
+        }
+      }
       if(t.itemId && v.qty !== undefined){
         const uu = eit ? EU[+v.qu] || EU[eui] : null;
         t.qty = num(v.qty) * (uu ? uu.f : 1);
@@ -2880,7 +2908,9 @@ function eventForm(id){
   if(!d) body += Fd.num('reserved', 'شايل له كام لحد دلوقتي (اختياري)', '');
   if(d){
     const res = Math.max(0, dueReserved(d));
-    body += `<div class="note">الجاي: <b>${dayLabel(d.date)} ${pd(d.date).getFullYear()}</b> · جاهز <b class="num">${fmt(res)}</b> من <b class="num">${fmt(d.amount)}</b> · اشيل <b class="num">${fmt(duePerMonth(d, periodOf(todayS())))}</b> في الشهر</div>`;
+    const sp = evSpent(d);
+    body += `<div class="note">الجاي: <b>${dayLabel(d.date)} ${pd(d.date).getFullYear()}</b>${sp > 0 ? ` · اتصرف عليها <b class="num">${fmt(sp)}</b> · فاضل <b class="num">${fmt(d.amount)}</b>` : ''} · جاهز <b class="num">${fmt(res)}</b> من <b class="num">${fmt(d.amount)}</b>${res > d.amount + 1 ? '' : ` · اشيل <b class="num">${fmt(duePerMonth(d, periodOf(todayS())))}</b> في الشهر`}
+      ${sp > 0 ? '<br><span class="muted">"هتصرف كام" = الميزانية كلها — اللي اتصرف بيتطرح منها لوحده.</span>' : ''}</div>`;
   }
   body += Fd.foot(d ? 'حفظ' : 'إضافة', d ? {act:'delDue', id:d.id} : null);
   openSheet(d ? '🎂 ' + d.name : '🎂 عيد ميلاد / مناسبة', body, v => {
@@ -2893,9 +2923,12 @@ function eventForm(id){
     if(repeat) while(date < todayS()) date = addMonthsDate(date, repeat, dom);   // أقرب ميعاد جاي
     else if(date < todayS() && !confirm('التاريخ ده عدّى — متأكد؟')) return false;
     const o = d || {id:uid(), createdAt:todayS(), kind:'event'};
-    const oldDate = o.date;
-    Object.assign(o, {name:v.name.trim(), amount:num(v.amount), baseAmount:num(v.amount), date, repeat, cat:v.cat || 'gifts', dom});
-    if(d && oldDate && oldDate !== o.date) S.tx.forEach(t => { if(t.type === 'reserve' && t.dueId === o.id && t.dueDate === oldDate) t.dueDate = o.date; });
+    const oldDate = o.date, spent = d ? evSpent(d) : 0;   // اللي اتصرف عليها قبل كده ما يرجعش يتحسب من الأول
+    Object.assign(o, {name:v.name.trim(), amount:Math.max(0, num(v.amount) - spent), baseAmount:num(v.amount), date, repeat, cat:v.cat || 'gifts', dom});
+    if(d && oldDate && oldDate !== o.date) S.tx.forEach(t => {
+      if(t.type === 'reserve' && t.dueId === o.id && t.dueDate === oldDate) t.dueDate = o.date;
+      if(t.type === 'exp' && t.dueId === o.id && t.duePrev && t.duePrev.date === oldDate) t.duePrev.date = o.date;
+    });
     if(!d){
       S.dues = S.dues || []; S.dues.push(o);
       const r0 = num(v.reserved);
@@ -3450,6 +3483,14 @@ const ACT = {
   },
   dueForDebt:(d) => dueForm(null, {debtId:d.id, amount:Math.max(0, debtRemaining(byId(S.debts, d.id)) - sum(activeDues().filter(x => x.debtId === d.id), x => x.amount))}),
   reserveDue:(d) => reserveDue(d.id),
+  // شايل للميعاد أكتر من الفاضل فيه (المناسبة اتصرف عليها، أو المبلغ قلّ): الزيادة ترجع لرصيدك الحر
+  unreserveExtra:(d) => {
+    const du = byId(S.dues, d.id); if(!du) return;
+    const extra = Math.round((dueReserved(du) - du.amount) * 100) / 100; if(extra <= 0.5) return;
+    const lastRes = S.tx.filter(t => t.type === 'reserve' && t.dueId === du.id && t.amount > 0).pop();
+    S.tx.push({id:uid(), ts:Date.now(), type:'reserve', dueId:du.id, dueDate:du.date, amount:-extra, note:'رجّعت الزيادة', date:todayS(), walletId:lastRes && lastRes.walletId});
+    save(); toast(`رجع ${fmt(extra)} لرصيدك الحر`);
+  },
   payDue:(d) => payDue(d.id),
   goDues:() => { TAB = 'bills'; SUB.bills = 'dues'; render(); window.scrollTo(0, 0); },
   delDue:(d) => {

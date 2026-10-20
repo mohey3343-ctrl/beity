@@ -545,6 +545,35 @@ await test('مناسبة: تصرف عليها على كذا مرة ("لسه هك
   assert.deepEqual(s2, [2000, '2027-10-31', 0, 8300]);
 });
 
+await test('مناسبة: تعديلها بعد ما صرفت عليها ما يرجّعش الميزانية كاملة، والمحجوز الزيادة يرجع، وتربط مصروف قديم بيها', async page => {
+  const st = () => ev(page, () => { const d = byId(S.dues, 'b'); return [d.amount, Math.round(dueReserved(d)), Math.round(cashBalance().value)]; });
+  await ev(page, () => { S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });
+    S.dues.push({ id: 'b', name: 'عيد ميلاد دودو', kind: 'event', cat: 'gifts', amount: 2000, baseAmount: 2000, date: '2026-10-31', repeat: 12, dom: 31 });
+    S.tx.push({ id: 'r', ts: 2, type: 'reserve', dueId: 'b', dueDate: '2026-10-31', amount: 1000, date: '2026-10-08' },
+      { id: 'x', ts: 3, type: 'exp', cat: 'gifts', amount: 250, note: 'طقم لدودو', date: '2026-10-08' }); save(); payDue('b'); });
+  await fill(page, 'amount', 450); await submit(page);
+  assert.deepEqual(await st(), [1550, 550, 8750]);
+  // فتحت المناسبة وحفظتها (غيرت التصنيف مثلًا): الفاضل يفضل 1550 مش يرجع 2000
+  await ev(page, () => eventForm('b')); await page.selectOption('#sheetBody [name="cat"]', 'food'); await submit(page);
+  assert.deepEqual(await st(), [1550, 550, 8750]);
+  await ev(page, () => payDue('b')); await fill(page, 'amount', 300); await submit(page);
+  assert.deepEqual(await st(), [1250, 250, 8750]);
+  // بيانات اتلخبطت قبل الإصلاح (الفاضل اترجع 1700): بيتصلح لوحده من الحركات
+  await ev(page, () => { byId(S.dues, 'b').amount = 1700; save(); });
+  assert.deepEqual(await st(), [1250, 250, 8750]);
+  // شلت أكتر من الفاضل → "شايل زيادة" وزرار يرجّعها لرصيدك
+  await ev(page, () => { S.tx.push({ id: 'r2', ts: 9, type: 'reserve', dueId: 'b', dueDate: '2026-10-31', amount: 1450, date: '2026-10-09' }); save(); ACT.tab({ tab: 'bills' }); ACT.sub({ k: 'bills', v: 'dues' }); });
+  assert.match(await page.textContent('body'), /شايل زيادة/);
+  await page.click('[data-act="unreserveExtra"]');
+  assert.deepEqual(await st(), [1250, 1250, 7750]);
+  // المصروف القديم (250 طقم) تربطه بالمناسبة من تعديله: يتطرح من فاضلها ومن المحجوز، والخزنة ما تتغيرش
+  await ev(page, () => quickAdd({ tx: byId(S.tx, 'x') })); await page.selectOption('#sheetBody [name="ev"]', 'b'); await submit(page);
+  assert.deepEqual(await st(), [1000, 1000, 8000]);
+  // وتفك الربط تاني
+  await ev(page, () => quickAdd({ tx: byId(S.tx, 'x') })); await page.selectOption('#sheetBody [name="ev"]', ''); await submit(page);
+  assert.deepEqual(await st(), [1250, 1250, 7750]);
+});
+
 await test('جرد الفلوس: بتكتب الخزنة كلها (شامل المحجوز) والبرنامج بيطرح المحجوز لوحده', async page => {
   await ev(page, () => { S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });
     S.dues.push({ id: 'u', name: 'مدرسة', amount: 5000, baseAmount: 5000, date: '2026-12-15', repeat: 0 });
