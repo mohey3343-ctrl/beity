@@ -513,7 +513,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-19 · 20:30';
+const APP_VER = '2026-10-20 · 10:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -2436,7 +2436,18 @@ function quickAdd(preset){
   body += `<label class="fld"><input class="amount" name="amount" inputmode="decimal" placeholder="0" value="${t ? Math.abs(t.amount) : ''}" autofocus></label>`;
   if(type === 'exp' && !(t && t.itemId)) body += `<div class="catpick">${cats}</div>`;
   const eit = t && t.itemId ? byId(S.items, t.itemId) : null;
-  if(t && t.itemId) body += eit ? Fd.num('qty', `الكمية (بالـ${esc(entryUnit(eit))})`, +(t.qty / packF(eit)).toFixed(3)) : Fd.num('qty', 'الكمية', t.qty);
+  // وحدات التعديل: الوحدة اللي اتشرى بيها فعلًا (لو متسجلة) + وحدات الصنف + المقياس (لتر/كيلو/قطعة)
+  let EU = [];
+  if(eit){
+    EU = itemUnits(eit).map(u => ({n:u.name, f:u.f}));
+    if(t.u && t.u.f > 0 && !EU.some(u => u.n === t.u.n && Math.abs(u.f - t.u.f) < 1e-9)) EU.unshift({n:t.u.n, f:t.u.f});
+  }
+  const eu0 = eit ? (t.u ? EU.findIndex(u => u.n === t.u.n && Math.abs(u.f - t.u.f) < 1e-9) : EU.findIndex(u => u.f === 1 && u.n === BASES[baseOf(eit)].en)) : -1;
+  const eui = eu0 >= 0 ? eu0 : EU.length - 1;
+  if(t && t.itemId) body += eit
+    ? `<div class="fld2">${Fd.num('qty', 'الكمية', +(t.qty / EU[eui].f).toFixed(3))}<label class="fld"><span>بالـ</span><select name="qu" data-prev="${eui}">${EU.map((u, i) => `<option value="${i}" data-f="${u.f}" ${i === eui ? 'selected' : ''}>${esc(u.n)}${u.f !== 1 || u.n !== BASES[baseOf(eit)].en ? ` (${fmtQ(u.f)} ${BASES[baseOf(eit)].en})` : ''}</option>`).join('')}</select></label></div>
+       <div class="muted" style="margin:-4px 0 10px">= <b class="num" data-qbase>${fmtQ(t.qty)}</b> ${BASES[baseOf(eit)].en} في الاستوك</div>`
+    : Fd.num('qty', 'الكمية', t.qty);
   if(t && t.grp){
     const g = S.tx.filter(x => x.grp === t.grp);
     if(g.length > 1) body += `<div class="note">🧾 جزء من فاتورة فيها <b class="num">${g.length}</b> حاجة بإجمالي <b class="num">${fmt(sum(g, x => x.amount))}</b> ج
@@ -2457,7 +2468,9 @@ function quickAdd(preset){
       if(v.wallet) t.walletId = v.wallet;
       if(v.cat) t.cat = v.cat;
       if(t.itemId && v.qty !== undefined){
-        t.qty = num(v.qty) * (eit ? packF(eit) : 1);
+        const uu = eit ? EU[+v.qu] || EU[eui] : null;
+        t.qty = num(v.qty) * (uu ? uu.f : 1);
+        if(uu) t.u = {n:uu.n, f:uu.f};
         // لو دي آخر مرة اشتريته، السعر يتظبط على التعديل
         const lastBuy = eit && itemBuys(eit).filter(x => x.amount > 0).sort((a, b) => evKey(a) < evKey(b) ? -1 : 1).pop();
         if(lastBuy === t && t.qty > 0) eit.price = Math.round(t.amount / t.qty * 10000) / 10000;
@@ -2619,7 +2632,8 @@ function buyItem(id){
       // الحجم ممكن يختلف من مرة للتانية (جركن 4 لتر ومرة 4.6) — بيتحسب للمرة دي بس
       f = u.base ? 1 : num(v.npf) > 0 ? num(v.npf) : u.f;
     }
-    recordBuy(it, q * f, a, v.date || todayS(), !$('#sheetBody [name="amount"]').dataset.dirty);
+    const un = v.bu === '__new' ? (v.npu || '').trim() : unitOf(it, v.bu).name;
+    recordBuy(it, q * f, a, v.date || todayS(), !$('#sheetBody [name="amount"]').dataset.dirty, {n:un, f});
     save(); toast('اتسجّل الشراء');
   });
   $('#sheetBody').dataset.item = it.id;
@@ -2698,7 +2712,7 @@ function multiAdd(preset){
     const ts = Date.now(), grp = uid();
     lines.forEach((o, i) => {
       const a = num(o.amount), it = o.cat === 'house' && o.item ? byId(S.items, o.item) : null;
-      if(it){ recordBuy(it, num(o.qty) * unitOf(it, o.unit).f, a, date); Object.assign(S.tx[S.tx.length - 1], {ts:ts + i, grp, note:it.name + (place ? ' — ' + place : '')}); }
+      if(it){ const uu = unitOf(it, o.unit); recordBuy(it, num(o.qty) * uu.f, a, date, false, {n:uu.name, f:uu.f}); Object.assign(S.tx[S.tx.length - 1], {ts:ts + i, grp, note:it.name + (place ? ' — ' + place : '')}); }
       else S.tx.push({id:uid(), ts:ts + i, grp, type:'exp', cat:o.cat || 'other', amount:a, note:[o.label.trim(), place].filter(Boolean).join(' — '), date});
     });
     save();
@@ -2709,14 +2723,15 @@ function multiAdd(preset){
   setTimeout(() => { const f = document.querySelector('#mlines [data-f="amount"]'); if(f && !$('#sheetBody').contains(document.activeElement)) f.focus(); }, 80);
 }
 
-function recordBuy(it, q, a, date, keepPrice){
+function recordBuy(it, q, a, date, keepPrice, u){
   if(a > 0){
-    S.tx.push({id:uid(), ts:Date.now(), type:'exp', cat:'house', itemId:it.id, qty:q, amount:a, note:it.name, date});
+    // u = الوحدة اللي اتشرى بيها (جركن 4 / زجاجة 0.6 …) عشان التعديل بعدين يعرضها زي ما اتسجلت
+    S.tx.push({id:uid(), ts:Date.now(), type:'exp', cat:'house', itemId:it.id, qty:q, amount:a, note:it.name, date, u});
     // السعر بيتحدّث من اللي دفعته فعلًا — إلا لو سبت المبلغ المقترح زي ما هو (تقديري)
     if(!keepPrice) it.price = Math.round(a / q * 10000) / 10000;
   }else{
     // اتشرى بس من غير مبلغ (هدية مثلًا) — نضيفه للجرد كحركة شراء بصفر
-    S.tx.push({id:uid(), ts:Date.now(), type:'exp', cat:'house', itemId:it.id, qty:q, amount:0, note:it.name, date});
+    S.tx.push({id:uid(), ts:Date.now(), type:'exp', cat:'house', itemId:it.id, qty:q, amount:0, note:it.name, date, u});
   }
 }
 function buyMany(){
@@ -2734,7 +2749,7 @@ function buyMany(){
     L.forEach(x => {
       if(!v['k_' + x.it.id]) return;
       const q = num(v['q_' + x.it.id]), a = num(v['c_' + x.it.id]);
-      if(q > 0){ recordBuy(x.it, q * packF(x.it), a, v.date || todayS(), !$(`#sheetBody [name="c_${x.it.id}"]`).dataset.dirty); n++; tot += a; }
+      if(q > 0){ recordBuy(x.it, q * packF(x.it), a, v.date || todayS(), !$(`#sheetBody [name="c_${x.it.id}"]`).dataset.dirty, {n:entryUnit(x.it), f:packF(x.it)}); n++; tot += a; }
     });
     if(!n){ toast('مفيش حاجة متعلّمة', true); return false; }
     save(); toast(`اتسجّل ${n} صنف بـ ${fmt(tot)} ج`);
@@ -3626,6 +3641,12 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const el = e.target;
+  if(el.name === 'qu' && el.closest('#sheetBody')){
+    const sel = el, fs = [...sel.options].map(o => +o.dataset.f || 1);
+    const q = $('#sheetBody [name="qty"]'), pf = fs[+sel.dataset.prev] || 1, nf = fs[+sel.value] || 1;
+    if(q && q.value.trim() !== '') q.value = +(num(q.value) * pf / nf).toFixed(3);
+    sel.dataset.prev = sel.value; return;
+  }
   if(el.name === 'evdone'){ const h = $('#sheetBody [data-evhint]'); if(h) h.textContent = el.value === '1' ? 'المناسبة هتتقفل، واللي فاضل من ميزانيتها يرجع لرصيدك.' : 'الميزانية هتفضل مفتوحة بالباقي، وتكمّل تسجّل عليها.'; return; }
   if(el.dataset && el.dataset.mp){
     const box = el.closest('.fld'), g = k => box.querySelector(`[data-mpk="${k}"]`).value, h = box.querySelector(`input[name="${el.dataset.mp}"]`);

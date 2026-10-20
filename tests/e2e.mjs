@@ -578,6 +578,26 @@ await test('دفع ميعاد من المحجوز: بيظهر في سطر الم
   assert.deepEqual(r, [1000, 4000, 4000, '8,000']);
 });
 
+await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
+  await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
+    S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });
+  await fill(page, 'qty', 1); await fill(page, 'amount', 120); await submit(page);                     // جركن
+  await ev(page, () => buyItem('sb')); await page.selectOption('#sheetBody [name="bu"]', 'alt0');
+  await fill(page, 'qty', 1); await fill(page, 'amount', 25); await submit(page);                      // زجاجة
+  assert.deepEqual(await ev(page, () => [S.tx.map(t => t.qty), +estStock(byId(S.items, 'sb')).toFixed(2)]), [[4, 0.6], 4.6]);
+  // تعديل الزجاجة: تظهر "1 زجاجة" مش "0.15 جركن"، وتغييرها لـ 2 زجاجة = 1.2 لتر
+  await ev(page, () => quickAdd({ tx: S.tx[1] }));
+  assert.equal(await page.inputValue('#sheetBody [name="qty"]'), '1');
+  assert.match(await page.textContent('#sheetBody [name="qu"] option:checked'), /زجاجة/);
+  await fill(page, 'qty', 2); await submit(page);
+  assert.deepEqual(await ev(page, () => S.tx.map(t => t.qty)), [4, 1.2]);
+  // شراء قديم من غير وحدة متسجلة: يظهر بالمقياس (لتر) — مش بيتلخبط مع الجركن
+  await ev(page, () => { delete S.tx[0].u; save(); quickAdd({ tx: S.tx[0] }); });
+  assert.equal(await page.inputValue('#sheetBody [name="qty"]'), '4');
+  await page.selectOption('#sheetBody [name="qu"]', { label: 'جركن (4 L)' });
+  assert.equal(await page.inputValue('#sheetBody [name="qty"]'), '1');
+});
+
 await test('مواعيد السداد: تشيل كام في الشهر، والدفع من المحجوز من غير ما يتخصم مرتين', async page => {
   const r = await ev(page, () => {
     S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });
