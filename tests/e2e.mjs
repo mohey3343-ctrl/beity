@@ -700,17 +700,17 @@ await test('"خلص؟" بعد شراء النهارده بيسأل، ومسود�
   assert.equal(await est(), 0.6);
 });
 
-await test('فاتورة كل 3 شهور (الموبايل): بتتسجل ميعاد بيتكرر وبتتقسم على الشهور', async page => {
-  await ev(page, () => billForm());
+await test('فاتورة كل 3 شهور (الموبايل): بتتضاف من نفس الشاشة، وتظهر في الالتزامات، وبتتقسم على الشهور', async page => {
+  await ev(page, () => { ACT.tab({ tab: 'bills' }); billForm(); });
   await fill(page, 'name', 'فاتورة الموبايل'); await fill(page, 'amount', 900);
-  await page.selectOption('#sheetBody [name="every"]', '3'); await page.selectOption('#sheetBody [name="dueDay"]', '25');
-  await submit(page);
-  assert.equal(await page.inputValue('#sheetBody [name="repeat"]'), '3');
-  assert.equal(await page.inputValue('#sheetBody [name="date"]'), '2026-10-25');
-  await page.fill('#sheetBody [name="date"]', '2026-12-25'); await submit(page);
+  await page.selectOption('#sheetBody [name="every"]', '3');
+  assert.ok(await page.isVisible('#sheetBody [name="next"]') && !(await page.isVisible('#sheetBody [name="dueDay"]')));
+  await page.fill('#sheetBody [name="next"]', '2026-12-25'); await submit(page);
+  assert.ok(!(await page.isVisible('#sheetWrap.open')), 'الشاشة تتقفل بعد الإضافة');
   const r = await ev(page, () => { const d = S.dues[0]; return [S.bills.length, d.name, d.amount, d.repeat, Math.round(duePerMonth(d, periodOf(todayS())))]; });
   // 900 على 3 شهور (أكتوبر ونوفمبر وديسمبر) = 300 في الشهر
   assert.deepEqual(r, [0, 'فاتورة الموبايل', 900, 3, 300]);
+  assert.match(await page.textContent('#view'), /فاتورة الموبايل[\s\S]*كل 3 شهور/);
 });
 
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {

@@ -513,7 +513,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-22 · 13:00';
+const APP_VER = '2026-10-22 · 14:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -1780,7 +1780,7 @@ PAGES.bills = function(){
   if(sub === 'recv') return h + recvHtml();
   if(sub === 'debts') return h + debtsHtml(o);
   if(sub === 'dues') return h + duesHtml();
-  if(!S.bills.length) return h + `<div class="card empty"><div class="e-ic">📋</div>سجّل الحاجات اللي بتدفعها كل شهر:<br>إيجار، كهربا، مية، غاز، نت، مدارس، جمعية...<div style="margin-top:12px"><button class="btn primary" data-act="billForm">+ التزام جديد</button></div></div>`;
+  if(!S.bills.length && !activeDues().some(d => d.repeat > 1 && d.kind !== 'event' && !d.debtId)) return h + `<div class="card empty"><div class="e-ic">📋</div>سجّل الحاجات اللي بتدفعها كل شهر:<br>إيجار، كهربا، مية، غاز، نت، مدارس، جمعية...<div style="margin-top:12px"><button class="btn primary" data-act="billForm">+ التزام جديد</button></div></div>`;
   const td = todayS();
   h += `<div class="card"><div class="row"><div><div class="muted">إجمالي الالتزامات الشهر ده</div><div style="font-size:22px">${money(o.billPlanned)}</div>
     <div class="muted">اتدفع <span class="num">${fmt(o.billPaid)}</span> · فاضل <span class="num">${fmt(Math.max(0, o.billPlanned - o.billPaid))}</span></div></div>
@@ -1791,6 +1791,11 @@ PAGES.bills = function(){
       <div class="li-main"><div class="li-title">${esc(l.b.name)}</div><div class="li-sub">يوم ${l.b.dueDay || 1} في الشهر${paid ? ' · اتدفع ' + dayLabel(l.paidT[0].date) : late ? ' · <span class="neg">متأخر</span>' : ''}</div></div>
       <div class="li-end"><b class="num">${fmt(paid ? l.paid : l.b.amount)}</b>${paid ? '' : `<div><button class="btn sm good" data-act="payBill" data-id="${l.b.id}">دفعت</button></div>`}</div></div>`;
   });
+  // فواتير كل كام شهر (متسجلة مواعيد سداد بتتكرر) — بتظهر هنا كمان عشان تلاقيها مع الالتزامات
+  const rep = activeDues().filter(d => d.repeat > 1 && d.kind !== 'event' && !d.debtId).sort((a, b) => a.date < b.date ? -1 : 1);
+  if(rep.length) h += `<div class="day-h"><span>كل كام شهر</span></div>` + rep.map(d => `<div class="list-item" data-act="dueForm" data-id="${d.id}"><div class="li-ic">🔁</div>
+      <div class="li-main"><div class="li-title">${esc(d.name)} <span class="tag blue">${REPEATS[d.repeat] || ''}</span></div><div class="li-sub">الجاية ${dayLabel(d.date)} · بتشيل لها <b class="num">${fmt(duePerMonth(d, periodOf(td)))}</b> في الشهر · جاهز <span class="num">${fmt(Math.max(0, dueReserved(d)))}</span></div></div>
+      <div class="li-end"><b class="num">${fmt(d.amount)}</b></div></div>`).join('');
   const off = S.bills.filter(b => b.off);
   if(off.length) h += `<div class="day-h"><span>متوقفة</span></div>` + off.map(b => `<div class="list-item" data-act="billForm" data-id="${b.id}"><div class="li-ic">⏸</div><div class="li-main"><div class="li-title">${esc(b.name)}</div></div><div class="li-end num">${fmt(b.amount)}</div></div>`).join('');
   return h + '</div>';
@@ -2854,21 +2859,21 @@ function billForm(id){
   const b = id ? byId(S.bills, id) : null;
   let body = Fd.text('name', 'الالتزام', b ? b.name : '', 'autofocus placeholder="مثلاً: إيجار، كهربا، نت، مدرسة"');
   // فاتورة مش كل شهر (التليفون كل 3 شهور، التأمين كل سنة): بتتسجل ميعاد سداد بيتكرر، والبرنامج يقسّمها على الشهور
-  if(!b) body += `<label class="fld"><span>بتتدفع كل</span><select name="every">${[[1, 'شهر'], [3, '3 شهور (كل ربع سنة)'], [6, '6 شهور'], [12, 'سنة']].map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select></label>
-    <div class="muted" style="margin:-4px 0 10px; line-height:1.7">لو مش كل شهر، هتختار ميعاد الفاتورة الجاية، والبرنامج يقولك تشيل كام كل شهر عشان يومها الفلوس تبقى جاهزة.</div>`;
-  body += `<div class="fld2">${Fd.num('amount', b ? 'المبلغ الشهري (تقريبًا)' : 'المبلغ (تقريبًا)', b ? b.amount : '')}${Fd.day('dueDay', 'بيتدفع يوم', b ? b.dueDay : 1)}</div>`;
+  if(!b) body += `<label class="fld"><span>بتتدفع كل</span><select name="every">${[[1, 'شهر'], [3, '3 شهور (كل ربع سنة)'], [6, '6 شهور'], [12, 'سنة']].map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select></label>`;
+  body += `<div class="fld2">${Fd.num('amount', b ? 'المبلغ الشهري (تقريبًا)' : 'المبلغ (تقريبًا)', b ? b.amount : '')}<div data-every="1">${Fd.day('dueDay', 'بيتدفع يوم', b ? b.dueDay : 1)}</div><div data-every="n" style="display:none">${Fd.date('next', 'الفاتورة الجاية يوم', addMonthsDate(todayS(), 1))}</div></div>
+    <div class="muted" data-every="n" style="display:none; margin:-4px 0 10px; line-height:1.7">البرنامج هيقسّمها على الشهور لحد ميعادها ويقولك تشيل كام كل شهر، وبعد ما تدفع يجيب الميعاد اللي بعده لوحده.</div>`;
   if(b) body += `<label class="switch"><input type="checkbox" name="off" ${b.off ? 'checked' : ''}> متوقف مؤقتًا (مش هيتحسب في الخطة)</label>`;
   body += Fd.foot(b ? 'حفظ' : 'إضافة', b ? {act:'delBill', id:b.id} : null);
   openSheet(b ? b.name : 'التزام شهري جديد', body, v => {
     if(!need(v.name.trim(), 'اكتب اسم الالتزام')) return false;
     if(!b && +v.every > 1){
-      // أقرب يوم دفع جاي كبداية — وتقدر تغيّره في الشاشة اللي بعدها
-      const t = pd(todayS()), day = +v.dueDay || 1;
-      let d0 = ds(new Date(t.getFullYear(), t.getMonth(), Math.min(day, new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate())));
-      if(d0 < todayS()) d0 = addMonthsDate(d0, 1, day);
-      SUB.bills = 'dues';
-      dueForm(null, {name:v.name.trim(), amount:num(v.amount) || '', repeat:+v.every, date:d0});
-      return false;
+      // فاتورة كل كام شهر = ميعاد سداد بيتكرر (بيتقسم على الشهور لحد ميعاده)
+      if(!need(num(v.amount) > 0, 'اكتب المبلغ')) return false;
+      if(!need(/^\d{4}-\d{2}-\d{2}$/.test(v.next), 'اختار ميعاد الفاتورة الجاية')) return false;
+      const o = {id:uid(), createdAt:todayS(), name:v.name.trim(), amount:num(v.amount), baseAmount:num(v.amount), date:v.next, repeat:+v.every, dom:pd(v.next).getDate()};
+      S.dues = S.dues || []; S.dues.push(o);
+      save(); toast(`اتضافت — هتشيل لها ${fmt(duePerMonth(o, periodOf(todayS())))} في الشهر لحد ${dayLabel(o.date)}`, false, 5000);
+      return;
     }
     const o = b || {id:uid()};
     Object.assign(o, {name:v.name.trim(), amount:num(v.amount), dueDay:+v.dueDay || 1, off:!!v.off});
@@ -3771,6 +3776,7 @@ document.addEventListener('change', e => {
     if(q && q.value.trim() !== '') q.value = +(num(q.value) * pf / nf).toFixed(3);
     sel.dataset.prev = sel.value; return;
   }
+  if(el.name === 'every'){ document.querySelectorAll('#sheetBody [data-every]').forEach(x => x.style.display = (x.dataset.every === '1') === (el.value === '1') ? '' : 'none'); return; }
   if(el.name === 'evdone'){ const h = $('#sheetBody [data-evhint]'); if(h) h.textContent = el.value === '1' ? 'المناسبة هتتقفل، واللي فاضل من ميزانيتها يرجع لرصيدك.' : 'الميزانية هتفضل مفتوحة بالباقي، وتكمّل تسجّل عليها.'; return; }
   if(el.dataset && el.dataset.mp){
     const box = el.closest('.fld'), g = k => box.querySelector(`[data-mpk="${k}"]`).value, h = box.querySelector(`input[name="${el.dataset.mp}"]`);
