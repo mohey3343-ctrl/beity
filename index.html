@@ -513,7 +513,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-21 · 10:00';
+const APP_VER = '2026-10-21 · 11:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -598,6 +598,15 @@ const baseOf = it => BASES[it.base] ? it.base : 'PCS';
 const hasPack = it => !!(it.pu && it.pf > 0);
 const packF = it => hasPack(it) ? it.pf : 1;
 const entryUnit = it => hasPack(it) ? it.pu : BASES[baseOf(it)].en;
+/* بيتباع فرط (بأي كمية: ربع، نص، كيلو ونص…): الكيلو واللتر من غير عبوة، والخضار والفاكهة واللحوم والجبن بالوزن.
+   الباقي (رز، سكر، زيت…) عبوة مقفولة — وتقدر تغيّر ده من الصنف */
+const LOOSE_G = /خضار|فاكه|لحوم|لحمة|فراخ|سمك|جبن|ألبان/;
+const isLoose = it => baseOf(it) !== 'PCS' && (it.loose != null ? !!it.loose : !hasPack(it) || LOOSE_G.test(it.group || ''));
+/* "نص كيلو" بدل 0.5 KG */
+function looseTxt(it, q){
+  const ar = BASES[baseOf(it)].ar, r = Math.round(q * 4) / 4, n = {0.25:'ربع ' + ar, 0.5:'نص ' + ar, 0.75:'تلت تربع ' + ar, 1:ar, 1.5:ar + ' ونص', 2:'2 ' + ar}[r];
+  return Math.abs(q - r) < 1e-6 && n ? n : `${fmtQ(q)} ${ar}`;
+}
 function qtyPlain(it, q){
   const en = BASES[baseOf(it)].en;
   // ⁦…⁩ بيعزل "0.9 KG" عشان ما يتقلبش لـ "KG 0.9" جوه الكلام العربي
@@ -872,8 +881,8 @@ function shopList(){
     const rate = dailyRate(it), est = estStock(it), have = est == null ? 0 : est;
     const need = rate.v * cover - have;
     let qty = 0;
-    // بنقرّب لعدد عبوات كامل (أو لربع كيلو/لتر لو مفيش عبوة)
-    if(need > 0.001){ const step = hasPack(it) ? it.pf : baseOf(it) === 'PCS' ? 1 : 0.25; qty = Math.ceil(need / step - 1e-9) * step; }
+    // بنقرّب لعدد عبوات كامل — والفرط (خضار، فاكهة، أي حاجة بالكيلو/اللتر) لأقرب ربع حسب احتياجك
+    if(need > 0.001){ const step = isLoose(it) ? 0.25 : hasPack(it) ? it.pf : 1; qty = Math.ceil(need / step - 1e-9) * step; }
     return {it, rate, est, have, need, qty, cost:qty * (it.price || 0)};
   });
 }
@@ -1692,6 +1701,7 @@ function jardUnitChanged(sel, prev){
 function shopQty(it, q, view, html){
   const en = BASES[baseOf(it)].en;
   const baseTxt = html ? `<span dir="ltr" style="unicode-bidi:isolate">${fmtQ(q)} ${en}</span>` : `${fmtQ(q)} ${en}`;
+  if(isLoose(it)) return looseTxt(it, q);
   if(view === 'base' || !hasPack(it)) return baseTxt;
   return `${fmtQ(q / it.pf)} ${html ? esc(it.pu) : it.pu}`;
 }
@@ -1715,7 +1725,7 @@ function shopHtml(){
   h += `<div class="card"><div class="row" style="margin-bottom:8px"><div><div class="muted">التكلفة المتوقعة</div><div style="font-size:22px">${money(total)}</div></div>
     <div class="btns"><button class="btn" data-act="shareList">مشاركة</button><button class="btn primary" data-act="buyMany">اشتريتهم</button></div></div>
     <table class="tbl"><tr><th>الصنف</th><th>عندي</th><th>محتاج</th><th>اشتري</th><th>التكلفة</th></tr>
-    ${need.map(x => { const sv = S.settings.shopView, alt = sv === 'base' ? (hasPack(x.it) ? shopQty(x.it, x.qty, 'pack', true) : '') : (hasPack(x.it) ? shopQty(x.it, x.qty, 'base', true) : '');
+    ${need.map(x => { const sv = S.settings.shopView, alt = isLoose(x.it) || !hasPack(x.it) ? '' : shopQty(x.it, x.qty, sv === 'base' ? 'pack' : 'base', true);
       return `<tr data-act="buyItem" data-id="${x.it.id}" style="cursor:pointer"><td><b>${esc(x.it.name)}</b><div><button type="button" class="btn sm ghost pause-btn" data-act="itemPause" data-id="${x.it.id}">⏸️ مش دلوقتي</button></div></td>
       <td>${x.est == null ? '؟' : shopQty(x.it, x.have, sv, true)}</td><td>${shopQty(x.it, x.rate.v * (cover + (S.settings.bufferDays || 0)), sv, true)}</td>
       <td><b>${shopQty(x.it, x.qty, sv, true)}</b>${alt ? `<div class="muted" style="font-size:11px">${alt}</div>` : ''}</td>
@@ -2548,6 +2558,7 @@ function itemForm(id, preset){
   const m0 = it && it.monthly ? String(+(it.monthly / f).toFixed(4)) : '', p0 = it && it.price ? String(+(it.price * f).toFixed(2)) : '';
   body += `<div class="fld2">${Fd.num('monthly', '<span data-l="monthly">بتستهلك كام في الشهر</span>', m0)}${Fd.num('price', '<span data-l="price">السعر</span>', p0)}</div>`;
   body += `<div class="muted" data-l="conv" style="margin:-4px 0 10px"></div>`;
+  body += `<label class="switch" style="margin:-2px 0 10px"><input type="checkbox" name="loose" ${it ? (isLoose(it) ? 'checked' : '') : 'checked'} onchange="this.dataset.t=1"> <span>بيتباع فرط بأي كمية (ربع، نص كيلو/لتر…) — قايمة الشراء تقترح على قد احتياجك مش عبوة كاملة</span></label>`;
   if(!it) body += Fd.num('stock', '<span data-l="stock">الموجود عندك دلوقتي (اختياري)</span>', '');
   if(it){
     const cs = itemCounts(it).slice(-4).reverse(), bs = itemBuys(it).sort((a, b) => evKey(a) < evKey(b) ? 1 : -1).slice(0, 4);
@@ -2579,6 +2590,9 @@ function itemForm(id, preset){
     Object.assign(o, {name:v.name.trim(), group:v.group.trim() || 'تاني', base:v.base || 'PCS', pu:pu || undefined, pf:pu ? pf : undefined,
       monthly:same && String(v.monthly).trim() === m0 ? it.monthly : num(v.monthly) * f,
       price:same && String(v.price).trim() === p0 ? it.price : Math.round(num(v.price) / f * 10000) / 10000});
+    // "فرط": لو ما لمستهوش بيمشي على الافتراضي (كيلو/لتر من غير عبوة مقفولة)، ولو غيّرته بيتحفظ
+    const lc = $('#sheetBody [name="loose"]'), auto = isLoose(Object.assign({}, o, {loose:undefined}));
+    if(lc && (lc.dataset.t || it) && !!v.loose !== auto) o.loose = !!v.loose; else delete o.loose;
     if(!it){
       S.items.push(o);
       if(String(v.stock || '').trim() !== '') S.counts.push({id:uid(), ts:Date.now(), itemId:o.id, date:todayS(), qty:num(v.stock) * f});
@@ -2635,7 +2649,7 @@ const unitShort = (it, u) => !u.base && itemUnits(it).filter(x => x.name === u.n
 function buyItem(id){
   const it = byId(S.items, id); if(!it) return;
   const x = shopList().find(s_ => s_.it.id === id), base = BASES[baseOf(it)], units = itemUnits(it);
-  const u0 = hasPack(it) ? units[0] : units.find(u => u.base);   // من غير عبوة أساسية: الافتراضي بالكيلو/القطعة
+  const u0 = hasPack(it) && !isLoose(it) ? units[0] : units.find(u => u.base);   // من غير عبوة أساسية أو فرط: الافتراضي بالكيلو/اللتر/القطعة
   const f0 = u0.f, q0 = x && x.qty > 0 ? +(x.qty / f0).toFixed(2) : 1;
   const packs = Array.from(new Set([...PACKS, ...(S.settings.packs || [])]));
   const body = `<label class="fld"><span>اشتريته بإيه؟</span><select name="bu" data-bl>${units.map(u => `<option value="${u.k}" ${u === u0 ? 'selected' : ''}>${esc(unitLabel(it, u))}</option>`).join('')}<option value="__new">➕ عبوة تانية (كرتونة، علبة بحجم تاني…)</option></select></label>
@@ -2773,10 +2787,12 @@ function recordBuy(it, q, a, date, keepPrice, u){
 }
 function buyMany(){
   const L = shopList().filter(x => x.qty > 0);
+  // الفرط بيتكتب بالكيلو/اللتر، والباقي بالعبوة
+  const bf = it => isLoose(it) ? 1 : packF(it), bu = it => isLoose(it) ? BASES[baseOf(it)].en : entryUnit(it);
   let body = `<div class="muted" style="margin-bottom:8px">عدّل الكمية والسعر الفعلي، وشيل علامة ✓ من اللي ما اشترتهوش.</div><table class="tbl"><tr><th></th><th>الصنف</th><th>الكمية</th><th>دفعت</th></tr>`;
   L.forEach(x => {
-    body += `<tr><td><input type="checkbox" name="k_${x.it.id}" checked style="width:20px;height:20px;accent-color:var(--gold)"></td><td><b>${esc(x.it.name)}</b><div class="muted">بالـ${esc(entryUnit(x.it))}</div></td>
-      <td><input name="q_${x.it.id}" data-bm="${x.it.id}" data-up="${(x.it.price || 0) * packF(x.it)}" inputmode="decimal" value="${+(x.qty / packF(x.it)).toFixed(2)}" style="width:64px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center"></td>
+    body += `<tr><td><input type="checkbox" name="k_${x.it.id}" checked style="width:20px;height:20px;accent-color:var(--gold)"></td><td><b>${esc(x.it.name)}</b><div class="muted">بالـ${isLoose(x.it) ? BASES[baseOf(x.it)].ar : esc(entryUnit(x.it))}</div></td>
+      <td><input name="q_${x.it.id}" data-bm="${x.it.id}" data-up="${(x.it.price || 0) * bf(x.it)}" inputmode="decimal" value="${+(x.qty / bf(x.it)).toFixed(2)}" style="width:64px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center"></td>
       <td><input name="c_${x.it.id}" data-amt inputmode="decimal" value="${x.cost ? Math.round(x.cost) : ''}" style="width:78px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center"></td></tr>`;
   });
   body += `</table>${Fd.date('date', 'التاريخ', defaultDate())}${Fd.foot('سجّل كل ده')}`;
@@ -2786,7 +2802,7 @@ function buyMany(){
     L.forEach(x => {
       if(!v['k_' + x.it.id]) return;
       const q = num(v['q_' + x.it.id]), a = num(v['c_' + x.it.id]);
-      if(q > 0){ recordBuy(x.it, q * packF(x.it), a, v.date || todayS(), !$(`#sheetBody [name="c_${x.it.id}"]`).dataset.dirty, {n:entryUnit(x.it), f:packF(x.it)}); n++; tot += a; }
+      if(q > 0){ recordBuy(x.it, q * bf(x.it), a, v.date || todayS(), !$(`#sheetBody [name="c_${x.it.id}"]`).dataset.dirty, {n:bu(x.it), f:bf(x.it)}); n++; tot += a; }
     });
     if(!n){ toast('مفيش حاجة متعلّمة', true); return false; }
     save(); toast(`اتسجّل ${n} صنف بـ ${fmt(tot)} ج`);
