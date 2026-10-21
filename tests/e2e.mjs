@@ -658,6 +658,27 @@ await test('قايمة الشراء: الفرط (كيلو/لتر) بتقترح �
   assert.deepEqual(await ev(page, () => [byId(S.items, 'tm').loose, shopList().find(x => x.it.id === 'tm').qty]), [false, 4]);
 });
 
+await test('جرد أقل من اللي اتشرى النهارده: يسأل "قبل الشراء ولا بعده"، وجرد غلط يتمسح من الصنف', async page => {
+  const est = () => ev(page, () => +estStock(byId(S.items, 'jb')).toFixed(2));
+  await ev(page, () => { S.items.push({ id: 'jb', name: 'جبنة براميلي', group: 'ألبان وبروتين', base: 'KG', pu: 'طبق', pf: 1, monthly: 0.5, price: 200 });
+    S.counts.push({ id: 'k0', ts: new Date('2026-10-05T09:00:00').getTime(), itemId: 'jb', date: '2026-10-05', qty: 0.2 });
+    S.tx.push({ id: 'b', ts: Date.now() - 3600e3, type: 'exp', cat: 'house', itemId: 'jb', qty: 0.46, amount: 92, date: todayS() }); save(); countItem('jb'); });
+  await fill(page, 'qty', '0'); await submit(page);
+  assert.match(await page.textContent('#sheetBody'), /الجرد ده اتعمل امتى|قبل ما أشتري/);
+  await submit(page);                                     // الافتراضي: قبل الشراء
+  assert.equal(await est(), 0.46);
+  // من الجرد الكبير: "بعد ما اشتريت" → اللي كتبته هو الموجود
+  await ev(page, () => { ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'jard' }); });
+  await page.fill('#jardForm input[data-item="jb"]', '0.1'); await page.click('[data-act="saveJard"]');
+  if (!(await page.textContent('#sheetBody')).includes('قبل ما أشتري')) await submit(page);
+  await page.click('#sheetBody input[name="when"][value="after"] + .evopt'); await submit(page);
+  assert.equal(await est(), 0.1);
+  // جرد اتسجل غلط: يتمسح من شاشة الصنف ويرجع اللي قبله
+  await ev(page, () => itemForm('jb'));
+  await page.click(`#sheetBody [data-act="delCount"][data-id="${await ev(page, () => S.counts.at(-1).id)}"]`);
+  assert.equal(await est(), 0.46);
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });
