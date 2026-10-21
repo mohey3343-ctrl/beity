@@ -513,7 +513,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-22 · 10:30';
+const APP_VER = '2026-10-22 · 12:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -1613,29 +1613,31 @@ function jardUnitSel(it, u, attrs){
    ترجع تلاقيه زي ما هو. بيتسجّل فعلًا بس لما تدوس "احفظ الجرد". */
 function jardDraft(){ try{ return JSON.parse(localStorage.getItem(JDRAFT_KEY) || '{}') || {}; }catch(e){ return {}; } }
 function jardDraftSave(){
-  const d = {};
+  const d = {}, old = jardDraft();
   document.querySelectorAll('#jardForm input[data-item]').forEach(inp => {
     if(inp.value.trim() === '') return;
-    const sel = inp.closest('.jard-row').querySelector('select[data-junit]');
-    d[inp.dataset.item] = {v:inp.value.trim(), u:sel ? sel.value : 'base'};
+    const sel = inp.closest('.jard-row').querySelector('select[data-junit]'), id = inp.dataset.item, v = inp.value.trim(), u = sel ? sel.value : 'base';
+    // t = امتى كتبت الرقم ده — الجرد بيتسجّل بالوقت ده (لو كتبته امبارح وحفظته النهارده بعد ما اشتريت، الشراء يتحسب بعده)
+    d[id] = {v, u, t:old[id] && old[id].v === v && old[id].u === u && old[id].t ? old[id].t : Date.now()};
   });
   try{ Object.keys(d).length ? localStorage.setItem(JDRAFT_KEY, JSON.stringify(d)) : localStorage.removeItem(JDRAFT_KEY); }catch(e){}
 }
 /* جرد أقل من اللي اشتريته النهارده بعد آخر جرد (جبنة: اشتريت نص كيلو الصبح، وكتبت 0 بليل)
    غالبًا الجرد اتعمل على الورق قبل الشراء — نسألك، عشان الشراء ما يتحسبش إنه اتاكل */
-function buysBeforeCount(it, qty){
-  const cs = itemCounts(it), last = cs[cs.length - 1], lk = last ? evKey(last) : '';
-  const B = itemBuys(it).filter(t => t.date === todayS() && evKey(t) > lk);
+function buysBeforeCount(it, qty, at){
+  const ck = evKey(at), cs = itemCounts(it).filter(c => evKey(c) < ck), last = cs[cs.length - 1], lk = last ? evKey(last) : '';
+  const B = itemBuys(it).filter(t => t.date === at.date && evKey(t) > lk && evKey(t) < ck);
   return B.length && qty < sum(B, t => t.qty) - 1e-6 ? B : null;
 }
 /* بيسجّل الجرد — ولو فيه صنف من دول بيسأل الأول. بيرجّع false لو فتح شاشة السؤال (عشان ما تتقفلش) */
 function pushCounts(list, then){
-  const conf = list.map(x => ({x, B:buysBeforeCount(x.it, x.qty)})).filter(y => y.B);
+  // x.ts = وقت ما كتبت الرقم (من مسودة الجرد) — وإلا دلوقتي
+  const now = Date.now(), at = (x, i) => x.ts && x.ts < now ? {date:ds(new Date(x.ts)), ts:x.ts} : {date:todayS(), ts:now + i};
+  const conf = list.map((x, i) => ({x, B:buysBeforeCount(x.it, x.qty, at(x, i))})).filter(y => y.B);
   const write = before => {
-    const ts = Date.now(), date = todayS();
     list.forEach((x, i) => {
-      const y = before && conf.find(z => z.x === x);
-      S.counts.push({id:uid(), ts:y ? Math.min(...y.B.map(t => t.ts || 0)) - 1 : ts + i, itemId:x.it.id, date, qty:x.qty});
+      const y = before && conf.find(z => z.x === x), a = at(x, i);
+      S.counts.push({id:uid(), ts:y ? Math.min(...y.B.map(t => t.ts || 0)) - 1 : a.ts, itemId:x.it.id, date:a.date, qty:x.qty});
     });
     then();
   };
@@ -3401,11 +3403,15 @@ const ACT = {
   itemOut:(d) => {
     const it = byId(S.items, d.id); if(!it) return;
     const before = JSON.parse(JSON.stringify(S));
-    const c = {id:uid(), ts:Date.now(), itemId:it.id, date:todayS(), qty:0};
-    S.counts.push(c); closeSheet(); save();
-    const u = undoDiff(before), msg = sinceLastTxt(it, c);   // نفس رسالة الجرد: استهلكت كام من آخر جرد
-    if(msg) toast(msg, false, 7000);
-    setTimeout(() => showUndo(u, `${it.name} خلص — اتضاف لقايمة الشراء`), 30);
+    // لو اشتريت منه النهارده: يسألك خلص قبل الشراء ولا بعده (دوسة غلط بعد الشراء ما تبوظش الحسبة)
+    const done = () => {
+      const c = S.counts[S.counts.length - 1]; save();
+      const u = undoDiff(before), msg = sinceLastTxt(it, c);   // نفس رسالة الجرد: استهلكت كام من آخر جرد
+      if(msg) toast(msg, false, 7000);
+      setTimeout(() => showUndo(u, `${it.name} خلص — اتسجّل`), 30);
+    };
+    closeSheet();
+    pushCounts([{it, qty:0}], done);
   },
   itemSort:(d) => { S.settings.itemSort = d.v; save(); },
   delCount:(d) => {
@@ -3477,11 +3483,11 @@ const ACT = {
   goShop:() => { TAB = 'stock'; SUB.stock = 'shop'; render(); window.scrollTo(0, 0); },
   saveJard:() => {
     if(!validNums($('#jardForm'))) return;
-    const filled = [];
+    const filled = [], jd = jardDraft();
     document.querySelectorAll('#jardForm input[data-item]').forEach(inp => {
       if(inp.value.trim() === '') return;
-      const it = byId(S.items, inp.dataset.item), sel = inp.closest('.jard-row').querySelector('select[data-junit]');
-      filled.push({it, qty:num(inp.value) * jardF(it, sel ? sel.value : 'base')});
+      const it = byId(S.items, inp.dataset.item), sel = inp.closest('.jard-row').querySelector('select[data-junit]'), dr = jd[it.id];
+      filled.push({it, qty:num(inp.value) * jardF(it, sel ? sel.value : 'base'), ts:dr && dr.v === inp.value.trim() ? dr.t : undefined});
     });
     // الأصناف اللي سبتها فاضية والبرنامج فاكر إن عندك منها: نسألك لو فيها حاجة خلصت
     const done = new Set(filled.map(x => x.it.id));

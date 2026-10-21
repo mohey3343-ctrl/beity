@@ -228,6 +228,8 @@ await test('جركن بحجم مختلف للمرة دي بس، و"خلص" بض�
   // خلص من قايمة الأصناف
   await ev(page, () => { ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'items' }); });
   await page.click('.list-item[data-id="sb"] [data-act="itemOut"]');
+  // اتشرى النهارده → بيسأل: خلص بعد ما اشتريت (الجركن كله خلص)
+  await page.click('#sheetBody input[name="when"][value="after"] + .evopt'); await submit(page);
   assert.match(await page.textContent('#toast'), /صابون سايل: من آخر جرد \(8 يوم\)/);
   assert.equal(await ev(page, () => estStock(byId(S.items, 'sb'))), 0);
   assert.ok(await ev(page, () => shopList().find(x => x.it.id === 'sb').qty > 0), 'لازم يدخل قايمة الشراء');
@@ -677,6 +679,25 @@ await test('جرد أقل من اللي اتشرى النهارده: يسأل "�
   await ev(page, () => itemForm('jb'));
   await page.click(`#sheetBody [data-act="delCount"][data-id="${await ev(page, () => S.counts.at(-1).id)}"]`);
   assert.equal(await est(), 0.46);
+});
+
+await test('"خلص؟" بعد شراء النهارده بيسأل، ومسودة جرد اتكتبت امبارح بتتسجّل بوقت كتابتها', async page => {
+  const est = () => ev(page, () => { EPOCH++; return +estStock(byId(S.items, 'jb')).toFixed(2); });
+  await ev(page, () => { S.items.push({ id: 'jb', name: 'جبنة', group: 'ألبان وبروتين', base: 'KG', pu: 'طبق', pf: 1, monthly: 0, price: 200 });
+    S.counts.push({ id: 'k0', ts: new Date('2026-10-05T09:00:00').getTime(), itemId: 'jb', date: '2026-10-05', qty: 0.2 });
+    S.tx.push({ id: 'b', ts: Date.now() - 3600e3, type: 'exp', cat: 'house', itemId: 'jb', qty: 0.46, amount: 92, date: todayS() }); save(); ACT.itemOut({ id: 'jb' }); });
+  assert.match(await page.textContent('#sheetBody'), /قبل ما أشتري/);
+  await submit(page);                                    // خلص قبل ما اشتري → الشراء فاضل
+  assert.equal(await est(), 0.46);
+  // مسودة: كتبت 0.1 امبارح 9 بليل، واشتريت 0.5 النهارده، وحفظت دلوقتي → الجرد امبارح والشراء بعده
+  await ev(page, () => { S.counts = S.counts.filter(c => c.id === 'k0'); S.tx = []; save();
+    localStorage.setItem(JDRAFT_KEY, JSON.stringify({ jb: { v: '0.1', u: 'base', t: new Date('2026-10-08T21:00:00').getTime() } }));
+    S.tx.push({ id: 'b2', ts: Date.now() - 600e3, type: 'exp', cat: 'house', itemId: 'jb', qty: 0.5, amount: 100, date: todayS() }); save();
+    ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'jard' }); });
+  await page.click('[data-act="saveJard"]');
+  if (await page.isVisible('#sheetWrap.open')) await submit(page);
+  assert.deepEqual(await ev(page, () => S.counts.at(-1).date), '2026-10-08');
+  assert.equal(await est(), 0.6);
 });
 
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
