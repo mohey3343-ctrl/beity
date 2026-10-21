@@ -633,6 +633,15 @@ await test('صنف ما اتجردش خالص واشتريته: المتوقع =
   assert.equal(r[0], +(1.74 - 3 / 30).toFixed(2));   // يوم استهلاك
 });
 
+await test('شراء نص كيلو من صنف عبوته كيس كيلو: ضغطة "نص كيلو" والمبلغ يتحسب', async page => {
+  await ev(page, () => { S.items.push({ id: 'tm', name: 'طماطم', group: 'خضار وفاكهة', base: 'KG', pu: 'كيس', pf: 1, monthly: 4, price: 20 }); save(); buyItem('tm'); });
+  await page.click('#sheetBody [data-act="buyQuick"][data-q="0.5"]');
+  assert.equal(await page.inputValue('#sheetBody [name="amount"]'), '10');
+  assert.ok(await page.isVisible('#sheetWrap.open'), 'الشاشة تفضل مفتوحة');
+  await submit(page);
+  assert.deepEqual(await ev(page, () => { const x = S.tx.at(-1); return [x.qty, x.amount, x.u.n]; }), [0.5, 10, 'KG']);
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });

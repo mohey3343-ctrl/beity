@@ -513,7 +513,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-20 · 17:00';
+const APP_VER = '2026-10-21 · 10:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -2643,7 +2643,7 @@ function buyItem(id){
       ${Fd.num('npf', `<span data-bl-l="npf">فيها كام ${base.en}</span>`, '', 'data-bl')}</div>
       <div class="muted" data-bl-l="sizeNote" style="margin:-6px 0 10px"></div>
       <label class="switch" data-bl-new style="margin:-4px 0 10px"><input type="checkbox" name="main" ${hasPack(it) ? '' : 'checked'}> <span>خليها العبوة الأساسية لـ${esc(it.name)} (في الجرد وقايمة الشراء)</span></label></div>
-    <div class="fld2">${Fd.num('qty', '<span data-bl-l="qty">الكمية</span>', q0, 'autofocus data-bl')}${Fd.num('amount', 'دفعت كام إجمالي', it.price ? Math.round(q0 * f0 * it.price) : '', 'data-amt')}</div>
+    ${quickQtyChips(it)}<div class="fld2">${Fd.num('qty', '<span data-bl-l="qty">الكمية</span>', q0, 'autofocus data-bl')}${Fd.num('amount', 'دفعت كام إجمالي', it.price ? Math.round(q0 * f0 * it.price) : '', 'data-amt')}</div>
     <div class="muted" data-bl-l="conv" style="margin:-4px 0 10px"></div>
     ${Fd.date('date', 'التاريخ', defaultDate())}<div class="muted">هيتسجّل كمصروف "استوك البيت"، والكمية هتتضاف للموجود، والسعر هيتحدّث. والعبوة الجديدة بتتحفظ للصنف عشان تلاقيها المرة الجاية.</div>${Fd.foot('سجّل الشراء')}`;
   NEXT_WALLET = {label:'دفعت من'};
@@ -2670,6 +2670,12 @@ function buyItem(id){
   $('#sheetBody').dataset.item = it.id;
   buyLabels(it);
 }
+/* الكيلو واللتر بيتشروا بأي كمية (ربع، نص، كيلو ونص…) حتى لو الصنف عبوته كيس كيلو — ضغطة وتتحط بالكيلو/اللتر */
+function quickQtyChips(it){
+  const b = baseOf(it); if(b === 'PCS') return '';
+  const ar = BASES[b].ar, Q = [[0.25, 'ربع ' + ar], [0.5, 'نص ' + ar], [1, ar], [1.5, ar + ' ونص'], [2, '2 ' + ar]];
+  return `<div class="chips" style="margin:-2px 0 8px">${Q.map(([q, t]) => `<button type="button" class="chip" data-act="buyQuick" data-q="${q}">${t}</button>`).join('')}</div>`;
+}
 /* بيحدّث عناوين شاشة الشراء حسب الوحدة المختارة */
 function buyLabels(it){
   const q = n => document.querySelector(`#sheetBody [name="${n}"]`), L = k => document.querySelector(`#sheetBody [data-bl-l="${k}"]`);
@@ -2685,7 +2691,7 @@ function buyLabels(it){
   else L('sizeNote').textContent = '';
   const unit = isNew ? (q('npu').value !== '__new' ? q('npu').value : 'العبوة') : u.name;
   const f = u && u.base ? 1 : num(q('npf').value);
-  L('qty').textContent = `الكمية (عدد ${unit})`;
+  L('qty').textContent = u && u.base && baseOf(it) !== 'PCS' ? `الكمية (كام ${base.ar} — نص = 0.5)` : `الكمية (عدد ${unit})`;
   L('npf').textContent = `حجم الـ${unit} (كام ${base.en})`;
   const qty = num(q('qty').value);
   L('conv').innerHTML = f > 0 && (isNew || !u.base) ? `${fmtQ(qty)} ${esc(unit)} = <b class="num">${fmtQ(qty * f)}</b> ${base.en}` : '';
@@ -3483,6 +3489,11 @@ const ACT = {
   },
   dueForDebt:(d) => dueForm(null, {debtId:d.id, amount:Math.max(0, debtRemaining(byId(S.debts, d.id)) - sum(activeDues().filter(x => x.debtId === d.id), x => x.amount))}),
   reserveDue:(d) => reserveDue(d.id),
+  buyQuick:(d) => {
+    const sel = $('#sheetBody [name="bu"]'), q = $('#sheetBody [name="qty"]'); if(!sel || !q) return;
+    sel.value = 'base'; q.value = d.q; buyLabels();
+    document.querySelectorAll('#sheetBody [data-act="buyQuick"]').forEach(b => b.classList.toggle('on', b.dataset.q === d.q));
+  },
   // شايل للميعاد أكتر من الفاضل فيه (المناسبة اتصرف عليها، أو المبلغ قلّ): الزيادة ترجع لرصيدك الحر
   unreserveExtra:(d) => {
     const du = byId(S.dues, d.id); if(!du) return;
