@@ -700,6 +700,19 @@ await test('"خلص؟" بعد شراء النهارده بيسأل، ومسود�
   assert.equal(await est(), 0.6);
 });
 
+await test('فاتورة كل 3 شهور (الموبايل): بتتسجل ميعاد بيتكرر وبتتقسم على الشهور', async page => {
+  await ev(page, () => billForm());
+  await fill(page, 'name', 'فاتورة الموبايل'); await fill(page, 'amount', 900);
+  await page.selectOption('#sheetBody [name="every"]', '3'); await page.selectOption('#sheetBody [name="dueDay"]', '25');
+  await submit(page);
+  assert.equal(await page.inputValue('#sheetBody [name="repeat"]'), '3');
+  assert.equal(await page.inputValue('#sheetBody [name="date"]'), '2026-10-25');
+  await page.fill('#sheetBody [name="date"]', '2026-12-25'); await submit(page);
+  const r = await ev(page, () => { const d = S.dues[0]; return [S.bills.length, d.name, d.amount, d.repeat, Math.round(duePerMonth(d, periodOf(todayS())))]; });
+  // 900 على 3 شهور (أكتوبر ونوفمبر وديسمبر) = 300 في الشهر
+  assert.deepEqual(r, [0, 'فاتورة الموبايل', 900, 3, 300]);
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });

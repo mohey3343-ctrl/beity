@@ -513,7 +513,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-22 · 12:00';
+const APP_VER = '2026-10-22 · 13:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -2853,11 +2853,23 @@ function countItem(id){
 function billForm(id){
   const b = id ? byId(S.bills, id) : null;
   let body = Fd.text('name', 'الالتزام', b ? b.name : '', 'autofocus placeholder="مثلاً: إيجار، كهربا، نت، مدرسة"');
-  body += `<div class="fld2">${Fd.num('amount', 'المبلغ الشهري (تقريبًا)', b ? b.amount : '')}${Fd.day('dueDay', 'بيتدفع يوم', b ? b.dueDay : 1)}</div>`;
+  // فاتورة مش كل شهر (التليفون كل 3 شهور، التأمين كل سنة): بتتسجل ميعاد سداد بيتكرر، والبرنامج يقسّمها على الشهور
+  if(!b) body += `<label class="fld"><span>بتتدفع كل</span><select name="every">${[[1, 'شهر'], [3, '3 شهور (كل ربع سنة)'], [6, '6 شهور'], [12, 'سنة']].map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select></label>
+    <div class="muted" style="margin:-4px 0 10px; line-height:1.7">لو مش كل شهر، هتختار ميعاد الفاتورة الجاية، والبرنامج يقولك تشيل كام كل شهر عشان يومها الفلوس تبقى جاهزة.</div>`;
+  body += `<div class="fld2">${Fd.num('amount', b ? 'المبلغ الشهري (تقريبًا)' : 'المبلغ (تقريبًا)', b ? b.amount : '')}${Fd.day('dueDay', 'بيتدفع يوم', b ? b.dueDay : 1)}</div>`;
   if(b) body += `<label class="switch"><input type="checkbox" name="off" ${b.off ? 'checked' : ''}> متوقف مؤقتًا (مش هيتحسب في الخطة)</label>`;
   body += Fd.foot(b ? 'حفظ' : 'إضافة', b ? {act:'delBill', id:b.id} : null);
   openSheet(b ? b.name : 'التزام شهري جديد', body, v => {
     if(!need(v.name.trim(), 'اكتب اسم الالتزام')) return false;
+    if(!b && +v.every > 1){
+      // أقرب يوم دفع جاي كبداية — وتقدر تغيّره في الشاشة اللي بعدها
+      const t = pd(todayS()), day = +v.dueDay || 1;
+      let d0 = ds(new Date(t.getFullYear(), t.getMonth(), Math.min(day, new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate())));
+      if(d0 < todayS()) d0 = addMonthsDate(d0, 1, day);
+      SUB.bills = 'dues';
+      dueForm(null, {name:v.name.trim(), amount:num(v.amount) || '', repeat:+v.every, date:d0});
+      return false;
+    }
     const o = b || {id:uid()};
     Object.assign(o, {name:v.name.trim(), amount:num(v.amount), dueDay:+v.dueDay || 1, off:!!v.off});
     if(!b) S.bills.push(o);
