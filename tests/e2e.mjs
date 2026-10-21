@@ -642,7 +642,7 @@ await test('شراء نص كيلو من صنف عبوته كيس كيلو: ضغ�
   assert.deepEqual(await ev(page, () => { const x = S.tx.at(-1); return [x.qty, x.amount, x.u.n]; }), [0.5, 10, 'KG']);
 });
 
-await test('قايمة الشراء: الفرط (كيلو/لتر) بتقترح على قد الاحتياج بالربع، والعبوة المقفولة بعبوة كاملة', async page => {
+await test('قايمة الشراء: الفرط (كيلو/لتر) بتقترح على قد الاستهلاك بالظبط، والعبوة المقفولة بعبوة كاملة', async page => {
   const r = await ev(page, () => {
     S.items.push({ id: 'tm', name: 'طماطم', group: 'خضار وفاكهة', base: 'KG', pu: 'كيس', pf: 1, monthly: 3.3, price: 20 },
       { id: 'zt', name: 'زيت', group: 'تموين', base: 'L', pu: 'زجاجة', pf: 0.8, monthly: 0.3, price: 100 },
@@ -651,8 +651,8 @@ await test('قايمة الشراء: الفرط (كيلو/لتر) بتقترح �
     save(); const q = id => shopList().find(x => x.it.id === id).qty;
     return [q('tm'), q('zt'), q('sk'), shopQty(byId(S.items, 'tm'), 0.5), shopQty(byId(S.items, 'tm'), 1.5)];
   });
-  // 3.3 كيلو في الشهر + 3 أيام احتياطي = 3.63 → 3.75 (لأقرب ربع) · الزيت عبوة 0.8 كاملة · السكر متعلّم "مش فرط" → 4 أكياس
-  assert.deepEqual(r, [3.75, 0.8, 4, 'نص كيلو', 'كيلو ونص']);
+  // 3.3 كيلو في الشهر + 3 أيام احتياطي = 3.63 بالظبط · الزيت عبوة 0.8 كاملة · السكر متعلّم "مش فرط" → 4 أكياس
+  assert.deepEqual(r, [3.63, 0.8, 4, 'نص كيلو', 'كيلو ونص']);
   // من الصنف: تشيل علامة "فرط" فتتحفظ
   await ev(page, () => itemForm('tm')); await page.uncheck('#sheetBody [name="loose"]'); await submit(page);
   assert.deepEqual(await ev(page, () => [byId(S.items, 'tm').loose, shopList().find(x => x.it.id === 'tm').qty]), [false, 4]);

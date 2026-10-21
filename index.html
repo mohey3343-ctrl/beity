@@ -513,7 +513,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-21 · 11:00';
+const APP_VER = '2026-10-21 · 12:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -881,8 +881,8 @@ function shopList(){
     const rate = dailyRate(it), est = estStock(it), have = est == null ? 0 : est;
     const need = rate.v * cover - have;
     let qty = 0;
-    // بنقرّب لعدد عبوات كامل — والفرط (خضار، فاكهة، أي حاجة بالكيلو/اللتر) لأقرب ربع حسب احتياجك
-    if(need > 0.001){ const step = isLoose(it) ? 0.25 : hasPack(it) ? it.pf : 1; qty = Math.ceil(need / step - 1e-9) * step; }
+    // العبوة المقفولة بنقرّبها لعدد عبوات كامل — والفرط (خضار، فاكهة، لحمة…) بالظبط على قد الاستهلاك (لأقرب 10 جرام/مللي)
+    if(need > 0.001){ const step = isLoose(it) ? 0.01 : hasPack(it) ? it.pf : 1; qty = Math.round(Math.ceil(need / step - 1e-9) * step * 1000) / 1000; }
     return {it, rate, est, have, need, qty, cost:qty * (it.price || 0)};
   });
 }
@@ -2558,7 +2558,7 @@ function itemForm(id, preset){
   const m0 = it && it.monthly ? String(+(it.monthly / f).toFixed(4)) : '', p0 = it && it.price ? String(+(it.price * f).toFixed(2)) : '';
   body += `<div class="fld2">${Fd.num('monthly', '<span data-l="monthly">بتستهلك كام في الشهر</span>', m0)}${Fd.num('price', '<span data-l="price">السعر</span>', p0)}</div>`;
   body += `<div class="muted" data-l="conv" style="margin:-4px 0 10px"></div>`;
-  body += `<label class="switch" style="margin:-2px 0 10px"><input type="checkbox" name="loose" ${it ? (isLoose(it) ? 'checked' : '') : 'checked'} onchange="this.dataset.t=1"> <span>بيتباع فرط بأي كمية (ربع، نص كيلو/لتر…) — قايمة الشراء تقترح على قد احتياجك مش عبوة كاملة</span></label>`;
+  body += `<label class="switch" style="margin:-2px 0 10px"><input type="checkbox" name="loose" ${it ? (isLoose(it) ? 'checked' : '') : 'checked'} onchange="this.dataset.t=1"> <span>بيتباع فرط بأي كمية — قايمة الشراء تقترح على قد استهلاكك بالظبط مش عبوة كاملة</span></label>`;
   if(!it) body += Fd.num('stock', '<span data-l="stock">الموجود عندك دلوقتي (اختياري)</span>', '');
   if(it){
     const cs = itemCounts(it).slice(-4).reverse(), bs = itemBuys(it).sort((a, b) => evKey(a) < evKey(b) ? 1 : -1).slice(0, 4);
