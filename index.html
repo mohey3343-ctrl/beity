@@ -230,6 +230,9 @@
   #heroMain.mini{padding:10px 14px !important; border-radius:18px !important;}
   .hero-mini{display:flex; flex-wrap:wrap; gap:6px 14px; justify-content:space-between; font-size:12.5px; color:var(--soft); cursor:pointer;}
   .hero-mini b{color:var(--ink); font-size:15px; margin-inline-start:4px;}
+  .hero-total{margin:-4px 0 10px; font-size:13px; color:var(--soft);}
+  .hero-total b{color:var(--ink); font-size:17px; margin-inline-start:4px;}
+  .hero-total small{opacity:.7; margin-inline-start:4px;}
   .tabbar .in{align-items:center;}
   .tabbar .fab{position:relative !important; left:auto !important; right:auto !important; bottom:auto !important; flex:none; width:54px !important; height:54px !important;
     border-radius:18px !important; margin:-26px 4px 0; font-size:28px; line-height:1; display:flex; align-items:center; justify-content:center;
@@ -513,7 +516,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-22 · 15:00';
+const APP_VER = '2026-10-22 · 16:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -1197,13 +1200,14 @@ function render(){
 function renderHero(){
   const o = summary(VIEW);
   $('#periodLabel').innerHTML = periodLabel(VIEW) + (o.isCurrent ? '' : '<small>اضغط للرجوع للشهر الحالي</small>');
-  const b = cashBalance();
+  const b = cashBalance(), res = Math.max(0, totalReserved()), all = b.value + res;   // all = الخزنة كلها (الحر + المحجوز)
   // برا الرئيسية: سطر واحد صغير بدل الكارت الكبير، عشان محتوى الصفحة يبان من أول الشاشة
   if(TAB !== 'home'){
     $('#heroMain').innerHTML = `<div class="hero-mini" data-act="tab" data-tab="home">
+      ${res > 0 && b.known ? `<span>الكل <b class="num">${fmt(all)}</b></span>` : ''}
       <span>رصيدك <b class="num ${b.value < 0 ? 'neg' : ''}">${b.known ? fmt(b.value) : '—'}</b></span>
       <span>حر للصرف <b class="num ${o.free < 0 ? 'neg' : ''}">${fmt(o.free)}</b></span>
-      ${totalReserved() > 0 ? `<span>محجوز <b class="num">${fmt(totalReserved())}</b></span>` : ''}</div>`;
+      ${res > 0 ? `<span>محجوز <b class="num">${fmt(res)}</b></span>` : ''}</div>`;
     $('#heroMain').classList.add('mini');
     return;
   }
@@ -1212,6 +1216,7 @@ function renderHero(){
     <div class="lbl">رصيدك دلوقتي (الفلوس اللي معاك${totalReserved() > 0 ? ' — من غير المحجوز' : ' فعلًا'})</div>
     ${b.known
       ? `<div class="big num ${b.value < 0 ? 'neg' : ''}">${fmt(b.value)}</div>
+         ${res > 0 ? `<div class="hero-total">💰 معاك كله (شامل المحجوز) <b class="num">${fmt(all)}</b></div>` : ''}
          <div style="margin:-2px 0 10px"><button class="btn sm" style="background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.2)" data-act="cashCount">جرد الفلوس · آخر جرد ${dayLabel(b.last.date)}</button></div>`
       : `<div style="margin:8px 0 12px"><button class="btn primary" data-act="cashCount">اكتب رصيدك الحالي</button></div>`}
     <div class="hero-pills">
