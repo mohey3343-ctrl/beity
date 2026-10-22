@@ -513,7 +513,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-22 · 14:00';
+const APP_VER = '2026-10-22 · 15:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -2941,7 +2941,7 @@ function dueForm(id, preset){
   if(!d) body += Fd.num('reserved', 'شايل له كام لحد دلوقتي (اختياري)', '');
   if(d){
     const res = Math.max(0, dueReserved(d));
-    body += `<div class="note">جاهز <b class="num">${fmt(res)}</b> من <b class="num">${fmt(d.amount)}</b> · المفروض تشيل <b class="num">${fmt(duePerMonth(d, periodOf(todayS())))}</b> في الشهر</div>`;
+    body += `<div class="note">جاهز <b class="num">${fmt(res)}</b> من <b class="num">${fmt(d.amount)}</b> · المفروض تشيل <b class="num">${fmt(duePerMonth(d, periodOf(todayS())))}</b> في الشهر${res > 0 ? `<div style="margin-top:8px"><button type="button" class="btn sm" data-act="unreserve" data-id="${d.id}">↩️ رجّع فلوس من المحجوز لرصيدك</button></div>` : ''}</div>`;
   }
   body += Fd.foot(d ? 'حفظ' : 'إضافة', d ? {act:'delDue', id:d.id} : null);
   openSheet(d ? dueName(d) : debt ? 'ميعاد سداد: ' + debt.name : 'ميعاد سداد جديد', body, v => {
@@ -2978,7 +2978,7 @@ function eventForm(id){
     const res = Math.max(0, dueReserved(d));
     const sp = evSpent(d);
     body += `<div class="note">الجاي: <b>${dayLabel(d.date)} ${pd(d.date).getFullYear()}</b>${sp > 0 ? ` · اتصرف عليها <b class="num">${fmt(sp)}</b> · فاضل <b class="num">${fmt(d.amount)}</b>` : ''} · جاهز <b class="num">${fmt(res)}</b> من <b class="num">${fmt(d.amount)}</b>${res > d.amount + 1 ? '' : ` · اشيل <b class="num">${fmt(duePerMonth(d, periodOf(todayS())))}</b> في الشهر`}
-      ${sp > 0 ? '<br><span class="muted">"هتصرف كام" = الميزانية كلها — اللي اتصرف بيتطرح منها لوحده.</span>' : ''}</div>`;
+      ${sp > 0 ? '<br><span class="muted">"هتصرف كام" = الميزانية كلها — اللي اتصرف بيتطرح منها لوحده.</span>' : ''}${res > 0 ? `<div style="margin-top:8px"><button type="button" class="btn sm" data-act="unreserve" data-id="${d.id}">↩️ رجّع فلوس من المحجوز لرصيدك</button></div>` : ''}</div>`;
   }
   body += Fd.foot(d ? 'حفظ' : 'إضافة', d ? {act:'delDue', id:d.id} : null);
   openSheet(d ? '🎂 ' + d.name : '🎂 عيد ميلاد / مناسبة', body, v => {
@@ -3569,6 +3569,18 @@ const ACT = {
     document.querySelectorAll('#sheetBody [data-act="buyQuick"]').forEach(b => b.classList.toggle('on', b.dataset.q === d.q));
   },
   // شايل للميعاد أكتر من الفاضل فيه (المناسبة اتصرف عليها، أو المبلغ قلّ): الزيادة ترجع لرصيدك الحر
+  // ترجّع جزء (أو كل) المحجوز لميعاد لرصيدك الحر — مثلًا احتجت الفلوس، أو الميعاد اتلغى
+  unreserve:(d) => {
+    const du = byId(S.dues, d.id); if(!du) return;
+    const res = Math.max(0, dueReserved(du)); if(res <= 0) return;
+    const lastRes = S.tx.filter(t => t.type === 'reserve' && t.dueId === du.id && t.amount > 0).pop();
+    openSheet('رجّع من المحجوز: ' + dueName(du), `${Fd.num('amount', 'هترجّع كام لرصيدك', Math.round(res * 100) / 100, 'autofocus', `محجوز له دلوقتي <b class="num">${fmt(res)}</b> — الفلوس بترجع لرصيدك الحر، والميعاد نفسه بيفضل زي ما هو`)}${Fd.foot('رجّعهم')}`, v => {
+      const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
+      if(!need(a <= res + 0.5, `المحجوز ${fmt(res)} بس`)) return false;
+      S.tx.push({id:uid(), ts:Date.now(), type:'reserve', dueId:du.id, dueDate:du.date, amount:-Math.min(a, res), note:'رجّعت من المحجوز', date:todayS(), walletId:lastRes && lastRes.walletId});
+      save(); toast(`رجع ${fmt(Math.min(a, res))} لرصيدك الحر`);
+    });
+  },
   unreserveExtra:(d) => {
     const du = byId(S.dues, d.id); if(!du) return;
     const extra = Math.round((dueReserved(du) - du.amount) * 100) / 100; if(extra <= 0.5) return;

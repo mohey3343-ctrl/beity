@@ -713,6 +713,18 @@ await test('فاتورة كل 3 شهور (الموبايل): بتتضاف من �
   assert.match(await page.textContent('#view'), /فاتورة الموبايل[\s\S]*كل 3 شهور/);
 });
 
+await test('ترجّع فلوس من المحجوز لرصيدك (جزء أو الكل)', async page => {
+  const st = () => ev(page, () => [Math.round(dueReserved(byId(S.dues, 'd'))), Math.round(cashBalance().value), Math.round(totalReserved())]);
+  await ev(page, () => { S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });
+    S.dues.push({ id: 'd', name: 'التأمين', amount: 3000, baseAmount: 3000, date: '2026-12-25', repeat: 0 });
+    S.tx.push({ id: 'r', ts: 2, type: 'reserve', dueId: 'd', dueDate: '2026-12-25', amount: 2000, date: '2026-10-08' }); save(); dueForm('d'); });
+  assert.deepEqual(await st(), [2000, 8000, 2000]);
+  await page.click('#sheetBody [data-act="unreserve"]');
+  assert.equal(await page.inputValue('#sheetBody [name="amount"]'), '2000');
+  await fill(page, 'amount', 500); await submit(page);
+  assert.deepEqual(await st(), [1500, 8500, 1500]);
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });
