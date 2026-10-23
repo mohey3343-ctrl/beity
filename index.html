@@ -516,7 +516,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-23 · 10:00';
+const APP_VER = '2026-10-23 · 11:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -1447,8 +1447,15 @@ function alertsHtml(o){
   const td = todayS(), out = [];
   o.incLines.forEach(l => {
     if(l.got > 0 && !l.closed){ out.push(['info', '💰', `${esc(l.inc.name)}: نزل <span class="num">${fmt(l.got)}</span> من <span class="num">${fmt(l.inc.amount)}</span> — فاضل <span class="num">${fmt(l.inc.amount - l.got)}</span>`, `<button class="btn sm good" data-act="receiveIncome" data-id="${l.inc.id}">نزل الباقي</button>`]); return; }
+    if(l.got > 0 && l.closed){
+      // مرتب الشهر ده نزل — لو مرتب الشهر الجاي قرّب (أسبوع) ممكن ينزل بدري
+      const nr = periodRange(addMonths(o.p, 1)), nd = dueDateIn(nr, l.inc.day || S.settings.cycleDay || 1), dd = diffDays(td, nd);
+      if(dd > 0 && dd <= 7 && !incGot(l.inc, addMonths(o.p, 1))) out.push(['info', '💰', `${esc(l.inc.name)} الجاي ميعاده ${dayLabel(nd)} (بعد <span class="num">${dd}</span> يوم) — لو نزل بدري سجّله`, `<button class="btn sm good" data-act="receiveIncome" data-id="${l.inc.id}">نزل</button>`]);
+      return;
+    }
     if(l.got > 0) return;
     const due = dueDateIn(o.r, l.inc.day || S.settings.cycleDay || 1);
+    if(td < due && diffDays(td, due) <= 7) out.push(['info', '💰', `${esc(l.inc.name)} ميعاده ${dayLabel(due)} (بعد <span class="num">${diffDays(td, due)}</span> يوم) — لو نزل بدري سجّله`, `<button class="btn sm good" data-act="receiveIncome" data-id="${l.inc.id}">نزل</button>`]);
     if(td >= due) out.push(['info', '💰', `${esc(l.inc.name)} (<span class="num">${fmt(l.inc.amount)}</span>) لسه ما اتسجلش إنه اتستلم`, `<button class="btn sm good" data-act="receiveIncome" data-id="${l.inc.id}">استلمته</button>`]);
   });
   o.billLines.forEach(l => {

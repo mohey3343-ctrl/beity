@@ -753,6 +753,16 @@ await test('الدخل: نزل جزء (والباقي متوقع)، نزل أق�
   assert.match(await page.textContent('#sheetBody'), /لسه هينزل الباقي/);
 });
 
+await test('المرتب قبل ميعاده: تنبيه "لو نزل بدري سجّله" قبلها بأسبوع، ويتسجّل لشهره', async page => {
+  // الشهر المالي بيبدأ يوم 1، والمرتب يوم 12 — النهارده 9
+  await ev(page, () => { S.incomes.push({ id: 'sal', name: 'المرتب', amount: 10000, day: 12 }); save(); ACT.tab({ tab: 'home' }); });
+  assert.match(await page.textContent('body'), /المرتب ميعاده[\s\S]*لو نزل بدري/);
+  await ev(page, () => receiveIncome('sal'));
+  assert.equal(await page.inputValue('#sheetBody [name="forp"]'), '2026-10');
+  await submit(page);
+  assert.deepEqual(await ev(page, () => { EPOCH++; const o = summary(periodOf(todayS())); return [o.incReceived, S.tx.at(-1).forP]; }), [10000, undefined]);
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });
