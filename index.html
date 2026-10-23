@@ -516,7 +516,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-23 · 12:00';
+const APP_VER = '2026-10-24 · 10:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -3054,7 +3054,11 @@ function payDue(id){
     <div class="muted" data-evhint style="margin-bottom:10px">الميزانية هتفضل مفتوحة بالباقي، وتكمّل تسجّل عليها.</div>
     <label class="fld"><span>التصنيف</span><select name="cat">${S.cats.filter(c => c.id !== 'house').map(c => `<option value="${c.id}" ${(d.cat || 'gifts') === c.id ? 'selected' : ''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></label>
     ${Fd.text('note', 'اشتريت إيه؟ (اختياري)', '', 'placeholder="مثلًا: تورتة، هدية، زينة"')}` : '';
-  openSheet((ev ? 'صرفت على: ' : 'دفعت: ') + dueName(d), `${Fd.num('amount', ev ? 'صرفت كام المرة دي' : 'المبلغ اللي اتدفع', ev ? '' : d.amount, 'autofocus', !ev && res > 0 ? `منهم <b class="num">${fmt(res)}</b> كانوا محجوزين` : '')}${evChoice}${Fd.date('date', 'التاريخ', defaultDate())}${Fd.foot('سجّل')}`, v => {
+  // ميعاد بيتكرر (فاتورة كل 3 شهور): الدفعة الجاية بعد الدفعة دي — لو دفعت قبل الميعاد بكتير، العدّ يبدأ من يوم ما دفعت
+  const pdDef = defaultDate(), early = !ev && d.repeat > 0 && diffDays(pdDef, d.date) > 14;
+  const nextDef = d.repeat > 0 ? (early ? addMonthsDate(pdDef, d.repeat) : addMonthsDate(d.date, d.repeat, d.dom || pd(d.date).getDate())) : '';
+  const nextFld = !ev && d.repeat > 0 ? `${Fd.date('next', 'الدفعة الجاية يوم', nextDef)}<div class="muted" style="margin:-4px 0 10px">${REPEATS[d.repeat]} من ${early ? 'يوم ما دفعت' : 'الميعاد'} — غيّره لو مش مظبوط.</div>` : '';
+  openSheet((ev ? 'صرفت على: ' : 'دفعت: ') + dueName(d), `${Fd.num('amount', ev ? 'صرفت كام المرة دي' : 'المبلغ اللي اتدفع', ev ? '' : d.amount, 'autofocus', !ev && res > 0 ? `منهم <b class="num">${fmt(res)}</b> كانوا محجوزين` : '')}${evChoice}${Fd.date('date', 'التاريخ', pdDef)}${nextFld}${Fd.foot('سجّل')}`, v => {
     const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
     const date = v.date || todayS(), ts = Date.now(), full = ev ? (v.evdone === '1' || a >= d.amount - 1) : a >= d.amount - 1;
     // الدفعة بتفتكر الميعاد كان عامل إزاي، عشان لو اتمسحت من اليومية يرجع زي ما كان
@@ -3064,7 +3068,11 @@ function payDue(id){
     const rel = full ? res : Math.min(res, a);
     if(rel > 0) S.tx.push({id:uid(), ts:ts + 1, type:'reserve', dueId:d.id, dueDate:d.date, amount:-rel, note:'', date, pair:payId});
     if(full){
-      if(d.repeat > 0){ d.date = addMonthsDate(d.date, d.repeat, d.dom || pd(d.date).getDate()); d.amount = d.baseAmount || d.amount; }
+      if(d.repeat > 0){
+        const nx = /^\d{4}-\d{2}-\d{2}$/.test(v.next || '') && v.next > date ? v.next : addMonthsDate(d.date, d.repeat, d.dom || pd(d.date).getDate());
+        if(v.next && nx === v.next) d.dom = pd(nx).getDate();
+        d.date = nx; d.amount = d.baseAmount || d.amount;
+      }
       else d.paidOn = date;
     }else d.amount = Math.round((d.amount - a) * 100) / 100;
     save(); toast(full ? (ev ? '🎉 المناسبة اتقفلت' + (res > a ? ' — الباقي رجع لرصيدك' : '') + (d.repeat > 0 ? ' · الجاية ' + dayLabel(d.date) + ' ' + pd(d.date).getFullYear() : '') : d.repeat > 0 ? 'اتسجّل ✔ — الجاي ' + dayLabel(d.date) + ' ' + pd(d.date).getFullYear() : '🎉 اتسدد')

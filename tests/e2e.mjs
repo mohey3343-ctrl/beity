@@ -769,6 +769,18 @@ await test('المرتب قبل ميعاده: تنبيه "لو نزل بدري �
   assert.deepEqual(await ev(page, () => { EPOCH++; const o = summary(periodOf(todayS())); return [o.incReceived, S.tx.at(-1).forP]; }), [10000, undefined]);
 });
 
+await test('فاتورة كل 3 شهور اتدفعت بدري: الجاية بعد 3 شهور من يوم الدفع (وتتعدّل)', async page => {
+  await ev(page, () => { S.dues.push({ id: 'ph', name: 'فاتورة الأرضي', amount: 140, baseAmount: 140, date: '2026-11-09', repeat: 3, dom: 9 }); save(); payDue('ph'); });
+  assert.equal(await page.inputValue('#sheetBody [name="next"]'), '2027-01-09');   // دفعت 9 أكتوبر → 9 يناير (مش 9 فبراير)
+  await submit(page);
+  assert.deepEqual(await ev(page, () => [byId(S.dues, 'ph').date, byId(S.dues, 'ph').amount]), ['2027-01-09', 140]);
+  // في ميعادها (أو قبله بأيام): الجاية = الميعاد + 3 شهور، وتقدر تغيّرها
+  await ev(page, () => { byId(S.dues, 'ph').date = '2026-10-12'; save(); payDue('ph'); });
+  assert.equal(await page.inputValue('#sheetBody [name="next"]'), '2027-01-09');
+  await page.fill('#sheetBody [name="next"]', '2027-01-20'); await submit(page);
+  assert.equal(await ev(page, () => byId(S.dues, 'ph').date), '2027-01-20');
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });
