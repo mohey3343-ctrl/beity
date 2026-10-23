@@ -748,6 +748,12 @@ await test('الدخل: نزل جزء (والباقي متوقع)، نزل أق�
   r = await sm();
   assert.deepEqual([r.got, r.exp, r.free, r.nextGot], [9500, 9500, free0, 10000]);
   assert.equal(await ev(page, () => S.tx.at(-1).forP), '2026-11');
+  // جزء من مرتب الشهر الجاي (5000) وهصرف منه دلوقتي: يدخل في "حر للصرف"
+  await ev(page, () => receiveIncome('sal'));
+  assert.match(await page.textContent('#sheetBody [name="forp"] option:checked'), /ميعاده 1 نوفمبر|ميعاده .*نوفمبر.*بدري/);
+  await fill(page, 'amount', 5000); await page.check('#sheetBody [name="useNow"]'); await submit(page);
+  r = await sm();
+  assert.deepEqual([r.free, r.nextGot], [free0 + 5000, 15000]);
   // من "+" دخل: تختار "المرتب" فيفتح نفس الشاشة
   await ev(page, () => quickAdd({ type: 'inc' })); await fill(page, 'amount', 100); await page.selectOption('#sheetBody [name="src"]', 'sal'); await submit(page);
   assert.match(await page.textContent('#sheetBody'), /لسه هينزل الباقي/);

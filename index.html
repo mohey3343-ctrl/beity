@@ -516,7 +516,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-23 · 11:00';
+const APP_VER = '2026-10-23 · 12:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -1180,7 +1180,7 @@ function summaryRaw(p){
       o.owedParts = [['📋 التزامات', Math.max(0, o.billPlanned - o.billPaid)], ['💳 أقساط', Math.max(0, o.debtPlanned - o.debtPaid)],
         ['🚗 تحويش', sum(o.goalLines, l => Math.max(0, l.need - Math.max(0, l.saved)))], ['🧺 قايمة الشراء', o.houseToBuy],
         // دخل نزل بدري بس بتاع شهر جاي: في الخزنة بس مش للصرف الشهر ده
-        ['💰 دخل الشهر الجاي (نزل بدري)', sum(S.tx.filter(t => t.type === 'inc' && t.forP && t.forP > pk && t.date <= td), t => t.amount)]].filter(x => x[1] > 0.5);
+        ['💰 دخل الشهر الجاي (نزل بدري)', sum(S.tx.filter(t => t.type === 'inc' && t.forP && t.forP > pk && t.date <= td && !t.useNow), t => t.amount)]].filter(x => x[1] > 0.5);
       o.owedLeft = sum(o.owedParts, x => x[1]);
       o.incPending = Math.max(0, o.income - o.incReceived);
       o.free = b.value - o.owedLeft;
@@ -3179,19 +3179,21 @@ function receiveIncome(id, pre){
   const cur = periodOf(todayS()), nxt = addMonths(cur, 1);
   // الافتراضي: الشهر ده — إلا لو مرتب الشهر ده نزل خلاص، يبقى ده بتاع الشهر الجاي (نزل بدري)
   const tgt = incClosed(i, cur) ? nxt : cur, left = p_ => Math.max(0, (i.amount || 0) - incGot(i, p_));
-  const opt = p_ => `<option value="${pKey(p_)}" data-left="${left(p_)}" ${samePeriod(p_, tgt) ? 'selected' : ''}>${i.name} شهر ${MONTHS[p_.m]}${incGot(i, p_) > 0 ? ` (نزل منه ${fmt(incGot(i, p_))})` : ''}${samePeriod(p_, nxt) ? ' — نزل بدري' : ''}</option>`;
+  const dueOf = p_ => dayLabel(dueDateIn(periodRange(p_), i.day || S.settings.cycleDay || 1));
+  const opt = p_ => `<option value="${pKey(p_)}" data-left="${left(p_)}" ${samePeriod(p_, tgt) ? 'selected' : ''}>اللي ميعاده ${dueOf(p_)}${incGot(i, p_) > 0 ? ` (نزل منه ${fmt(incGot(i, p_))})` : ''}${samePeriod(p_, nxt) ? ' — نزل بدري' : ''}</option>`;
   NEXT_WALLET = {label:'نزل في'};
   openSheet('استلمت ' + i.name, `<label class="fld"><span>ده</span><select name="forp" data-incleft>${opt(cur)}${opt(nxt)}</select></label>
     ${Fd.num('amount', 'المبلغ اللي نزل فعلًا', pre.amount || left(tgt) || i.amount, 'autofocus')}
     <div class="seg" style="margin-bottom:6px"><label style="flex:1"><input type="radio" name="fin" value="0" checked style="display:none"><span class="evopt">لسه هينزل الباقي</span></label><label style="flex:1"><input type="radio" name="fin" value="1" style="display:none"><span class="evopt">ده كله (مفيش باقي)</span></label></div>
     <div class="muted" style="margin-bottom:10px; line-height:1.7">لو نزل جزء بس: "لسه هينزل الباقي" يخلّي الباقي متوقع في الخطة. ولو نزل أقل (خصم مثلًا) اختار "ده كله".<br>ولو ده مرتب الشهر الجاي ونزل بدري، بيتحسب لشهره — مش بيتصرف منه الشهر ده.</div>
+    <label class="switch" data-early style="${samePeriod(tgt, nxt) ? '' : 'display:none;'}margin:-2px 0 10px"><input type="checkbox" name="useNow"> <span>هصرف منه الشهر ده (سلفة من مرتب الشهر الجاي) — يدخل في "حر للصرف" دلوقتي</span></label>
     ${Fd.date('date', 'نزل يوم', pre.date || defaultDate())}${Fd.foot('سجّل')}`, v => {
     const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
     const date = v.date || todayS(), fp = v.forp || pKey(cur), early = fp > pKey(periodOf(date));
-    S.tx.push({id:uid(), ts:Date.now(), type:'inc', incomeId:id, amount:a, note:'', date, forP:fp !== pKey(periodOf(date)) ? fp : undefined, final:v.fin === '1' || undefined});
+    S.tx.push({id:uid(), ts:Date.now(), type:'inc', incomeId:id, amount:a, note:'', date, forP:fp !== pKey(periodOf(date)) ? fp : undefined, final:v.fin === '1' || undefined, useNow:early && v.useNow ? true : undefined});
     save();
     const fpP = {y:+fp.slice(0, 4), m:+fp.slice(5) - 1}, rem = incClosed(i, fpP) ? 0 : left(fpP);
-    if(early){ toast(`💰 اتسجّل لشهر ${MONTHS[fpP.m]} — هيفضل على جنب لحد ما شهره يبدأ`, false, 5000); return; }
+    if(early){ toast(v.useNow ? `💰 اتسجّل — دخل في رصيدك الحر دلوقتي، ولما ميعاده ييجي هيتطرح من المتوقع` : `💰 اتسجّل — هيفضل على جنب لحد ميعاده${rem > 0 ? `، وفاضل ${fmt(rem)} لسه هينزل` : ''}`, false, 6000); return; }
     toast(rem > 0 ? `💰 اتسجّل — فاضل ${fmt(rem)} لسه هينزل` : '💰 اتسجّل');
     setTimeout(() => allocateSalary(a, date), 60);
   });
@@ -3830,7 +3832,8 @@ document.addEventListener('change', e => {
     if(q && q.value.trim() !== '') q.value = +(num(q.value) * pf / nf).toFixed(3);
     sel.dataset.prev = sel.value; return;
   }
-  if(el.matches && el.matches('[data-incleft]')){ const a = $('#sheetBody [name="amount"]'), l = +el.selectedOptions[0].dataset.left; if(a && l > 0) a.value = l; return; }
+  if(el.matches && el.matches('[data-incleft]')){ const a = $('#sheetBody [name="amount"]'), l = +el.selectedOptions[0].dataset.left; if(a && l > 0) a.value = l;
+    const e2 = $('#sheetBody [data-early]'); if(e2) e2.style.display = el.selectedIndex === 1 ? '' : 'none'; return; }
   if(el.name === 'every'){ document.querySelectorAll('#sheetBody [data-every]').forEach(x => x.style.display = (x.dataset.every === '1') === (el.value === '1') ? '' : 'none'); return; }
   if(el.name === 'evdone'){ const h = $('#sheetBody [data-evhint]'); if(h) h.textContent = el.value === '1' ? 'المناسبة هتتقفل، واللي فاضل من ميزانيتها يرجع لرصيدك.' : 'الميزانية هتفضل مفتوحة بالباقي، وتكمّل تسجّل عليها.'; return; }
   if(el.dataset && el.dataset.mp){
