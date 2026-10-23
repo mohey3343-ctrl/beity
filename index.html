@@ -240,7 +240,7 @@
   .more-alerts{margin-bottom:12px;} .more-alerts > summary{cursor:pointer; color:var(--soft); font-size:13px; padding:6px 4px; list-style:none;}
   .more-alerts > summary::-webkit-details-marker{display:none;} .more-alerts[open] > summary{margin-bottom:8px;}
   .evopt{display:block; text-align:center; padding:9px 6px; border-radius:13px; cursor:pointer; font-size:13.5px; color:var(--soft);}
-  input[name="evdone"]:checked + .evopt{background:rgba(255,255,255,.14); color:var(--ink); font-weight:600;}
+  .seg input[type="radio"]:checked + .evopt{background:rgba(255,255,255,.14); color:var(--ink); font-weight:600;}
   .pause-btn{min-height:22px !important; padding:0 7px; font-size:10.5px; margin-top:3px; color:var(--soft); white-space:nowrap; border-radius:8px !important;}
   .toast.long{border-radius:18px !important; width:min(92vw, 560px); max-width:none; text-align:right; line-height:1.75; padding:12px 16px;}
   #refreshBtn{font-size:20px;} #refreshBtn.spin{animation:spin 1s linear infinite; pointer-events:none;}
@@ -516,7 +516,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-22 · 16:00';
+const APP_VER = '2026-10-23 · 10:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -740,6 +740,13 @@ function periodOf(dateS){
 }
 function addMonths(p, n){ const d = new Date(p.y, p.m + n, 1); return {y:d.getFullYear(), m:d.getMonth()}; }
 function samePeriod(a, b){ return a.y === b.y && a.m === b.m; }
+/* الدخل بيتحسب للشهر بتاعه مش ليوم ما نزل: مرتب نوفمبر لو نزل بدري يوم 28 أكتوبر بيتحسب لنوفمبر (forP) */
+const pKey = p => p.y + '-' + pad(p.m + 1);
+const incFor = t => t.forP || pKey(periodOf(t.date));
+const incTx = (inc, p) => S.tx.filter(t => t.type === 'inc' && t.incomeId === inc.id && incFor(t) === pKey(p));
+const incGot = (inc, p) => sum(incTx(inc, p), t => t.amount);
+// "ده كله" = نزل أقل من المتوقع ومفيش باقي جاي (خصم مثلًا)
+const incClosed = (inc, p) => incTx(inc, p).some(t => t.final) || incGot(inc, p) >= (inc.amount || 0) - 0.5;
 function periodRange(p){
   const cd = S.settings.cycleDay || 1;
   const start = new Date(p.y, p.m, cd), end = new Date(p.y, p.m + 1, cd - 1);
@@ -1065,12 +1072,14 @@ function summaryRaw(p){
   const o = {p, r, T};
   // الدخل: اللي اتسجل فعلًا، وإلا المتوقع من مصادر الدخل الثابتة
   o.incReceived = 0; o.incExpected = 0; o.incLines = [];
+  const pk = pKey(p), incT = S.tx.filter(t => t.type === 'inc' && incFor(t) === pk);
   S.incomes.forEach(inc => {
-    const got = sum(T.filter(t => t.type === 'inc' && t.incomeId === inc.id), t => t.amount);
-    o.incReceived += got; o.incExpected += got > 0 ? got : (inc.amount || 0);
-    o.incLines.push({inc, got});
+    const got = incGot(inc, p), closed = incClosed(inc, p);
+    // نزل جزء ولسه الباقي جاي: المتوقع يفضل المبلغ كله
+    o.incReceived += got; o.incExpected += closed ? got : Math.max(got, inc.amount || 0);
+    o.incLines.push({inc, got, closed});
   });
-  o.incExtra = sum(T.filter(t => t.type === 'inc' && !byId(S.incomes, t.incomeId)), t => t.amount);
+  o.incExtra = sum(incT.filter(t => !byId(S.incomes, t.incomeId)), t => t.amount);
   o.incReceived += o.incExtra;
   // شهر خلص: الدخل = اللي اتسجل فعلًا (مش المتوقع)
   o.income = r.end < todayS() ? o.incReceived : o.incExpected + o.incExtra;
@@ -1169,7 +1178,9 @@ function summaryRaw(p){
       o.safe = b.value + o.reservedAll;
       o.cashNow = b.value;
       o.owedParts = [['📋 التزامات', Math.max(0, o.billPlanned - o.billPaid)], ['💳 أقساط', Math.max(0, o.debtPlanned - o.debtPaid)],
-        ['🚗 تحويش', sum(o.goalLines, l => Math.max(0, l.need - Math.max(0, l.saved)))], ['🧺 قايمة الشراء', o.houseToBuy]].filter(x => x[1] > 0.5);
+        ['🚗 تحويش', sum(o.goalLines, l => Math.max(0, l.need - Math.max(0, l.saved)))], ['🧺 قايمة الشراء', o.houseToBuy],
+        // دخل نزل بدري بس بتاع شهر جاي: في الخزنة بس مش للصرف الشهر ده
+        ['💰 دخل الشهر الجاي (نزل بدري)', sum(S.tx.filter(t => t.type === 'inc' && t.forP && t.forP > pk && t.date <= td), t => t.amount)]].filter(x => x[1] > 0.5);
       o.owedLeft = sum(o.owedParts, x => x[1]);
       o.incPending = Math.max(0, o.income - o.incReceived);
       o.free = b.value - o.owedLeft;
@@ -1435,6 +1446,7 @@ function alertsHtml(o){
   if(!o.isCurrent) return '';
   const td = todayS(), out = [];
   o.incLines.forEach(l => {
+    if(l.got > 0 && !l.closed){ out.push(['info', '💰', `${esc(l.inc.name)}: نزل <span class="num">${fmt(l.got)}</span> من <span class="num">${fmt(l.inc.amount)}</span> — فاضل <span class="num">${fmt(l.inc.amount - l.got)}</span>`, `<button class="btn sm good" data-act="receiveIncome" data-id="${l.inc.id}">نزل الباقي</button>`]); return; }
     if(l.got > 0) return;
     const due = dueDateIn(o.r, l.inc.day || S.settings.cycleDay || 1);
     if(td >= due) out.push(['info', '💰', `${esc(l.inc.name)} (<span class="num">${fmt(l.inc.amount)}</span>) لسه ما اتسجلش إنه اتستلم`, `<button class="btn sm good" data-act="receiveIncome" data-id="${l.inc.id}">استلمته</button>`]);
@@ -2242,8 +2254,8 @@ function forecast(N, withRecv){
     S.incomes.forEach(inc => {
       const d = at(dueDateIn(r, inc.day || 1));
       if(!payday || d < payday) payday = d;
-      if(paidIn(t => t.type === 'inc' && t.incomeId === inc.id, r)) return;
-      if(d <= end) evs.push({date:d, n:'💰 ' + inc.name, a:inc.amount || 0});
+      if(incClosed(inc, p)) return;   // نزل كله (حتى لو بدري) — ولو نزل جزء بنحسب الباقي بس
+      if(d <= end) evs.push({date:d, n:'💰 ' + inc.name, a:Math.max(0, (inc.amount || 0) - incGot(inc, p))});
     });
     S.bills.filter(x => !x.off).forEach(x => {
       if(paidIn(t => t.type === 'bill' && t.billId === x.id, r)) return;
@@ -2500,6 +2512,8 @@ function quickAdd(preset){
   }
   body += `<label class="fld"><input class="amount" name="amount" inputmode="decimal" placeholder="0" value="${t ? Math.abs(t.amount) : ''}" autofocus></label>`;
   if(type === 'exp' && !(t && t.itemId)) body += `<div class="catpick">${cats}</div>`;
+  // دخل جديد: لو ده المرتب (أو جزء منه، أو نزل بدري) يتسجّل عليه مش "دخل إضافي"
+  if(!t && isInc && S.incomes.length) body += `<label class="fld"><span>ده إيه؟</span><select name="src"><option value="">دخل إضافي (مكافأة، شغل زيادة…)</option>${S.incomes.map(i => `<option value="${i.id}">${esc(i.name)} — كله أو جزء أو بدري</option>`).join('')}</select></label>`;
   // مصروف اتسجل عادي وهو تبع مناسبة (أو العكس): تربطه بميزانيتها — بيتطرح من الفاضل فيها ومن المحجوز لها
   const evNow = t && t.dueId ? byId(S.dues || [], t.dueId) : null;
   const evLinkable = t && t.type === 'exp' && !t.itemId && (!t.dueId || (evNow && evNow.kind === 'event' && !evNow.paidOn && t.duePrev && t.duePrev.date === evNow.date));
@@ -2556,6 +2570,7 @@ function quickAdd(preset){
       }
       save(); toast('اتعدّل');
     }else{
+      if(v.src && byId(S.incomes, v.src)){ receiveIncome(v.src, {amount, date:v.date}); return false; }
       S.tx.push({id:uid(), ts:Date.now(), type, amount, cat:type === 'exp' ? (v.cat || 'other') : undefined, note:v.note.trim(), date:v.date || todayS()});
       save();
       const lm = type === 'exp' ? limitMsg(v.cat || 'other') : null;
@@ -3138,6 +3153,8 @@ function incomeForm(id){
   let body = Fd.text('name', 'مصدر الدخل', i ? i.name : 'المرتب', 'autofocus');
   body += `<div class="fld2">${Fd.num('amount', 'المبلغ الشهري', i ? i.amount : '')}${Fd.day('day', 'بينزل يوم', i ? i.day : (S.settings.cycleDay || 1))}</div>`;
   if(!S.incomes.length && !i) body += `<label class="switch"><input type="checkbox" name="setCycle" checked> خلّي الشهر المالي يبدأ يوم نزول المرتب</label>`;
+  if(i) body += `<div class="note">نزل منه الشهر ده <b class="num">${fmt(incGot(i, periodOf(todayS())))}</b> من <b class="num">${fmt(i.amount)}</b>
+    <div style="margin-top:8px"><button type="button" class="btn sm good" data-act="receiveIncome" data-id="${i.id}">💰 استلمت (كله، جزء، أو بدري)</button></div></div>`;
   body += Fd.foot(i ? 'حفظ' : 'إضافة', i ? {act:'delIncome', id:i.id} : null);
   openSheet(i ? i.name : 'مصدر دخل', body, v => {
     if(!need(v.name.trim(), 'اكتب الاسم')) return false;
@@ -3149,14 +3166,27 @@ function incomeForm(id){
     save(); toast('اتحفظ');
   });
 }
-function receiveIncome(id){
-  const i = byId(S.incomes, id);
+/* استلام دخل: كله أو جزء منه، وفي ميعاده أو بدري (مرتب الشهر الجاي) */
+function receiveIncome(id, pre){
+  const i = byId(S.incomes, id); pre = pre || {};
+  const cur = periodOf(todayS()), nxt = addMonths(cur, 1);
+  // الافتراضي: الشهر ده — إلا لو مرتب الشهر ده نزل خلاص، يبقى ده بتاع الشهر الجاي (نزل بدري)
+  const tgt = incClosed(i, cur) ? nxt : cur, left = p_ => Math.max(0, (i.amount || 0) - incGot(i, p_));
+  const opt = p_ => `<option value="${pKey(p_)}" data-left="${left(p_)}" ${samePeriod(p_, tgt) ? 'selected' : ''}>${i.name} شهر ${MONTHS[p_.m]}${incGot(i, p_) > 0 ? ` (نزل منه ${fmt(incGot(i, p_))})` : ''}${samePeriod(p_, nxt) ? ' — نزل بدري' : ''}</option>`;
   NEXT_WALLET = {label:'نزل في'};
-  openSheet('استلمت ' + i.name, `${Fd.num('amount', 'المبلغ اللي نزل فعلًا', i.amount, 'autofocus')}${Fd.date('date', 'التاريخ', defaultDate())}${Fd.foot('سجّل')}`, v => {
+  openSheet('استلمت ' + i.name, `<label class="fld"><span>ده</span><select name="forp" data-incleft>${opt(cur)}${opt(nxt)}</select></label>
+    ${Fd.num('amount', 'المبلغ اللي نزل فعلًا', pre.amount || left(tgt) || i.amount, 'autofocus')}
+    <div class="seg" style="margin-bottom:6px"><label style="flex:1"><input type="radio" name="fin" value="0" checked style="display:none"><span class="evopt">لسه هينزل الباقي</span></label><label style="flex:1"><input type="radio" name="fin" value="1" style="display:none"><span class="evopt">ده كله (مفيش باقي)</span></label></div>
+    <div class="muted" style="margin-bottom:10px; line-height:1.7">لو نزل جزء بس: "لسه هينزل الباقي" يخلّي الباقي متوقع في الخطة. ولو نزل أقل (خصم مثلًا) اختار "ده كله".<br>ولو ده مرتب الشهر الجاي ونزل بدري، بيتحسب لشهره — مش بيتصرف منه الشهر ده.</div>
+    ${Fd.date('date', 'نزل يوم', pre.date || defaultDate())}${Fd.foot('سجّل')}`, v => {
     const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
-    S.tx.push({id:uid(), ts:Date.now(), type:'inc', incomeId:id, amount:a, note:'', date:v.date || todayS()});
-    save(); toast('💰 اتسجّل');
-    setTimeout(() => allocateSalary(a, v.date || todayS()), 60);
+    const date = v.date || todayS(), fp = v.forp || pKey(cur), early = fp > pKey(periodOf(date));
+    S.tx.push({id:uid(), ts:Date.now(), type:'inc', incomeId:id, amount:a, note:'', date, forP:fp !== pKey(periodOf(date)) ? fp : undefined, final:v.fin === '1' || undefined});
+    save();
+    const fpP = {y:+fp.slice(0, 4), m:+fp.slice(5) - 1}, rem = incClosed(i, fpP) ? 0 : left(fpP);
+    if(early){ toast(`💰 اتسجّل لشهر ${MONTHS[fpP.m]} — هيفضل على جنب لحد ما شهره يبدأ`, false, 5000); return; }
+    toast(rem > 0 ? `💰 اتسجّل — فاضل ${fmt(rem)} لسه هينزل` : '💰 اتسجّل');
+    setTimeout(() => allocateSalary(a, date), 60);
   });
 }
 /* ---- توزيع دخل إضافي (مكافأة، شغل زيادة...) ----
@@ -3793,6 +3823,7 @@ document.addEventListener('change', e => {
     if(q && q.value.trim() !== '') q.value = +(num(q.value) * pf / nf).toFixed(3);
     sel.dataset.prev = sel.value; return;
   }
+  if(el.matches && el.matches('[data-incleft]')){ const a = $('#sheetBody [name="amount"]'), l = +el.selectedOptions[0].dataset.left; if(a && l > 0) a.value = l; return; }
   if(el.name === 'every'){ document.querySelectorAll('#sheetBody [data-every]').forEach(x => x.style.display = (x.dataset.every === '1') === (el.value === '1') ? '' : 'none'); return; }
   if(el.name === 'evdone'){ const h = $('#sheetBody [data-evhint]'); if(h) h.textContent = el.value === '1' ? 'المناسبة هتتقفل، واللي فاضل من ميزانيتها يرجع لرصيدك.' : 'الميزانية هتفضل مفتوحة بالباقي، وتكمّل تسجّل عليها.'; return; }
   if(el.dataset && el.dataset.mp){

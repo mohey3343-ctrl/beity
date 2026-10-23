@@ -725,6 +725,34 @@ await test('ترجّع فلوس من المحجوز لرصيدك (جزء أو ا
   assert.deepEqual(await st(), [1500, 8500, 1500]);
 });
 
+await test('الدخل: نزل جزء (والباقي متوقع)، نزل أقل ("ده كله")، ومرتب الشهر الجاي نزل بدري', async page => {
+  const sm = () => ev(page, () => { EPOCH++; const o = summary(periodOf(todayS())), n = summary(addMonths(periodOf(todayS()), 1));
+    return { got: o.incReceived, exp: o.income, free: Math.round(o.free), nextGot: n.incReceived }; });
+  await ev(page, () => { S.incomes.push({ id: 'sal', name: 'المرتب', amount: 10000, day: 1 });
+    S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-01', amount: 0 }); save(); receiveIncome('sal'); });
+  assert.equal(await page.inputValue('#sheetBody [name="forp"]'), '2026-10');
+  await fill(page, 'amount', 6000); await submit(page);                 // نزل جزء — الافتراضي "لسه هينزل الباقي"
+  let r = await sm();
+  assert.deepEqual([r.got, r.exp], [6000, 10000]);
+  assert.match(await page.textContent('body'), /نزل 6,000 من 10,000/);
+  await ev(page, () => receiveIncome('sal'));
+  assert.equal(await page.inputValue('#sheetBody [name="amount"]'), '4000');
+  await fill(page, 'amount', 3500); await page.click('#sheetBody input[name="fin"][value="1"] + .evopt'); await submit(page);   // نزل أقل: ده كله
+  r = await sm();
+  assert.deepEqual([r.got, r.exp], [9500, 9500]);
+  const free0 = r.free;
+  // مرتب نوفمبر نزل بدري النهارده: بيتحسب لنوفمبر، والخزنة زادت بس "حر للصرف" ما يتغيرش
+  await ev(page, () => receiveIncome('sal'));
+  assert.equal(await page.inputValue('#sheetBody [name="forp"]'), '2026-11');
+  await fill(page, 'amount', 10000); await submit(page);
+  r = await sm();
+  assert.deepEqual([r.got, r.exp, r.free, r.nextGot], [9500, 9500, free0, 10000]);
+  assert.equal(await ev(page, () => S.tx.at(-1).forP), '2026-11');
+  // من "+" دخل: تختار "المرتب" فيفتح نفس الشاشة
+  await ev(page, () => quickAdd({ type: 'inc' })); await fill(page, 'amount', 100); await page.selectOption('#sheetBody [name="src"]', 'sal'); await submit(page);
+  assert.match(await page.textContent('#sheetBody'), /لسه هينزل الباقي/);
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });
