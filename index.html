@@ -516,7 +516,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-24 · 10:00';
+const APP_VER = '2026-10-24 · 11:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -746,6 +746,21 @@ const incFor = t => t.forP || pKey(periodOf(t.date));
 const incTx = (inc, p) => S.tx.filter(t => t.type === 'inc' && t.incomeId === inc.id && incFor(t) === pKey(p));
 const incGot = (inc, p) => sum(incTx(inc, p), t => t.amount);
 // "ده كله" = نزل أقل من المتوقع ومفيش باقي جاي (خصم مثلًا)
+/* التزام بيتدفع كل كام شهر (الأرضي كل 3 شهور): بيظهر في الشهر اللي ميعاده فيه بس.
+   anchor = أي ميعاد ليه (مثلًا 24 أكتوبر) والباقي كل every شهر منه */
+const billEvery = b => +b.every > 1 ? +b.every : 1;
+function billDueIn(b, p){
+  const d = dueDateIn(periodRange(p), b.dueDay || 1);
+  if(billEvery(b) === 1 || !b.anchor) return d;
+  const a = pd(b.anchor), x = pd(d), mm = (x.getFullYear() - a.getFullYear()) * 12 + x.getMonth() - a.getMonth();
+  return ((mm % billEvery(b)) + billEvery(b)) % billEvery(b) === 0 ? d : null;
+}
+const billPaidT = (b, p) => S.tx.filter(t => t.type === 'bill' && t.billId === b.id && (t.forP || pKey(periodOf(t.date))) === pKey(p));
+// أقرب شهر جاي (من الشهر ده) الالتزام ميعاده فيه ولسه ما اتدفعش
+function billNextP(b, from){
+  for(let i = 0, p = from || periodOf(todayS()); i <= 24; i++, p = addMonths(p, 1)) if(billDueIn(b, p) && !billPaidT(b, p).length) return p;
+  return null;
+}
 const incClosed = (inc, p) => incTx(inc, p).some(t => t.final) || incGot(inc, p) >= (inc.amount || 0) - 0.5;
 function periodRange(p){
   const cd = S.settings.cycleDay || 1;
@@ -1085,10 +1100,12 @@ function summaryRaw(p){
   o.income = r.end < todayS() ? o.incReceived : o.incExpected + o.incExtra;
   // الالتزامات الثابتة
   o.billLines = S.bills.filter(b => !b.off).map(b => {
-    const paidT = T.filter(t => t.type === 'bill' && t.billId === b.id);
-    const paid = sum(paidT, t => t.amount);
-    return {b, paid, paidT, planned:paidT.length ? paid : (b.amount || 0), due:dueDateIn(r, b.dueDay || 1)};
-  });
+    const paidT = billEvery(b) > 1 ? billPaidT(b, p) : T.filter(t => t.type === 'bill' && t.billId === b.id);
+    const paid = sum(paidT, t => t.amount), due = billDueIn(b, p);
+    // كل كام شهر: مش في الشهر ده ومش متدفوع له → مالوش سطر
+    if(!due && !paidT.length) return null;
+    return {b, paid, paidT, planned:paidT.length ? paid : (b.amount || 0), due:due || r.start};
+  }).filter(Boolean);
   // دفع ميعاد سداد (مش مربوط بدين) بيتسجّل "bill" بس مكانه سطر المواعيد، مش الالتزامات الثابتة
   o.billPaid = sum(T.filter(t => t.type === 'bill' && !t.dueId), t => t.amount);
   o.duePaid = sum(T.filter(t => t.type === 'bill' && t.dueId), t => t.amount);
@@ -1804,7 +1821,7 @@ PAGES.bills = function(){
   if(sub === 'recv') return h + recvHtml();
   if(sub === 'debts') return h + debtsHtml(o);
   if(sub === 'dues') return h + duesHtml();
-  if(!S.bills.length && !activeDues().some(d => d.repeat > 1 && d.kind !== 'event' && !d.debtId)) return h + `<div class="card empty"><div class="e-ic">📋</div>سجّل الحاجات اللي بتدفعها كل شهر:<br>إيجار، كهربا، مية، غاز، نت، مدارس، جمعية...<div style="margin-top:12px"><button class="btn primary" data-act="billForm">+ التزام جديد</button></div></div>`;
+  if(!S.bills.length && !activeDues().some(d => d.repeat > 0 && d.kind !== 'event' && !d.debtId)) return h + `<div class="card empty"><div class="e-ic">📋</div>سجّل الحاجات اللي بتدفعها كل شهر:<br>إيجار، كهربا، مية، غاز، نت، مدارس، جمعية...<div style="margin-top:12px"><button class="btn primary" data-act="billForm">+ التزام جديد</button></div></div>`;
   const td = todayS();
   h += `<div class="card"><div class="row"><div><div class="muted">إجمالي الالتزامات الشهر ده</div><div style="font-size:22px">${money(o.billPlanned)}</div>
     <div class="muted">اتدفع <span class="num">${fmt(o.billPaid)}</span> · فاضل <span class="num">${fmt(Math.max(0, o.billPlanned - o.billPaid))}</span></div></div>
@@ -1812,14 +1829,21 @@ PAGES.bills = function(){
   o.billLines.slice().sort((a, b) => a.due < b.due ? -1 : 1).forEach(l => {
     const paid = l.paidT.length > 0, late = !paid && o.isCurrent && l.due < td;
     h += `<div class="list-item" data-act="billForm" data-id="${l.b.id}"><div class="li-ic">${paid ? '✅' : late ? '⏰' : '📋'}</div>
-      <div class="li-main"><div class="li-title">${esc(l.b.name)}</div><div class="li-sub">يوم ${l.b.dueDay || 1} في الشهر${paid ? ' · اتدفع ' + dayLabel(l.paidT[0].date) : late ? ' · <span class="neg">متأخر</span>' : ''}</div></div>
+      <div class="li-main"><div class="li-title">${esc(l.b.name)}${billEvery(l.b) > 1 ? ` <span class="tag blue">${REPEATS[billEvery(l.b)] || ''}</span>` : ''}</div><div class="li-sub">${billEvery(l.b) > 1 ? dayLabel(l.due) : `يوم ${l.b.dueDay || 1} في الشهر`}${paid ? ' · اتدفع ' + dayLabel(l.paidT[0].date) : late ? ' · <span class="neg">متأخر</span>' : ''}</div></div>
       <div class="li-end"><b class="num">${fmt(paid ? l.paid : l.b.amount)}</b>${paid ? '' : `<div><button class="btn sm good" data-act="payBill" data-id="${l.b.id}">دفعت</button></div>`}</div></div>`;
   });
-  // فواتير كل كام شهر (متسجلة مواعيد سداد بتتكرر) — بتظهر هنا كمان عشان تلاقيها مع الالتزامات
-  const rep = activeDues().filter(d => d.repeat > 1 && d.kind !== 'event' && !d.debtId).sort((a, b) => a.date < b.date ? -1 : 1);
-  if(rep.length) h += `<div class="day-h"><span>كل كام شهر</span></div>` + rep.map(d => `<div class="list-item" data-act="dueForm" data-id="${d.id}"><div class="li-ic">🔁</div>
-      <div class="li-main"><div class="li-title">${esc(d.name)} <span class="tag blue">${REPEATS[d.repeat] || ''}</span></div><div class="li-sub">الجاية ${dayLabel(d.date)} · بتشيل لها <b class="num">${fmt(duePerMonth(d, periodOf(td)))}</b> في الشهر · جاهز <span class="num">${fmt(Math.max(0, dueReserved(d)))}</span></div></div>
-      <div class="li-end"><b class="num">${fmt(d.amount)}</b></div></div>`).join('');
+  // التزامات كل كام شهر اللي مش ميعادها الشهر ده
+  const shown = new Set(o.billLines.map(l => l.b.id));
+  const per = S.bills.filter(b => !b.off && billEvery(b) > 1 && !shown.has(b.id));
+  if(per.length) h += `<div class="day-h"><span>مش الشهر ده</span></div>` + per.map(b => { const np = billNextP(b, addMonths(VIEW, 1)), nd = np && billDueIn(b, np);
+    return `<div class="list-item" data-act="billForm" data-id="${b.id}"><div class="li-ic">🔁</div>
+      <div class="li-main"><div class="li-title">${esc(b.name)} <span class="tag blue">${REPEATS[billEvery(b)] || 'كل ' + billEvery(b) + ' شهور'}</span></div><div class="li-sub">${nd ? 'الجاية ' + dayLabel(nd) + ' ' + pd(nd).getFullYear() : ''}</div></div>
+      <div class="li-end"><b class="num">${fmt(b.amount)}</b><div><button class="btn sm" data-act="payBill" data-id="${b.id}">دفعت بدري</button></div></div></div>`; }).join('');
+  // مواعيد سداد بتتكرر متسجلة من قبل كده (فاتورة كل 3 شهور مثلًا) — تتنقل للالتزامات بضغطة
+  const rep = activeDues().filter(d => d.repeat > 0 && d.kind !== 'event' && !d.debtId).sort((a, b) => a.date < b.date ? -1 : 1);
+  if(rep.length) h += `<div class="day-h"><span>في مواعيد السداد وبتتكرر</span></div>` + rep.map(d => `<div class="list-item" data-act="dueForm" data-id="${d.id}"><div class="li-ic">📅</div>
+      <div class="li-main"><div class="li-title">${esc(d.name)} <span class="tag blue">${REPEATS[d.repeat] || ''}</span></div><div class="li-sub">الجاية ${dayLabel(d.date)} · لو دي فاتورة عادية (مش فلوس بتحوّشها) انقلها هنا</div></div>
+      <div class="li-end"><button class="btn sm good" data-act="dueToBill" data-id="${d.id}">انقلها للالتزامات</button></div></div>`).join('');
   const off = S.bills.filter(b => b.off);
   if(off.length) h += `<div class="day-h"><span>متوقفة</span></div>` + off.map(b => `<div class="list-item" data-act="billForm" data-id="${b.id}"><div class="li-ic">⏸</div><div class="li-main"><div class="li-title">${esc(b.name)}</div></div><div class="li-end num">${fmt(b.amount)}</div></div>`).join('');
   return h + '</div>';
@@ -2132,7 +2156,7 @@ const homeCats = () => S.settings.homeCats || ['market', 'fix'];
 function homeCost(){
   const lines = [];
   const offB = new Set(S.settings.homeBillsOff || []);
-  S.bills.filter(b => !b.off && !offB.has(b.id)).forEach(b => lines.push({k:'bill', icon:'📋', name:b.name, v:b.amount || 0}));
+  S.bills.filter(b => !b.off && !offB.has(b.id)).forEach(b => lines.push({k:'bill', icon:'📋', name:b.name + (billEvery(b) > 1 ? ` (÷${billEvery(b)})` : ''), v:(b.amount || 0) / billEvery(b)}));
   const byG = {};
   S.items.filter(it => it.pause !== 'always').forEach(it => { const g = it.group || 'تاني'; byG[g] = (byG[g] || 0) + dailyRate(it).v * 30 * (it.price || 0); });
   Object.entries(byG).filter(([, v]) => v > 0.5).forEach(([g, v]) => lines.push({k:'stock', icon:'🧺', name:'استوك: ' + g, v}));
@@ -2265,8 +2289,9 @@ function forecast(N, withRecv){
       if(d <= end) evs.push({date:d, n:'💰 ' + inc.name, a:Math.max(0, (inc.amount || 0) - incGot(inc, p))});
     });
     S.bills.filter(x => !x.off).forEach(x => {
-      if(paidIn(t => t.type === 'bill' && t.billId === x.id, r)) return;
-      const d = at(dueDateIn(r, x.dueDay || 1)); if(d <= end) evs.push({date:d, n:'📋 ' + x.name, a:-(x.amount || 0)});
+      const due = billDueIn(x, p); if(!due) return;
+      if(billEvery(x) > 1 ? billPaidT(x, p).length : paidIn(t => t.type === 'bill' && t.billId === x.id, r)) return;
+      const d = at(due); if(d <= end) evs.push({date:d, n:'📋 ' + x.name, a:-(x.amount || 0)});
     });
     S.debts.filter(x => x.monthly > 0).forEach(x => {
       if(paidIn(t => t.type === 'debt' && t.debtId === x.id, r)) return;
@@ -2324,7 +2349,7 @@ function cashSuggestions(F){
   return out;
 }
 function emergencyCard(){
-  const ess = sum(S.bills.filter(x => !x.off), x => x.amount || 0) + sum(S.debts.filter(x => debtRemaining(x) > 0.5), x => x.monthly || 0) + houseMonthlyCost() + avgDailySpend().v * 30;
+  const ess = sum(S.bills.filter(x => !x.off), x => (x.amount || 0) / billEvery(x)) + sum(S.debts.filter(x => debtRemaining(x) > 0.5), x => x.monthly || 0) + houseMonthlyCost() + avgDailySpend().v * 30;
   if(ess < 1) return '';
   const target = Math.round(ess * 3 / 100) * 100, g = S.goals.find(x => x.kind === 'emergency' || /طوارئ/.test(x.name));
   return `<div class="card"><h3>🛟 صندوق الطوارئ</h3>
@@ -2885,35 +2910,34 @@ function countItem(id){
 function billForm(id){
   const b = id ? byId(S.bills, id) : null;
   let body = Fd.text('name', 'الالتزام', b ? b.name : '', 'autofocus placeholder="مثلاً: إيجار، كهربا، نت، مدرسة"');
-  // فاتورة مش كل شهر (التليفون كل 3 شهور، التأمين كل سنة): بتتسجل ميعاد سداد بيتكرر، والبرنامج يقسّمها على الشهور
-  if(!b) body += `<label class="fld"><span>بتتدفع كل</span><select name="every">${[[1, 'شهر'], [3, '3 شهور (كل ربع سنة)'], [6, '6 شهور'], [12, 'سنة']].map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select></label>`;
-  body += `<div class="fld2">${Fd.num('amount', b ? 'المبلغ الشهري (تقريبًا)' : 'المبلغ (تقريبًا)', b ? b.amount : '')}<div data-every="1">${Fd.day('dueDay', 'بيتدفع يوم', b ? b.dueDay : 1)}</div><div data-every="n" style="display:none">${Fd.date('next', 'الفاتورة الجاية يوم', addMonthsDate(todayS(), 1))}</div></div>
-    <div class="muted" data-every="n" style="display:none; margin:-4px 0 10px; line-height:1.7">البرنامج هيقسّمها على الشهور لحد ميعادها ويقولك تشيل كام كل شهر، وبعد ما تدفع يجيب الميعاد اللي بعده لوحده.</div>`;
+  // التزام مش كل شهر (الأرضي كل 3 شهور، اشتراك سنوي): بيظهر في الشهر اللي ميعاده فيه بس
+  const ev0 = b ? billEvery(b) : 1, np = b && ev0 > 1 ? billNextP(b) : null;
+  const next0 = b && ev0 > 1 ? (np ? billDueIn(b, np) : b.anchor) : todayS();
+  body += `<label class="fld"><span>بيتدفع كل</span><select name="every">${[[1, 'شهر'], [2, 'شهرين'], [3, '3 شهور (كل ربع سنة)'], [6, '6 شهور'], [12, 'سنة']].map(([k, t]) => `<option value="${k}" ${k === ev0 ? 'selected' : ''}>${t}</option>`).join('')}</select></label>`;
+  body += `<div class="fld2">${Fd.num('amount', 'المبلغ (تقريبًا)', b ? b.amount : '')}<div data-every="1" ${ev0 > 1 ? 'style="display:none"' : ''}>${Fd.day('dueDay', 'بيتدفع يوم', b ? b.dueDay : 1)}</div><div data-every="n" ${ev0 > 1 ? '' : 'style="display:none"'}>${Fd.date('next', 'المرة الجاية (أو اللي النهارده) يوم', next0)}</div></div>
+    <div class="muted" data-every="n" style="${ev0 > 1 ? '' : 'display:none; '}margin:-4px 0 10px; line-height:1.7">بيظهر في الالتزامات في الشهر اللي بيتدفع فيه بس، وفي "البيت بيتكلف كام" بيتقسم على الشهور.</div>`;
   if(b) body += `<label class="switch"><input type="checkbox" name="off" ${b.off ? 'checked' : ''}> متوقف مؤقتًا (مش هيتحسب في الخطة)</label>`;
   body += Fd.foot(b ? 'حفظ' : 'إضافة', b ? {act:'delBill', id:b.id} : null);
   openSheet(b ? b.name : 'التزام شهري جديد', body, v => {
     if(!need(v.name.trim(), 'اكتب اسم الالتزام')) return false;
-    if(!b && +v.every > 1){
-      // فاتورة كل كام شهر = ميعاد سداد بيتكرر (بيتقسم على الشهور لحد ميعاده)
-      if(!need(num(v.amount) > 0, 'اكتب المبلغ')) return false;
-      if(!need(/^\d{4}-\d{2}-\d{2}$/.test(v.next), 'اختار ميعاد الفاتورة الجاية')) return false;
-      const o = {id:uid(), createdAt:todayS(), name:v.name.trim(), amount:num(v.amount), baseAmount:num(v.amount), date:v.next, repeat:+v.every, dom:pd(v.next).getDate()};
-      S.dues = S.dues || []; S.dues.push(o);
-      save(); toast(`اتضافت — هتشيل لها ${fmt(duePerMonth(o, periodOf(todayS())))} في الشهر لحد ${dayLabel(o.date)}`, false, 5000);
-      return;
-    }
+    const every = +v.every || 1;
+    if(every > 1 && !need(/^\d{4}-\d{2}-\d{2}$/.test(v.next), 'اختار ميعاده')) return false;
     const o = b || {id:uid()};
-    Object.assign(o, {name:v.name.trim(), amount:num(v.amount), dueDay:+v.dueDay || 1, off:!!v.off});
+    Object.assign(o, {name:v.name.trim(), amount:num(v.amount), dueDay:every > 1 ? pd(v.next).getDate() : (+v.dueDay || 1), off:!!v.off});
+    if(every > 1){ o.every = every; o.anchor = v.next; } else { delete o.every; delete o.anchor; }
     if(!b) S.bills.push(o);
     save(); toast('اتحفظ');
   });
 }
 function payBill(id){
   const b = byId(S.bills, id);
+  // كل كام شهر: الدفعة دي بتاعة أقرب ميعاد ليه ما اتدفعش (حتى لو دفعته بدري)
+  const tp = billEvery(b) > 1 ? billNextP(b) : null;
   NEXT_WALLET = {label:'دفعت من'};
-  openSheet('دفعت ' + b.name, `${Fd.num('amount', 'المبلغ اللي اتدفع', b.amount, 'autofocus', 'لو الفاتورة جت مختلفة (كهربا مثلًا) اكتب الرقم الحقيقي.')}${Fd.date('date', 'التاريخ', defaultDate())}${Fd.text('note', 'ملاحظة', '')}${Fd.foot('سجّل الدفع')}`, v => {
+  openSheet('دفعت ' + b.name, `${tp ? `<div class="note" style="margin:0 0 10px">دي دفعة ${dayLabel(billDueIn(b, tp))} ${pd(billDueIn(b, tp)).getFullYear()} — والجاية بعدها بـ${REPEATS[billEvery(b)] ? REPEATS[billEvery(b)].replace('كل ', '') : billEvery(b) + ' شهور'}</div>` : ''}${Fd.num('amount', 'المبلغ اللي اتدفع', b.amount, 'autofocus', 'لو الفاتورة جت مختلفة (كهربا مثلًا) اكتب الرقم الحقيقي.')}${Fd.date('date', 'التاريخ', defaultDate())}${Fd.text('note', 'ملاحظة', '')}${Fd.foot('سجّل الدفع')}`, v => {
     const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
-    S.tx.push({id:uid(), ts:Date.now(), type:'bill', billId:id, amount:a, note:v.note.trim(), date:v.date || todayS()});
+    const date = v.date || todayS(), fp = tp && pKey(tp) !== pKey(periodOf(date)) ? pKey(tp) : undefined;
+    S.tx.push({id:uid(), ts:Date.now(), type:'bill', billId:id, amount:a, note:v.note.trim(), date, forP:fp});
     save(); toast('اتسجّل ✔');
   });
 }
@@ -3642,6 +3666,21 @@ const ACT = {
   },
   payDue:(d) => payDue(d.id),
   goDues:() => { TAB = 'bills'; SUB.bills = 'dues'; render(); window.scrollTo(0, 0); },
+  // ميعاد سداد بيتكرر → التزام (كل كام شهر): المحجوز يرجع لرصيدك، والمدفوعات القديمة تتربط بالالتزام
+  dueToBill:(d) => {
+    const du = byId(S.dues, d.id); if(!du) return;
+    const res = Math.max(0, dueReserved(du));
+    if(!confirm(`تنقل "${du.name}" للالتزامات (${REPEATS[du.repeat] || ''})؟` + (res > 0 ? ` الـ ${fmt(res)} المحجوزين ليه هيرجعوا لرصيدك.` : ''))) return;
+    if(res > 0) S.tx.push({id:uid(), ts:Date.now(), type:'reserve', dueId:du.id, dueDate:du.date, amount:-res, note:'اتنقل للالتزامات', date:todayS()});
+    // لو اتدفع قبل كده: العدّ من آخر دفعة (دفعت النهارده → الجاية بعد 3 شهور من النهارده)
+    const pays = S.tx.filter(t => t.type === 'bill' && t.dueId === du.id).sort((a, b) => a.date < b.date ? -1 : 1), lastPay = pays[pays.length - 1];
+    const anchor = lastPay ? lastPay.date : du.date;
+    const b = {id:uid(), name:du.name, amount:du.baseAmount || du.amount, dueDay:pd(anchor).getDate(), every:du.repeat, anchor};
+    if(b.every <= 1){ delete b.every; delete b.anchor; }
+    pays.forEach(t => { t.billId = b.id; delete t.dueId; delete t.duePrev; });
+    S.bills.push(b); S.dues = S.dues.filter(x => x.id !== du.id);
+    SUB.bills = 'bills'; closeSheet(); save(); toast('اتنقلت للالتزامات ✔');
+  },
   delDue:(d) => {
     const du = byId(S.dues, d.id), res = Math.max(0, dueReserved(du));
     if(!confirm(res > 0 ? `تمسح الميعاد ده؟ الـ ${fmt(res)} المحجوزين هيرجعوا لرصيدك.` : 'تمسح الميعاد ده؟')) return;

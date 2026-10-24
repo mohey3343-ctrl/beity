@@ -700,19 +700,6 @@ await test('"خلص؟" بعد شراء النهارده بيسأل، ومسود�
   assert.equal(await est(), 0.6);
 });
 
-await test('فاتورة كل 3 شهور (الموبايل): بتتضاف من نفس الشاشة، وتظهر في الالتزامات، وبتتقسم على الشهور', async page => {
-  await ev(page, () => { ACT.tab({ tab: 'bills' }); billForm(); });
-  await fill(page, 'name', 'فاتورة الموبايل'); await fill(page, 'amount', 900);
-  await page.selectOption('#sheetBody [name="every"]', '3');
-  assert.ok(await page.isVisible('#sheetBody [name="next"]') && !(await page.isVisible('#sheetBody [name="dueDay"]')));
-  await page.fill('#sheetBody [name="next"]', '2026-12-25'); await submit(page);
-  assert.ok(!(await page.isVisible('#sheetWrap.open')), 'الشاشة تتقفل بعد الإضافة');
-  const r = await ev(page, () => { const d = S.dues[0]; return [S.bills.length, d.name, d.amount, d.repeat, Math.round(duePerMonth(d, periodOf(todayS())))]; });
-  // 900 على 3 شهور (أكتوبر ونوفمبر وديسمبر) = 300 في الشهر
-  assert.deepEqual(r, [0, 'فاتورة الموبايل', 900, 3, 300]);
-  assert.match(await page.textContent('#view'), /فاتورة الموبايل[\s\S]*كل 3 شهور/);
-});
-
 await test('ترجّع فلوس من المحجوز لرصيدك (جزء أو الكل)', async page => {
   const st = () => ev(page, () => [Math.round(dueReserved(byId(S.dues, 'd'))), Math.round(cashBalance().value), Math.round(totalReserved())]);
   await ev(page, () => { S.cashCounts.push({ id: 'c', ts: 1, date: '2026-10-08', amount: 10000 });
@@ -779,6 +766,35 @@ await test('فاتورة كل 3 شهور اتدفعت بدري: الجاية ب�
   assert.equal(await page.inputValue('#sheetBody [name="next"]'), '2027-01-09');
   await page.fill('#sheetBody [name="next"]', '2027-01-20'); await submit(page);
   assert.equal(await ev(page, () => byId(S.dues, 'ph').date), '2027-01-20');
+});
+
+await test('التزام كل 3 شهور (الأرضي): في الالتزامات في شهره بس، والدفع بدري يتحسب لشهره، ونقل ميعاد قديم', async page => {
+  const lines = p => ev(page, p => { EPOCH++; const o = summary(p ? addMonths(periodOf(todayS()), p) : periodOf(todayS())); return [o.billLines.map(l => l.b.name + (l.paidT.length ? '✓' : '')).join(','), Math.round(o.billPlanned)]; }, p);
+  await ev(page, () => { ACT.tab({ tab: 'bills' }); billForm(); });
+  await fill(page, 'name', 'الأرضي'); await fill(page, 'amount', 140);
+  await page.selectOption('#sheetBody [name="every"]', '3'); await page.fill('#sheetBody [name="next"]', '2026-10-09'); await submit(page);
+  assert.equal(await ev(page, () => [S.bills.length, S.dues.length].join()), '1,0');
+  assert.deepEqual(await lines(0), ['الأرضي', 140]);          // أكتوبر: ميعاده
+  assert.deepEqual(await lines(1), ['', 0]);                  // نوفمبر: لأ
+  assert.deepEqual(await lines(3), ['الأرضي', 140]);          // يناير
+  await ev(page, () => payBill(S.bills[0].id)); await submit(page);
+  assert.deepEqual(await lines(0), ['الأرضي✓', 140]);
+  // دفعت يناير بدري (النهارده): يتحسب ليناير، وأكتوبر ما يتأثرش في السطور
+  await ev(page, () => payBill(S.bills[0].id));
+  assert.match(await page.textContent('#sheetBody'), /9 يناير/);
+  await submit(page);
+  // يناير: متعلّم إنه اتدفع، ومفيش حاجة فاضلة عليه — والفلوس خرجت في أكتوبر (140 + 140)
+  assert.deepEqual(await lines(3), ['الأرضي✓', 0]);
+  assert.deepEqual(await lines(0), ['الأرضي✓', 280]);
+  assert.equal(await ev(page, () => S.tx.at(-1).forP), '2027-01');
+  // البيت بيتكلف كام: 140 ÷ 3
+  assert.equal(await ev(page, () => Math.round(homeCost().lines.find(l => l.k === 'bill').v)), 47);
+  // ميعاد سداد قديم بيتكرر اتدفع النهارده → ينقل للالتزامات والجاية بعد 3 شهور من الدفع
+  await ev(page, () => { S.bills = []; S.tx = []; S.dues.push({ id: 'du', name: 'نت', amount: 300, baseAmount: 300, date: '2027-01-15', repeat: 3, dom: 15 });
+    S.tx.push({ id: 'p', ts: 5, type: 'bill', dueId: 'du', amount: 300, date: '2026-10-09', duePrev: { date: '2026-10-15', amount: 300 } }); save(); ACT.tab({ tab: 'bills' }); ACT.sub({ k: 'bills', v: 'bills' }); });
+  await page.click('[data-act="dueToBill"]');
+  assert.deepEqual(await ev(page, () => [S.dues.length, S.bills[0].anchor, S.bills[0].every, S.tx[0].billId === S.bills[0].id]), [0, '2026-10-09', 3, true]);
+  assert.deepEqual(await lines(0), ['نت✓', 300]);
 });
 
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
