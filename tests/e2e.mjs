@@ -802,6 +802,20 @@ await test('التزام كل 3 شهور (الأرضي): في الالتزاما
   assert.deepEqual(await lines(0), ['نت✓', 300]);
 });
 
+await test('شاشة الصنف بتوري الحسبة: جرد + اللي اشتريته − "خلص" = الاستهلاك، أو ليه بنستخدم التقديري', async page => {
+  await ev(page, () => { S.items.push({ id: 'fr', name: 'فراخ بلدي', group: 'ألبان وبروتين', base: 'KG', monthly: 2, price: 140 });
+    S.counts.push({ id: 'a', ts: new Date('2026-10-01T10:00:00').getTime(), itemId: 'fr', date: '2026-10-01', qty: 0.5 });
+    S.tx.push({ id: 'b', ts: new Date('2026-10-03T10:00:00').getTime(), type: 'exp', cat: 'house', itemId: 'fr', qty: 2, amount: 280, date: '2026-10-03' }); save(); itemForm('fr'); });
+  assert.match(await page.textContent('#sheetBody'), /جرد واحد بس/);
+  await ev(page, () => closeSheet()); await ev(page, () => ACT.itemOut({ id: 'fr' }));   // "خلص" النهارده
+  if (await page.isVisible('#sheetWrap.open')) await submit(page);
+  await ev(page, () => itemForm('fr'));
+  const txt = (await page.textContent('#sheetBody')).replace(/[\u2066\u2069]/g, '');
+  assert.match(txt, /الحسبة: جرد .*\(0.5 KG\) \+ اشتريت 2 KG \(1 مرة\) − خلص .*\(0 KG\)/);
+  assert.match(txt, /استهلكت 2.5 KG في 8 يوم/);
+  assert.equal(await ev(page, () => +(learnedDaily(byId(S.items, 'fr')) * 30).toFixed(2)), 9.37);
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });
