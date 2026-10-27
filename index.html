@@ -516,7 +516,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-24 · 11:00';
+const APP_VER = '2026-10-27 · 10:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -900,8 +900,9 @@ function coverDays(){
   }
   return 30;
 }
-function shopList(){
-  const cover = coverDays() + (S.settings.bufferDays || 0);
+/* days: لو اتبعت = بنحسب على عدد الأيام ده بالظبط (خطة الشهر: لآخر الشهر المالي) — وإلا حسب اختيارك في "أشتري إيه" */
+function shopList(days){
+  const cover = days != null ? days : coverDays() + (S.settings.bufferDays || 0);
   return S.items.filter(it => !isPaused(it)).map(it => {
     const rate = dailyRate(it), est = estStock(it), have = est == null ? 0 : est;
     const need = rate.v * cover - have;
@@ -1159,8 +1160,9 @@ function summaryRaw(p){
   o.houseSpent = sum(T.filter(t => t.type === 'exp' && t.cat === 'house'), t => t.amount);
   o.houseToBuy = 0;
   if(isCur){
-    // نفس تكلفة "أشتري إيه" بالظبط (عبوات كاملة + أيام الاحتياطي) — الفلوس اللي هتدفعها فعلًا
-    o.houseToBuy = sum(shopList(), x => x.cost);
+    // اللي محتاج تشتريه لحد آخر الشهر المالي بس (حتى لو "أشتري إيه" معمولة على شهر كامل) — الشهر ده بس اللي يخص الخطة
+    o.houseDaysLeft = diffDays(todayS(), r.end) + 1;
+    o.houseToBuy = sum(shopList(o.houseDaysLeft + (S.settings.bufferDays || 0)), x => x.cost);
     o.houseBudget = o.houseSpent + o.houseToBuy;
   }else o.houseBudget = r.start > todayS() ? o.houseMonthly : o.houseSpent;
   o.houseReserved = Math.max(o.houseBudget, o.houseSpent);
@@ -1195,7 +1197,7 @@ function summaryRaw(p){
       o.safe = b.value + o.reservedAll;
       o.cashNow = b.value;
       o.owedParts = [['📋 التزامات', Math.max(0, o.billPlanned - o.billPaid)], ['💳 أقساط', Math.max(0, o.debtPlanned - o.debtPaid)],
-        ['🚗 تحويش', sum(o.goalLines, l => Math.max(0, l.need - Math.max(0, l.saved)))], ['🧺 قايمة الشراء', o.houseToBuy],
+        ['🚗 تحويش', sum(o.goalLines, l => Math.max(0, l.need - Math.max(0, l.saved)))], ['🧺 قايمة الشراء لآخر الشهر', o.houseToBuy],
         // دخل نزل بدري بس بتاع شهر جاي: في الخزنة بس مش للصرف الشهر ده
         ['💰 دخل الشهر الجاي (نزل بدري)', sum(S.tx.filter(t => t.type === 'inc' && t.forP && t.forP > pk && t.date <= td && !t.useNow), t => t.amount)]].filter(x => x[1] > 0.5);
       o.owedLeft = sum(o.owedParts, x => x[1]);
@@ -1385,7 +1387,7 @@ PAGES.home = function(){
       return `<div class="plan-line"><span>📅 ${o.reserveActual ? 'مواعيد السداد والمناسبات' : 'تتشال لمواعيد السداد'}${parts ? `<div class="muted" style="font-size:11.5px">${parts}</div>` : ''}</span><b class="num">− ${fmt(tot)}</b></div>`;
     })()}
     ${o.isCurrent && o.reserveToDo > 0.5 ? `<div class="muted" style="font-size:12px; padding:4px 0 8px; border-bottom:1px solid var(--line)">⏳ لسه المفروض تشيل <b class="num">${fmt(o.reserveToDo)}</b> للمواعيد الشهر ده — مش متخصومة من الحساب لحد ما تشيلها فعلًا.</div>` : ''}
-    <div class="plan-line"><span>🧺 استوك البيت${o.isCurrent && o.houseToBuy > 0.5 ? `<div class="muted" style="font-size:11.5px">اتصرف ${fmt(o.houseSpent)} + قايمة الشراء ${fmt(o.houseToBuy)}</div>` : ''}</span><b class="num">− ${fmt(o.houseReserved)}</b></div>
+    <div class="plan-line"><span>🧺 استوك البيت${o.isCurrent && o.houseToBuy > 0.5 ? `<div class="muted" style="font-size:11.5px">اتصرف ${fmt(o.houseSpent)} + محتاج تشتري لآخر الشهر (${o.houseDaysLeft} يوم${S.settings.bufferDays ? ' + ' + S.settings.bufferDays + ' احتياطي' : ''}) ${fmt(o.houseToBuy)}</div>` : ''}</span><b class="num">− ${fmt(o.houseReserved)}</b></div>
     ${o.lent > 0.5 ? `<div class="plan-line"><span>🤝 سلّفت حد</span><b class="num">− ${fmt(o.lent)}</b></div>` : ''}
     ${o.isCurrent && o.cashKnown && o.incPending > 0.5 ? `<div class="plan-line"><span>💰 دخل لسه ما نزلش<div class="muted" style="font-size:11.5px">مش بيتحسب لحد ما يوصل</div></span><b class="num">− ${fmt(o.incPending)}</b></div>` : ''}
     ${o.isCurrent && o.cashKnown && Math.abs(o.unrecorded) >= 1 ? `<div class="plan-line"><span>⚖️ ${o.unrecorded < 0 ? 'فلوس خرجت ومش متسجلة' : 'فلوس زيادة عن المتسجل'}<div class="muted" style="font-size:11.5px; line-height:1.6">الفرق بين الحساب والخزنة (جرد الفلوس ${dayLabel(o.cashLast.date)})${o.unrecorded < 0 ? ' — مصاريف ما اتسجلتش، أو اتصرفت قبل ما تبدأ تسجّل' : ' — غالبًا فاضلة من الشهر اللي فات'}</div></span><b class="num ${o.unrecorded < 0 ? 'neg' : 'pos'}">${o.unrecorded < 0 ? '− ' : '+ '}${fmt(Math.abs(o.unrecorded))}</b></div>` : ''}
@@ -1778,6 +1780,7 @@ function shopHtml(){
   const L = shopList(), need = L.filter(x => x.qty > 0).sort((a, b) => (daysLeft(a.it) || 0) - (daysLeft(b.it) || 0));
   const total = sum(need, x => x.cost), cover = coverDays();
   const unknown = S.items.filter(it => estStock(it) == null && dailyRate(it).v > 0).length;
+  const curO = summary(periodOf(todayS()));
   let h = `<div class="card"><h3>🛒 أشتري إيه عشان أكمّل الشهر</h3>
     <div class="seg" style="margin-bottom:10px">
       <button type="button" class="${S.settings.coverMode !== 'period' ? 'on' : ''}" data-act="cover" data-v="month">يكفي شهر كامل</button>
@@ -1790,6 +1793,7 @@ function shopHtml(){
         <button type="button" class="${S.settings.shopView === 'base' ? 'on' : ''}" data-act="shopView" data-v="base">KG / L / PCS</button></div></div>
     ${unknown ? `<div class="note">⚠️ <b>${unknown}</b> صنف ما اتعملهمش جرد، فبنعتبر الموجود منهم صفر. <a href="#" data-act="sub" data-k="stock" data-v="jard">اعمل جرد</a></div>` : ''}
   </div>`;
+  if(Math.abs(total - curO.houseToBuy) > 1) h = h.replace(/<\/div>$/, `<div class="note" style="margin-top:10px">لآخر الشهر المالي (<b class="num">${curO.houseDaysLeft}</b> يوم) هتحتاج بـ <b class="num">${fmt(curO.houseToBuy)}</b> ج بس — ده اللي محسوب في خطة الشهر. القايمة تحت محسوبة على ${S.settings.coverMode === 'period' ? 'آخر الشهر' : 'شهر كامل'}${S.settings.bufferDays ? ' + الاحتياطي' : ''}.</div></div>`);
   if(!need.length) return h + `<div class="card empty"><div class="e-ic">✅</div>البيت مكفي للمدة دي — مش محتاج تشتري حاجة.</div>` + pausedHtml();
   h += `<div class="card"><div class="row" style="margin-bottom:8px"><div><div class="muted">التكلفة المتوقعة</div><div style="font-size:22px">${money(total)}</div></div>
     <div class="btns"><button class="btn" data-act="shareList">مشاركة</button><button class="btn primary" data-act="buyMany">اشتريتهم</button></div></div>

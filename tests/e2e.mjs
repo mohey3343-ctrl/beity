@@ -280,6 +280,11 @@ await test('خطة الشهر: الاستوك = اللي اتصرف + اللي �
   });
   // من 9 لـ 31 أكتوبر = 23 يوم + 3 احتياطي = 26 كيلو، عندك 7 → تشتري 19 × 10 = 190 — نفس قايمة الشراء بالظبط
   assert.deepEqual(r, [50, 190, 240, 300, 190]);
+  // "أشتري إيه" على شهر كامل: القايمة 30 يوم، بس خطة الشهر بتحسب لآخر الشهر بس
+  const r2 = await ev(page, () => { S.settings.coverMode = 'month'; save(); EPOCH++; return [Math.round(summary(VIEW).houseToBuy), Math.round(sum(shopList(), x => x.cost))]; });
+  assert.deepEqual(r2, [190, 260]);
+  await ev(page, () => { ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'shop' }); });
+  assert.match(await page.textContent('body'), /لآخر الشهر المالي \(23 يوم\) هتحتاج بـ 190/);
 });
 
 await test('خطة الشهر: المواعيد بتتخصم بس لما تشيل فعلًا', async page => {
