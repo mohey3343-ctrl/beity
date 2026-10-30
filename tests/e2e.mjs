@@ -330,13 +330,13 @@ await test('مراجعة الاستوك: صفر+صفر، تغيير العبوة
   });
   assert.deepEqual(r, { rate: 1, buy: 33 });
   // تغيير العبوة من كيس 0.45 لكرتونة 4.5 من غير لمس الأرقام: القيمة بالكيلو ما تتغيرش
-  await ev(page, () => itemForm('m'));
+  await ev(page, () => { itemForm('m'); document.querySelectorAll('#sheetBody details').forEach(d => d.open = true); });   // التعديل جوه "بيانات الصنف" المقفولة
   await page.selectOption('#sheetBody [name="pu"]', 'كرتونة'); await fill(page, 'pf', '4.5');
   await page.dispatchEvent('#sheetBody [name="pf"]', 'change');
   await submit(page);
   assert.deepEqual(await ev(page, () => { const it = byId(S.items, 'm'); return [it.pf, +it.monthly.toFixed(3), +it.price.toFixed(2)]; }), [4.5, 4.5, 33.33]);
   // فتح الصنف وحفظه من غير تغيير ما يزحزحش الأرقام
-  await ev(page, () => { byId(S.items, 'z').monthly = 1; byId(S.items, 'z').pu = 'طبق'; byId(S.items, 'z').pf = 30; save(); itemForm('z'); });
+  await ev(page, () => { byId(S.items, 'z').monthly = 1; byId(S.items, 'z').pu = 'طبق'; byId(S.items, 'z').pf = 30; save(); itemForm('z'); document.querySelectorAll('#sheetBody details').forEach(d => d.open = true); });
   await submit(page);
   assert.equal(await ev(page, () => byId(S.items, 'z').monthly), 1);
   // الشراء بالمبلغ المقترح زي ما هو ما يغيرش السعر، والكمية بتحدّث المبلغ
@@ -661,7 +661,7 @@ await test('قايمة الشراء: الفرط (كيلو/لتر) بتقترح �
   // 3.3 كيلو في الشهر + 3 أيام احتياطي = 3.63 بالظبط · الزيت عبوة 0.8 كاملة · السكر متعلّم "مش فرط" → 4 أكياس
   assert.deepEqual(r, [3.63, 0.8, 4, 'نص كيلو', 'كيلو ونص']);
   // من الصنف: تشيل علامة "فرط" فتتحفظ
-  await ev(page, () => itemForm('tm')); await page.uncheck('#sheetBody [name="loose"]'); await submit(page);
+  await ev(page, () => { itemForm('tm'); document.querySelectorAll('#sheetBody details').forEach(d => d.open = true); }); await page.uncheck('#sheetBody [name="loose"]'); await submit(page);
   assert.deepEqual(await ev(page, () => [byId(S.items, 'tm').loose, shopList().find(x => x.it.id === 'tm').qty]), [false, 4]);
 });
 
@@ -681,7 +681,7 @@ await test('جرد أقل من اللي اتشرى النهارده: يسأل "�
   await page.click('#sheetBody input[name="when"][value="after"] + .evopt'); await submit(page);
   assert.equal(await est(), 0.1);
   // جرد اتسجل غلط: يتمسح من شاشة الصنف ويرجع اللي قبله
-  await ev(page, () => itemForm('jb'));
+  await ev(page, () => { itemForm('jb'); document.querySelectorAll('#sheetBody details').forEach(d => d.open = true); });
   await page.click(`#sheetBody [data-act="delCount"][data-id="${await ev(page, () => S.counts.at(-1).id)}"]`);
   assert.equal(await est(), 0.46);
 });
@@ -904,6 +904,30 @@ await test('مراجعة بيانات حقيقية: جرد اتصحح بعدها
   const f0 = await ev(page, () => { S.tx.push({ id: 'er', ts: 20, type: 'inc', incomeId: 'i', amount: 3000, date: '2026-10-09', forP: '2026-11' }); save(); EPOCH++; return Math.round(summary(VIEW).free); });
   await ev(page, () => quickAdd({ tx: byId(S.tx, 'er') })); await page.check('#sheetBody [name="useNow"]'); await submit(page);
   assert.equal(await ev(page, () => { EPOCH++; return Math.round(summary(VIEW).free); }), f0 + 3000);
+});
+
+await test('شاشة الصنف قصيرة: الملخص والأزرار فوق، والحسبة والبيانات مقفولين', async page => {
+  await ev(page, () => { S.items.push({ id: 'x', name: 'رز', group: 'تموين', base: 'KG', pu: 'كيس', pf: 1, monthly: 3, price: 35 });
+    S.counts.push({ id: 'c', ts: 1, itemId: 'x', date: '2026-10-09', qty: 2 }); save(); itemForm('x'); });
+  assert.ok(await page.isVisible('#sheetBody [data-act="buyItem"]') && await page.isVisible('#sheetBody [data-act="itemOut"]'));
+  assert.ok(!(await page.isVisible('#sheetBody [name="price"]')), 'بيانات الصنف مقفولة');
+  assert.match(await page.textContent('#sheetBody'), /عندك دلوقتي/);
+  const h = await ev(page, () => document.querySelector('#sheetBody').scrollHeight);
+  assert.ok(h < 600, 'الشاشة طويلة: ' + h);
+  // الحفظ من غير ما تفتح البيانات ما يبوظش حاجة
+  await submit(page);
+  assert.deepEqual(await ev(page, () => { const i = byId(S.items, 'x'); return [i.name, i.monthly, i.price, i.pf]; }), ['رز', 3, 35, 1]);
+});
+
+await test('اليومية: الفلاتر مقفولة ورا زرار "فلتر"، واللي شغال منها بيبان ويتشال بضغطة', async page => {
+  await ev(page, () => { S.tx.push({ id: 'a', ts: 1, type: 'exp', cat: 'food', amount: 50, date: '2026-10-08' }, { id: 'b', ts: 2, type: 'exp', cat: 'market', amount: 70, date: '2026-10-08' }); save(); ACT.tab({ tab: 'log' }); });
+  assert.ok(!(await page.isVisible('#logCat')));
+  await page.click('[data-act="logOpen"]'); await page.selectOption('#logCat', 'food');
+  assert.equal(await ev(page, () => document.querySelectorAll('#logList [data-act="editTx"]').length), 1);
+  await page.click('[data-act="logOpen"]');                        // اقفل اللوحة — الفلتر الشغال بيبان كـ chip
+  assert.match(await page.textContent('#view'), /فلتر \(1\)/);
+  await page.click('[data-act="logCatClear"]');
+  assert.equal(await ev(page, () => document.querySelectorAll('#logList [data-act="editTx"]').length), 2);
 });
 
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {

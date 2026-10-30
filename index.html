@@ -516,7 +516,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-31 · 11:00';
+const APP_VER = '2026-10-31 · 13:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -1277,7 +1277,7 @@ function summaryRaw(p){
 }
 
 /* ---------------- الحالة والعرض ---------------- */
-let TAB = 'home', VIEW = null, LOGF = 'all', LOGQ = '', LOGCAT = '', LOGALL = false;
+let TAB = 'home', VIEW = null, LOGF = 'all', LOGQ = '', LOGCAT = '', LOGALL = false, LOGOPEN = false;
 const SUB = {stock:'items', bills:'bills'};
 const PAGES = {}, AFTER = {};
 
@@ -1624,16 +1624,22 @@ PAGES.log = function(){
   const o = summary(VIEW);
   const F = {all:'الكل', exp:'مصروف', bill:'التزامات', debt:'ديون', save:'تحويش', reserve:'محجوز', lend:'سلف', inc:'دخل'};
   if(S.wallets.length > 1) F.xfer = 'تحويلات';
-  let h = `<div class="grid2">
-    <div class="stat"><div class="t">💰 دخل اتسجل</div><div class="v">${money(o.incReceived, 'pos')}</div></div>
-    <div class="stat"><div class="t">📤 خارج</div><div class="v">${money(o.outActual)}</div></div></div>`;
+  // فوق: سطر واحد للدخل والخارج (نفس أرقام الرئيسية)، وتحته البحث وزرار "فلتر" — الفلاتر مقفولة لحد ما تحتاجها
+  const nF = (LOGF !== 'all') + !!LOGCAT + LOGALL;
+  let h = `<div class="muted" style="margin:0 2px 10px; display:flex; gap:14px; flex-wrap:wrap">💰 دخل <b class="num pos">${fmt(o.incReceived)}</b> · 📤 خارج <b class="num">${fmt(o.outActual)}</b></div>`;
   h += `<div class="card" style="padding:10px">
-    <input id="logQ" type="search" placeholder="🔍 دوّر: بنزين، 150، كارفور..." value="${esc(LOGQ)}" style="width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:12px; background:var(--card-2); color:var(--ink); font-size:16px;">
-    <div class="row" style="margin-top:8px; gap:8px">
-      <select id="logCat" style="flex:1; padding:8px; border:1px solid var(--line); border-radius:10px; background:var(--card-2); color:var(--ink); font-size:14px;">
-        <option value="">كل التصنيفات</option>${S.cats.map(c => `<option value="${c.id}" ${LOGCAT === c.id ? 'selected' : ''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select>
-      <label class="switch" style="margin:0; font-size:13px"><input type="checkbox" id="logAll" ${LOGALL ? 'checked' : ''}> كل الشهور</label></div></div>`;
-  h += `<div class="chips">${Object.entries(F).map(([k, v]) => `<button class="chip ${LOGF === k ? 'on' : ''}" data-act="logf" data-f="${k}">${v}</button>`).join('')}</div>`;
+    <div class="row" style="gap:8px">
+      <input id="logQ" type="search" placeholder="🔍 دوّر: بنزين، 150، كارفور..." value="${esc(LOGQ)}" style="flex:1; min-width:0; padding:10px 12px; border:1px solid var(--line); border-radius:12px; background:var(--card-2); color:var(--ink); font-size:15px;">
+      <button type="button" class="btn sm ${nF ? 'primary' : ''}" data-act="logOpen">⚙️ فلتر${nF ? ` (${nF})` : ''}</button></div>
+    ${nF && !LOGOPEN ? `<div class="chips" style="margin:8px 0 0">${LOGF !== 'all' ? `<button class="chip on" data-act="logf" data-f="all">${F[LOGF]} ✕</button>` : ''}${LOGCAT ? `<button class="chip on" data-act="logCatClear">${catOf(LOGCAT).icon} ${esc(catOf(LOGCAT).name)} ✕</button>` : ''}${LOGALL ? `<button class="chip on" data-act="logAllClear">كل الشهور ✕</button>` : ''}</div>` : ''}
+    ${LOGOPEN ? `<div style="margin-top:10px">
+      <div class="muted" style="font-size:12px; margin-bottom:4px">النوع</div>
+      <div class="chips" style="flex-wrap:wrap">${Object.entries(F).map(([k, v]) => `<button class="chip ${LOGF === k ? 'on' : ''}" data-act="logf" data-f="${k}">${v}</button>`).join('')}</div>
+      <div class="row" style="gap:8px">
+        <select id="logCat" style="flex:1; padding:8px; border:1px solid var(--line); border-radius:10px; background:var(--card-2); color:var(--ink); font-size:14px;">
+          <option value="">كل التصنيفات</option>${S.cats.map(c => `<option value="${c.id}" ${LOGCAT === c.id ? 'selected' : ''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select>
+        <label class="switch" style="margin:0; font-size:13px"><input type="checkbox" id="logAll" ${LOGALL ? 'checked' : ''}> كل الشهور</label></div>
+      ${nF ? '<div style="margin-top:8px"><button type="button" class="btn sm" data-act="logReset">امسح الفلاتر</button></div>' : ''}</div>` : ''}</div>`;
   return h + `<div id="logList">${logListHtml(o)}</div>`;
 };
 
@@ -2719,7 +2725,8 @@ function itemForm(id, preset){
   const packs = Array.from(new Set([...PACKS, ...(S.settings.packs || []), ...S.items.map(x => x.pu).filter(Boolean)]));
   const r = it ? dailyRate(it) : null, learned = it ? learnedDaily(it) : null;
   const base = it ? baseOf(it) : 'KG', pu = it ? (it.pu || '') : 'كيس', f = it ? packF(it) : 1;
-  let body = Fd.text('name', 'اسم الصنف', it ? it.name : (preset.name || ''), 'autofocus placeholder="مثلاً: مكرونة"');
+  // صنف موجود: فوق الملخص والأزرار، والحسبة والسجل وبيانات الصنف مقفولين (تفتحهم لما تحتاج) — عشان الشاشة ما تبقاش طويلة
+  let body = Fd.text('name', 'اسم الصنف', it ? it.name : (preset.name || ''), (it ? '' : 'autofocus ') + 'placeholder="مثلاً: مكرونة"');
   body += `<div class="fld2">${Fd.pick('group', 'المجموعة', groups, it ? it.group : 'تموين', 'groups')}
     <label class="fld"><span>المقياس الأساسي</span><select name="base" data-ilbl>${Object.entries(BASES).map(([k, v]) => `<option value="${k}" ${k === base ? 'selected' : ''}>${v.en} — ${v.ar}</option>`).join('')}</select></label></div>`;
   body += `<div class="fld2"><label class="fld"><span>بتشتريه في (العبوة)</span><select name="pu" data-ilbl data-pick="packs" data-label="العبوة" data-prev="${esc(pu)}">
@@ -2732,14 +2739,20 @@ function itemForm(id, preset){
   if(!it) body += Fd.num('stock', '<span data-l="stock">الموجود عندك دلوقتي (اختياري)</span>', '');
   if(it){
     const cs = itemCounts(it).slice(-4).reverse(), bs = itemBuys(it).sort((a, b) => evKey(a) < evKey(b) ? 1 : -1).slice(0, 4);
-    body += `<div class="note">📊 المعدل المستخدم: <b>${qtyTxt(it, r.v * 30)}</b>/شهر ${r.src === 'learned' ? '(محسوب من الجرد)' : r.src === 'buys' ? '(محسوب من المشتريات)' : '(تقديري)'}
+    const fields = body, e = estStock(it), dl = daysLeft(it);
+    body = `<div class="note" style="margin-top:0">📦 عندك دلوقتي <b>${e == null ? 'مش معروف' : qtyTxt(it, e)}</b>${dl != null ? ` · يكفي <b class="num">${dl >= 60 ? '+60' : Math.floor(dl)}</b> يوم` : ''}
+      <br>📊 بتستهلك <b>${qtyTxt(it, r.v * 30)}</b>/شهر <span class="muted">${r.src === 'learned' ? '(من الجرد)' : r.src === 'buys' ? '(من المشتريات)' : '(تقديري)'}</span></div>
+      <div class="btns" style="margin:0 0 10px"><button type="button" class="btn good" data-act="buyItem" data-id="${it.id}">سجّل شراء</button><button type="button" class="btn" data-act="countItem" data-id="${it.id}">جرد الصنف ده</button><button type="button" class="btn danger" data-act="itemOut" data-id="${it.id}">خلص 🚫</button>${isPaused(it) ? `<button type="button" class="btn" data-act="itemResume" data-id="${it.id}">▶️ رجّعه للقايمة</button>` : `<button type="button" class="btn" data-act="itemPause" data-id="${it.id}">⏸️ إيقاف</button>`}</div>
+      ${isPaused(it) ? `<div class="note" style="margin-top:0">⏸️ ${pauseTxt(it)} — مش داخل في قايمة الشراء ولا الخطة.</div>` : ''}
+      <details class="note" style="padding:10px 12px"><summary style="cursor:pointer; font-weight:600">🧮 الحسبة والجرد والمشتريات</summary>
+      <div style="margin-top:6px">📊 المعدل المستخدم: <b>${qtyTxt(it, r.v * 30)}</b>/شهر ${r.src === 'learned' ? '(محسوب من الجرد)' : r.src === 'buys' ? '(محسوب من المشتريات)' : '(تقديري)'}
       ${learnedHtml(it)}
       ${cs.length ? '<br><b>آخر جرد:</b> ' + cs.map(c => `<button type="button" class="chip" style="margin:3px 2px" data-act="delCount" data-id="${c.id}" title="امسح الجرد ده">${dayLabel(c.date)}${tsOk(c) ? ' ' + new Date(c.ts).toLocaleTimeString('ar-EG', {hour:'numeric', minute:'2-digit'}) : ''}: ${esc(qtyPlain(it, c.qty))} ✕</button>`).join('') + '<div class="muted" style="font-size:11.5px">جرد اتسجل غلط؟ دوس عليه وامسحه.</div>' : ''}
       ${bs.length ? '<br><b>آخر شراء:</b> ' + bs.map(b => `${dayLabel(b.date)}: ${esc(qtyPlain(it, b.qty))} بـ ${fmt(b.amount)}ج`).join(' · ') : ''}
       ${(() => { const ph = priceHistory(it); if(ph.length < 2) return ''; const ch = (ph[ph.length - 1].p / ph[0].p - 1) * 100;
         return `<br><b>💲 سعر الـ${esc(entryUnit(it))}:</b> ` + ph.slice(-6).map(x => `<span class="num">${fmtQ(x.p)}</span>`).join(' ← ') + ` <span class="tag ${ch > 3 ? 'bad' : ch < -3 ? 'good' : ''}">${ch > 0 ? '▲' : '▼'} ${Math.abs(Math.round(ch))}% من أول مرة</span>`; })()}</div>
-      <div class="btns" style="margin-top:10px"><button type="button" class="btn good" data-act="buyItem" data-id="${it.id}">سجّل شراء</button><button type="button" class="btn" data-act="countItem" data-id="${it.id}">جرد الصنف ده</button><button type="button" class="btn danger" data-act="itemOut" data-id="${it.id}">خلص 🚫</button>${isPaused(it) ? `<button type="button" class="btn" data-act="itemResume" data-id="${it.id}">▶️ رجّعه للقايمة</button>` : `<button type="button" class="btn" data-act="itemPause" data-id="${it.id}">⏸️ إيقاف</button>`}</div>
-      ${isPaused(it) ? `<div class="note" style="margin-top:8px">⏸️ ${pauseTxt(it)} — مش داخل في قايمة الشراء ولا الخطة.</div>` : ''}`;
+      </div></details>
+      <details class="note" style="padding:10px 12px"><summary style="cursor:pointer; font-weight:600">✏️ بيانات الصنف (الاسم، العبوة، السعر…)</summary><div style="margin-top:10px">${fields}</div></details>`;
   }
   body += Fd.foot(it ? 'حفظ' : 'إضافة', it ? {act:'delItem', id:it.id} : null);
   const f0 = f;
@@ -3543,6 +3556,10 @@ const ACT = {
   perNow:() => { VIEW = periodOf(todayS()); render(); },
   sub:(d) => { SUB[d.k] = d.v; render(); },
   logf:(d) => { LOGF = d.f; render(); },
+  logOpen:() => { LOGOPEN = !LOGOPEN; render(); },
+  logCatClear:() => { LOGCAT = ''; render(); },
+  logAllClear:() => { LOGALL = false; render(); },
+  logReset:() => { LOGF = 'all'; LOGCAT = ''; LOGALL = false; render(); },
   delGroup:(d) => {
     const n = S.tx.filter(t => t.grp === d.id).length;
     if(!confirm(`تمسح الفاتورة كلها (${n} حاجة)؟`)) return;
@@ -3997,8 +4014,8 @@ document.addEventListener('change', e => {
   if(el.hasAttribute('data-ilbl')){ itemLabels(); return; }
   if(el.hasAttribute('data-bl')){ buyLabels(); return; }
   if(el.hasAttribute('data-ml')){ mlRead(); mlRender(); return; }
-  if(el.id === 'logCat'){ LOGCAT = el.value; $('#logList').innerHTML = logListHtml(summary(VIEW)); return; }
-  if(el.id === 'logAll'){ LOGALL = el.checked; $('#logList').innerHTML = logListHtml(summary(VIEW)); return; }
+  if(el.id === 'logCat'){ LOGCAT = el.value; render(); return; }
+  if(el.id === 'logAll'){ LOGALL = el.checked; render(); return; }
   if(el.hasAttribute('data-junit')){ jardUnitChanged(el, el.dataset.prev || (el.value === 'pack' ? 'base' : 'pack')); if(el.closest('#jardForm')) jardDraftSave(); return; }
   if(el.dataset.act === 'cycleDay'){ setCycleDay(+el.value); save(); toast('اتغيّر بداية الشهر'); }
   if(el.dataset.act === 'fcRecv'){ S.settings.fcRecv = el.checked; save(); return; }
