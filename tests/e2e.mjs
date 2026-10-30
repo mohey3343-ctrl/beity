@@ -869,6 +869,19 @@ await test('مزامنة الإعدادات: كل إعداد الأحدث بتا
   assert.ok(await ev(page, () => { S.settings.bufferDays = 7; save(); return S.settings._mk.bufferDays > 0; }));
 });
 
+await test('"خارج" نفس الرقم في الرئيسية والتقرير، حتى لو دفعت من فلوس كانت محجوزة من الشهر اللي فات', async page => {
+  const r = await ev(page, () => {
+    S.dues.push({ id: 'd', name: 'التأمين', amount: 3000, baseAmount: 3000, date: '2026-10-20', repeat: 0 });
+    S.tx.push({ id: 'r', ts: 1, type: 'reserve', dueId: 'd', dueDate: '2026-10-20', amount: 3000, date: '2026-09-15' },
+      { id: 'e', ts: 2, type: 'exp', cat: 'market', amount: 500, date: '2026-10-05' }); save(); payDue('d'); return true; });
+  await submit(page);
+  await ev(page, () => { ACT.tab({ tab: 'report' }); });
+  const o = await ev(page, () => { EPOCH++; return summary(VIEW).outActual; });
+  assert.equal(o, 500);   // الـ 3000 خرجوا من رصيدك في سبتمبر لما اتشالوا
+  assert.match(await page.textContent('body'), /اتدفع من فلوس كانت محجوزة قبل كده/);
+  assert.match(await page.textContent('#view'), /📤 خارج\s*500 ج/);
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });
