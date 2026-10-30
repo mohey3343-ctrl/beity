@@ -882,6 +882,30 @@ await test('"خارج" نفس الرقم في الرئيسية والتقرير�
   assert.match(await page.textContent('#view'), /📤 خارج\s*500 ج/);
 });
 
+await test('مراجعة بيانات حقيقية: جرد اتصحح بعدها بيومين، رصيد أول الشهر، التوابل فرط، ودخل بدري "هصرف منه"', async page => {
+  // شامبو: جرد "2 لتر" غلط واتصلح بعد يومين لزجاجة (0.235)، وخلص بعد 17 يوم
+  const r = await ev(page, () => {
+    S.items.push({ id: 'sh', name: 'شامبو', group: 'عناية شخصية', base: 'L', pu: 'زجاجة', pf: 0.235, monthly: 0.235, price: 574 },
+      { id: 'fl', name: 'فلفل اسود', group: 'توابل', base: 'KG', pu: 'كيس', pf: 1, monthly: 0.14, price: 200 });
+    const at = s => new Date(s).getTime();
+    S.counts.push({ id: 'a', ts: at('2026-09-20T15:00:00'), itemId: 'sh', date: '2026-09-20', qty: 2 }, { id: 'b', ts: at('2026-09-22T19:00:00'), itemId: 'sh', date: '2026-09-22', qty: 0.235 },
+      { id: 'c', ts: at('2026-10-09T09:00:00'), itemId: 'sh', date: '2026-10-09', qty: 0 }, { id: 'f', ts: 1, itemId: 'fl', date: '2026-10-09', qty: 0 });
+    save(); return [+(learnedDaily(byId(S.items, 'sh')) * 30).toFixed(2), shopList().find(x => x.it.id === 'fl').qty];
+  });
+  assert.deepEqual(r, [+(0.235 / (16 + 14 / 24) * 30).toFixed(2), 0.16]);   // 0.154 لفوق · مش 3 لتر في الشهر · والفلفل بالجرامات مش كيس كيلو
+  // رصيد أول الشهر: أول جرد فلوس يوم 9 (من غير جرد قبل الشهر) → محسوب بالعكس، وبيظهر سطر لوحده مش "فلوس خرجت ومش متسجلة"
+  const o = await ev(page, () => { S.incomes.push({ id: 'i', name: 'مرتب', amount: 10000, day: 1 });
+    S.tx.push({ id: 'in', ts: 2, type: 'inc', incomeId: 'i', amount: 10000, date: '2026-10-01' }, { id: 'e', ts: 3, type: 'exp', cat: 'food', amount: 1000, date: '2026-10-03' });
+    S.cashCounts.push({ id: 'cc', ts: 10, date: '2026-10-09', amount: 7000 }); save(); EPOCH++; const s = summary(VIEW); return [Math.round(s.opening), s.openingBack, Math.round(s.unrecorded)]; });
+  assert.deepEqual(o, [-2000, true, 0]);
+  await ev(page, () => ACT.tab({ tab: 'home' }));
+  assert.match(await page.textContent('body'), /رصيد أول الشهر/);
+  // دخل الشهر الجاي نزل بدري: من تعديله تعلّم "هصرف منه الشهر ده"
+  const f0 = await ev(page, () => { S.tx.push({ id: 'er', ts: 20, type: 'inc', incomeId: 'i', amount: 3000, date: '2026-10-09', forP: '2026-11' }); save(); EPOCH++; return Math.round(summary(VIEW).free); });
+  await ev(page, () => quickAdd({ tx: byId(S.tx, 'er') })); await page.check('#sheetBody [name="useNow"]'); await submit(page);
+  assert.equal(await ev(page, () => { EPOCH++; return Math.round(summary(VIEW).free); }), f0 + 3000);
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });

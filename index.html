@@ -516,7 +516,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-30 · 14:00';
+const APP_VER = '2026-10-31 · 11:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -603,7 +603,7 @@ const packF = it => hasPack(it) ? it.pf : 1;
 const entryUnit = it => hasPack(it) ? it.pu : BASES[baseOf(it)].en;
 /* بيتباع فرط (بأي كمية: ربع، نص، كيلو ونص…): الكيلو واللتر من غير عبوة، والخضار والفاكهة واللحوم والجبن بالوزن.
    الباقي (رز، سكر، زيت…) عبوة مقفولة — وتقدر تغيّر ده من الصنف */
-const LOOSE_G = /خضار|فاكه|لحوم|لحمة|فراخ|سمك|جبن|ألبان/;
+const LOOSE_G = /خضار|فاكه|لحوم|لحمة|فراخ|سمك|جبن|ألبان|توابل|بهارات|عطار/;
 const isLoose = it => baseOf(it) !== 'PCS' && (it.loose != null ? !!it.loose : !hasPack(it) || LOOSE_G.test(it.group || ''));
 /* "نص كيلو" بدل 0.5 KG */
 function looseTxt(it, q){
@@ -867,6 +867,11 @@ function learnedInfo(it){
     for(let i = cs.length - 2; i >= 0; i--){ const d = diffDays(cs[i].date, last.date); if(d >= 7 && d <= 365){ first = cs[i]; break; } }
   }
   if(!first) return {why:'week', last, prev:cs[cs.length - 2]};
+  // جرد اتعاد بعدها بيومين أو تلاتة (تصحيح — زي "2 لتر" غلط واتصلح لزجاجة) → نبدأ من الأحدث، طالما لسه أسبوع قبل آخر جرد
+  for(let i = cs.indexOf(first); i + 1 < cs.length - 1; i++){
+    const nx = cs[i + 1];
+    if(evGap(cs[i], nx) <= 3 && diffDays(nx.date, last.date) >= 7) first = nx; else break;
+  }
   const fk = evKey(first), lk = evKey(last);
   const buys = itemBuys(it).filter(t => { const k = evKey(t); return k > fk && k <= lk; });
   const bought = sum(buys, t => t.qty), used = first.qty + bought - last.qty, days = Math.max(evGap(first, last), 1e-6);
@@ -1247,7 +1252,21 @@ function summaryRaw(p){
       o.free = b.value - o.owedLeft;
       o.cashGap = o.free - o.planFree;
       // الفرق بين الخطة على الورق والخزنة: دخل لسه ما نزلش (الورق حاسبه) + مصاريف ما اتسجلتش / فلوس زيادة
-      o.unrecorded = o.cashGap + o.incPending;
+      // رصيد أول الشهر: من جرد قبل بداية الشهر لو فيه، وإلا محسوب بالعكس من الجرد اللي في الشهر
+      // (لو سالب = مصاريف قبل أول جرد ما اتسجلتش — زي أول شهر تستخدم فيه البرنامج)
+      const startK = r.start + '|';
+      let fwd = 0, fwdOk = true;
+      S.wallets.forEach(w => {
+        const cs = (S.cashCounts || []).filter(c => (c.walletId && byId(S.wallets, c.walletId) ? c.walletId : mainWallet()) === w.id);
+        const before = cs.filter(c => evKey(c) < startK).sort((a, b) => evKey(a) < evKey(b) ? -1 : 1), last = before[before.length - 1];
+        if(cs.length && !last){ fwdOk = false; return; }
+        const lk = last ? evKey(last) : '';
+        fwd += (last ? last.amount : 0) + sum(S.tx.filter(t => evKey(t) > lk && evKey(t) < startK), t => walletFlow(t, w.id));
+      });
+      const back = b.value - sum(S.tx.filter(t => t.type !== 'xfer' && evKey(t) >= startK), t => t.type === 'inc' ? t.amount : -t.amount);
+      o.opening = fwdOk ? fwd : back; o.openingBack = !fwdOk;
+      // اللي فاضل من الفرق بعد رصيد أول الشهر = فروق ظهرت في جرد الفلوس جوه الشهر
+      o.unrecorded = o.cashGap + o.incPending - o.opening;
       o.perDay = (o.free + o.spentToday) / o.daysLeft;
     }
     o.todayLeft = o.perDay - o.spentToday;
@@ -1410,6 +1429,7 @@ PAGES.home = function(){
 
   h += `<div class="card"><h3>خطة الشهر <span class="muted">الفلوس رايحة فين</span></h3>
     <div class="plan-line"><span>💰 الدخل ${o.incReceived < o.income ? '<span class="tag">متوقع</span>' : ''}</span><b class="num pos">${fmt(o.income)}</b></div>
+    ${o.isCurrent && o.cashKnown && Math.abs(o.opening) >= 1 ? `<div class="plan-line"><span>💼 رصيد أول الشهر<div class="muted" style="font-size:11.5px; line-height:1.6">${o.openingBack ? (o.opening < 0 ? 'محسوب من أول جرد فلوس في الشهر — بالسالب يعني فيه مصاريف قبل الجرد ده ما اتسجلتش (زي أول ما بدأت تستخدم البرنامج)' : 'محسوب من أول جرد فلوس في الشهر — فلوس كانت معاك قبل الدخل') : 'اللي كان معاك أول الشهر (فاضل من الشهر اللي فات)'}</div></span><b class="num ${o.opening < 0 ? 'neg' : 'pos'}">${o.opening < 0 ? '− ' : '+ '}${fmt(Math.abs(o.opening))}</b></div>` : ''}
     <div class="plan-line"><span>📋 الالتزامات الثابتة</span><b class="num">− ${fmt(o.billPlanned)}</b></div>
     <div class="plan-line"><span>💳 أقساط الديون</span><b class="num">− ${fmt(o.debtPlanned)}</b></div>
     <div class="plan-line"><span>🚗 التحويش للأهداف</span><b class="num">− ${fmt(o.savePlanned)}</b></div>
@@ -1424,7 +1444,7 @@ PAGES.home = function(){
     <div class="plan-line"><span>🧺 استوك البيت${o.isCurrent && o.houseToBuy > 0.5 ? `<div class="muted" style="font-size:11.5px">اتصرف ${fmt(o.houseSpent)} + محتاج تشتري لآخر الشهر (${o.houseDaysLeft} يوم${S.settings.bufferDays ? ' + ' + S.settings.bufferDays + ' احتياطي' : ''}) ${fmt(o.houseToBuy)}</div>` : ''}</span><b class="num">− ${fmt(o.houseReserved)}</b></div>
     ${o.lent > 0.5 ? `<div class="plan-line"><span>🤝 سلّفت حد</span><b class="num">− ${fmt(o.lent)}</b></div>` : ''}
     ${o.isCurrent && o.cashKnown && o.incPending > 0.5 ? `<div class="plan-line"><span>💰 دخل لسه ما نزلش<div class="muted" style="font-size:11.5px">مش بيتحسب لحد ما يوصل</div></span><b class="num">− ${fmt(o.incPending)}</b></div>` : ''}
-    ${o.isCurrent && o.cashKnown && Math.abs(o.unrecorded) >= 1 ? `<div class="plan-line"><span>⚖️ ${o.unrecorded < 0 ? 'فلوس خرجت ومش متسجلة' : 'فلوس زيادة عن المتسجل'}<div class="muted" style="font-size:11.5px; line-height:1.6">الفرق بين الحساب والخزنة (جرد الفلوس ${dayLabel(o.cashLast.date)})${o.unrecorded < 0 ? ' — مصاريف ما اتسجلتش، أو اتصرفت قبل ما تبدأ تسجّل' : ' — غالبًا فاضلة من الشهر اللي فات'}</div></span><b class="num ${o.unrecorded < 0 ? 'neg' : 'pos'}">${o.unrecorded < 0 ? '− ' : '+ '}${fmt(Math.abs(o.unrecorded))}</b></div>` : ''}
+    ${o.isCurrent && o.cashKnown && Math.abs(o.unrecorded) >= 1 ? `<div class="plan-line"><span>⚖️ ${o.unrecorded < 0 ? 'فلوس خرجت ومش متسجلة' : 'فلوس زيادة عن المتسجل'}<div class="muted" style="font-size:11.5px; line-height:1.6">فرق ظهر في جرد الفلوس الشهر ده (آخر جرد ${dayLabel(o.cashLast.date)})${o.unrecorded < 0 ? ' — مصاريف ما اتسجلتش' : ' — دخل أو فلوس ما اتسجلتش'}</div></span><b class="num ${o.unrecorded < 0 ? 'neg' : 'pos'}">${o.unrecorded < 0 ? '− ' : '+ '}${fmt(Math.abs(o.unrecorded))}</b></div>` : ''}
     <div class="plan-line" style="border-bottom:0"><span>🛒 <b>متاح للمصروف اليومي</b></span><b class="num ${o.varAvail < 0 ? 'neg' : ''}">${fmt(o.varAvail)}</b></div>
     ${o.isCurrent ? `<div class="plan-line"><span>🧾 اتصرف لحد دلوقتي</span><b class="num">− ${fmt(o.varSpent)}</b></div>
     <div class="plan-line total"><span>💵 فاضل للمصروف</span><b class="num ${o.free < 0 ? 'neg' : 'pos'}">${fmt(o.free)}</b></div>
@@ -2597,6 +2617,9 @@ function quickAdd(preset){
       <label class="fld"><span>الصنف</span><select name="qitem" data-qitem><option value="">— مش صنف من الاستوك —</option>${groupsOf().map(g => { const L = S.items.filter(x => (x.group || 'تاني') === g).sort((a, b) => a.name.localeCompare(b.name, 'ar')); return L.length ? `<optgroup label="${esc(g)}">${L.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</optgroup>` : ''; }).join('')}</select></label>
       <div class="fld2" style="gap:6px">${Fd.num('qqty', 'الكمية', '')}<label class="fld"><span>بالـ</span><select name="qunit" data-qunit><option value="">—</option></select></label></div></div>
       <div class="muted" style="margin:-4px 0 10px">لو اخترت صنف، الكمية هتتضاف للموجود والسعر يتحدّث.</div></div>`;
+  // دخل نزل بدري (بتاع الشهر الجاي): تقدر تقرر بعدين إنك هتصرف منه الشهر ده
+  if(t && t.type === 'inc' && t.forP) body += `<div class="note" style="margin:0 0 10px">ده دخل شهر ${MONTHS[+t.forP.slice(5) - 1]} ونزل بدري.
+    <label class="switch" style="margin-top:6px"><input type="checkbox" name="useNow" ${t.useNow ? 'checked' : ''}> <span>هصرف منه الشهر ده — يدخل في "حر للصرف" دلوقتي بدل ما يفضل على جنب</span></label></div>`;
   // دخل جديد: لو ده المرتب (أو جزء منه، أو نزل بدري) يتسجّل عليه مش "دخل إضافي"
   if(!t && isInc && S.incomes.length) body += `<label class="fld"><span>ده إيه؟</span><select name="src"><option value="">دخل إضافي (مكافأة، شغل زيادة…)</option>${S.incomes.map(i => `<option value="${i.id}">${esc(i.name)} — كله أو جزء أو بدري</option>`).join('')}</select></label>`;
   // مصروف اتسجل عادي وهو تبع مناسبة (أو العكس): تربطه بميزانيتها — بيتطرح من الفاضل فيها ومن المحجوز لها
@@ -2636,6 +2659,7 @@ function quickAdd(preset){
       t.note = v.note.trim(); t.date = v.date || t.date;
       if(v.wallet) t.walletId = v.wallet;
       if(v.cat) t.cat = v.cat;
+      if(t.type === 'inc' && t.forP){ if(v.useNow) t.useNow = true; else delete t.useNow; }
       if(evLinkable && v.ev !== undefined && v.ev !== (t.dueId || '')){
         if(t.dueId){ S.tx = S.tx.filter(x => x.pair !== t.id); delete t.dueId; delete t.duePrev; }
         const du = v.ev ? byId(S.dues, v.ev) : null;
