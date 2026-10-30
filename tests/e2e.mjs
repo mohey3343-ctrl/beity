@@ -844,6 +844,28 @@ await test('النت اتجدد قبل ميعاده: الدفعة بتتحسب �
   assert.equal(await ev(page, () => S.tx.at(-1).forP), '2026-11');
 });
 
+await test('مصروف "استوك البيت" من + : تختار الصنف والكمية فتتضاف للاستوك', async page => {
+  await ev(page, () => { S.items.push({ id: 'jb', name: 'جبنة رومي', group: 'ألبان وبروتين', base: 'KG', pu: 'طبق', pf: 0.25, monthly: 1, price: 300 }); save(); quickAdd({}); });
+  await fill(page, 'amount', 160);
+  await page.click('#sheetBody .catpick input[value="house"] + span');
+  assert.ok(await page.isVisible('#sheetBody [name="qitem"]'));
+  await page.selectOption('#sheetBody [name="qitem"]', 'jb'); await page.selectOption('#sheetBody [name="qunit"]', 'base');
+  await fill(page, 'qqty', 0.5); await submit(page);
+  assert.deepEqual(await ev(page, () => { const x = S.tx.at(-1); return [x.cat, x.itemId, x.qty, x.amount, x.u.n, byId(S.items, 'jb').price]; }), ['house', 'jb', 0.5, 160, 'KG', 320]);
+});
+
+await test('مزامنة الإعدادات: كل إعداد الأحدث بتاعه يكسب (مش الإعدادات كلها مرة واحدة)', async page => {
+  const r = await ev(page, () => {
+    const remote = JSON.parse(JSON.stringify(S)), local = JSON.parse(JSON.stringify(S));
+    remote.settings = Object.assign({}, remote.settings, { cycleDay: 1, bufferDays: 5, _mk: { bufferDays: 200 }, _m: 200 });
+    local.settings = Object.assign({}, local.settings, { cycleDay: 25, bufferDays: 3, _mk: { cycleDay: 300, bufferDays: 100 }, _m: 300 });
+    const m = mergeStates(remote, local).settings; return [m.cycleDay, m.bufferDays];
+  });
+  assert.deepEqual(r, [25, 5]);
+  // تعديل إعداد بيعلّم عليه بوقته
+  assert.ok(await ev(page, () => { S.settings.bufferDays = 7; save(); return S.settings._mk.bufferDays > 0; }));
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });

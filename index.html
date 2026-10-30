@@ -516,7 +516,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-30 · 10:00';
+const APP_VER = '2026-10-30 · 11:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -710,7 +710,15 @@ function stampChanges(){
     next.set(key, j); if(!first && LASTJ.get(key) !== j) x._m = now;
   };
   MERGE_KEYS.forEach(k => (S[k] || []).forEach(x => { if(x && x.id) mark(k + ':' + x.id, x, ['_m']); }));
-  if(S.settings) mark('settings', S.settings, SYNC_LOCAL);
+  if(S.settings){
+    // كل إعداد ليه وقت تعديله لوحده (_mk) — عشان تغيير إعداد على جهاز ما يرجّعش إعداد تاني اتغيّر على الجهاز التاني
+    const mk = S.settings._mk = S.settings._mk || {};
+    Object.keys(S.settings).forEach(k => {
+      if(SYNC_LOCAL.includes(k) || k === '_mk') return;
+      const j = JSON.stringify(S.settings[k]); next.set('settings.' + k, j);
+      if(!first && LASTJ.get('settings.' + k) !== j){ mk[k] = now; S.settings._m = now; }
+    });
+  }
   LASTJ = next;
 }
 function persist(){
@@ -2573,6 +2581,11 @@ function quickAdd(preset){
   }
   body += `<label class="fld"><input class="amount" name="amount" inputmode="decimal" placeholder="0" value="${t ? Math.abs(t.amount) : ''}" autofocus></label>`;
   if(type === 'exp' && !(t && t.itemId)) body += `<div class="catpick">${cats}</div>`;
+  // "استوك البيت" من هنا: تختار الصنف والكمية فتتضاف للاستوك (زي "سجّل شراء")
+  if(!t && type === 'exp' && S.items.length) body += `<div data-qhouse style="${cat === 'house' ? '' : 'display:none'}"><div class="fld2">
+      <label class="fld"><span>الصنف</span><select name="qitem" data-qitem><option value="">— مش صنف من الاستوك —</option>${groupsOf().map(g => { const L = S.items.filter(x => (x.group || 'تاني') === g).sort((a, b) => a.name.localeCompare(b.name, 'ar')); return L.length ? `<optgroup label="${esc(g)}">${L.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</optgroup>` : ''; }).join('')}</select></label>
+      <div class="fld2" style="gap:6px">${Fd.num('qqty', 'الكمية', '')}<label class="fld"><span>بالـ</span><select name="qunit" data-qunit><option value="">—</option></select></label></div></div>
+      <div class="muted" style="margin:-4px 0 10px">لو اخترت صنف، الكمية هتتضاف للموجود والسعر يتحدّث.</div></div>`;
   // دخل جديد: لو ده المرتب (أو جزء منه، أو نزل بدري) يتسجّل عليه مش "دخل إضافي"
   if(!t && isInc && S.incomes.length) body += `<label class="fld"><span>ده إيه؟</span><select name="src"><option value="">دخل إضافي (مكافأة، شغل زيادة…)</option>${S.incomes.map(i => `<option value="${i.id}">${esc(i.name)} — كله أو جزء أو بدري</option>`).join('')}</select></label>`;
   // مصروف اتسجل عادي وهو تبع مناسبة (أو العكس): تربطه بميزانيتها — بيتطرح من الفاضل فيها ومن المحجوز لها
@@ -2632,6 +2645,14 @@ function quickAdd(preset){
       save(); toast('اتعدّل');
     }else{
       if(v.src && byId(S.incomes, v.src)){ receiveIncome(v.src, {amount, date:v.date}); return false; }
+      const qit = v.cat === 'house' && v.qitem ? byId(S.items, v.qitem) : null;
+      if(qit){
+        const q = num(v.qqty); if(!need(q > 0, 'اكتب الكمية')) return false;
+        const u = unitOf(qit, v.qunit || itemUnits(qit)[0].k);
+        recordBuy(qit, q * u.f, amount, v.date || todayS(), false, {n:u.name, f:u.f});
+        if(v.note.trim()) S.tx[S.tx.length - 1].note = qit.name + ' — ' + v.note.trim();
+        save(); toast(`اتسجّل — ${qit.name} ${fmtQ(q)} ${u.name} اتضافوا للاستوك`); return;
+      }
       S.tx.push({id:uid(), ts:Date.now(), type, amount, cat:type === 'exp' ? (v.cat || 'other') : undefined, note:v.note.trim(), date:v.date || todayS()});
       save();
       const lm = type === 'exp' ? limitMsg(v.cat || 'other') : null;
@@ -3912,6 +3933,12 @@ document.addEventListener('change', e => {
   }
   if(el.matches && el.matches('[data-incleft]')){ const a = $('#sheetBody [name="amount"]'), l = +el.selectedOptions[0].dataset.left; if(a && l > 0) a.value = l;
     const e2 = $('#sheetBody [data-early]'); if(e2) e2.style.display = el.selectedIndex === 1 ? '' : 'none'; return; }
+  if(el.name === 'cat' && el.closest('#sheetBody')){ const h = $('#sheetBody [data-qhouse]'); if(h) h.style.display = el.value === 'house' ? '' : 'none'; return; }
+  if(el.matches && el.matches('[data-qitem]')){
+    const it = byId(S.items, el.value), us = $('#sheetBody [data-qunit]');
+    if(us) us.innerHTML = it ? itemUnits(it).map(u => `<option value="${u.k}">${esc(unitShort(it, u))}</option>`).join('') : '<option value="">—</option>';
+    return;
+  }
   if(el.name === 'every'){ document.querySelectorAll('#sheetBody [data-every]').forEach(x => x.style.display = (x.dataset.every === '1') === (el.value === '1') ? '' : 'none'); return; }
   if(el.name === 'evdone'){ const h = $('#sheetBody [data-evhint]'); if(h) h.textContent = el.value === '1' ? 'المناسبة هتتقفل، واللي فاضل من ميزانيتها يرجع لرصيدك.' : 'الميزانية هتفضل مفتوحة بالباقي، وتكمّل تسجّل عليها.'; return; }
   if(el.dataset && el.dataset.mp){
@@ -4063,7 +4090,17 @@ function mergeStates(remote, local){
     });
     out[k] = out[k].filter(x => !x || !x.id || !tomb.has(x.id) || (x._m || 0) > tomb.get(x.id));
   });
-  if(local.settings && (local.settings._m || 0) > ((remote.settings || {})._m || 0)) out.settings = Object.assign({}, out.settings, local.settings);
+  const ls = local.settings, rs = out.settings || {};
+  if(ls && ls._mk){
+    // إعداد إعداد: الأحدث يكسب
+    const rmk = rs._mk || {}, mk = Object.assign({}, rmk);
+    Object.keys(ls).forEach(k => {
+      if(SYNC_LOCAL.includes(k) || k === '_mk') return;
+      const lt = ls._mk[k] || 0, rt = rmk[k] || (rs._mk ? 0 : rs._m || 0);
+      if(lt > rt || !(k in rs)){ rs[k] = ls[k]; mk[k] = Math.max(lt, mk[k] || 0); }
+    });
+    rs._mk = mk; rs._m = Math.max(rs._m || 0, ls._m || 0); out.settings = rs;
+  }else if(ls && (ls._m || 0) > (rs._m || 0)) out.settings = Object.assign({}, rs, ls);
   out.tomb = allTomb.slice(-2000);
   return out;
 }
