@@ -773,33 +773,49 @@ await test('فاتورة كل 3 شهور اتدفعت بدري: الجاية ب�
   assert.equal(await ev(page, () => byId(S.dues, 'ph').date), '2027-01-20');
 });
 
-await test('التزام كل 3 شهور (الأرضي): في الالتزامات في شهره بس، والدفع بدري يتحسب لشهره، ونقل ميعاد قديم', async page => {
+await test('التزام كل 3 شهور (الأرضي): بيتقسم على الشهور (حصة كل شهر)، والدفع بدري يتحسب لشهره، ونقل ميعاد قديم', async page => {
   const lines = p => ev(page, p => { EPOCH++; const o = summary(p ? addMonths(periodOf(todayS()), p) : periodOf(todayS())); return [o.billLines.map(l => l.b.name + (l.paidT.length ? '✓' : '')).join(','), Math.round(o.billPlanned)]; }, p);
   await ev(page, () => { ACT.tab({ tab: 'bills' }); billForm(); });
-  await fill(page, 'name', 'الأرضي'); await fill(page, 'amount', 140);
+  await fill(page, 'name', 'الأرضي'); await fill(page, 'amount', 150);
   await page.selectOption('#sheetBody [name="every"]', '3'); await page.fill('#sheetBody [name="next"]', '2026-10-09'); await submit(page);
   assert.equal(await ev(page, () => [S.bills.length, S.dues.length].join()), '1,0');
-  assert.deepEqual(await lines(0), ['الأرضي', 140]);          // أكتوبر: ميعاده
-  assert.deepEqual(await lines(1), ['', 0]);                  // نوفمبر: لأ
-  assert.deepEqual(await lines(3), ['الأرضي', 140]);          // يناير
+  assert.deepEqual(await lines(0), ['الأرضي', 150]);          // أكتوبر: أول ميعاد ومفيش حاجة متجنّبة قبله → المبلغ كله
+  assert.deepEqual(await lines(1), ['الأرضي', 50]);           // نوفمبر: حصة شهر
+  assert.deepEqual(await lines(2), ['الأرضي', 50]);           // ديسمبر: حصة شهر
+  assert.deepEqual(await lines(3), ['الأرضي', 50]);           // يناير: 150 − 100 اتجنّبوا في نوفمبر وديسمبر
   await ev(page, () => payBill(S.bills[0].id)); await submit(page);
-  assert.deepEqual(await lines(0), ['الأرضي✓', 140]);
-  // دفعت يناير بدري (النهارده): يتحسب ليناير، وأكتوبر ما يتأثرش في السطور
+  assert.deepEqual(await lines(0), ['الأرضي✓', 150]);
+  // البيت بيتكلف كام: 150 ÷ 3
+  assert.equal(await ev(page, () => Math.round(homeCost().lines.find(l => l.k === 'bill').v)), 50);
+  // دفعت يناير بدري (النهارده): يتحسب ليناير، والفلوس خرجت في أكتوبر
   await ev(page, () => payBill(S.bills[0].id));
   assert.match(await page.textContent('#sheetBody'), /9 يناير/);
   await submit(page);
-  // يناير: متعلّم إنه اتدفع، ومفيش حاجة فاضلة عليه — والفلوس خرجت في أكتوبر (140 + 140)
-  assert.deepEqual(await lines(3), ['الأرضي✓', 0]);
-  assert.deepEqual(await lines(0), ['الأرضي✓', 280]);
+  assert.deepEqual(await lines(0), ['الأرضي✓', 300]);
   assert.equal(await ev(page, () => S.tx.at(-1).forP), '2027-01');
-  // البيت بيتكلف كام: 140 ÷ 3
-  assert.equal(await ev(page, () => Math.round(homeCost().lines.find(l => l.k === 'bill').v)), 47);
   // ميعاد سداد قديم بيتكرر اتدفع النهارده → ينقل للالتزامات والجاية بعد 3 شهور من الدفع
   await ev(page, () => { S.bills = []; S.tx = []; S.dues.push({ id: 'du', name: 'نت', amount: 300, baseAmount: 300, date: '2027-01-15', repeat: 3, dom: 15 });
     S.tx.push({ id: 'p', ts: 5, type: 'bill', dueId: 'du', amount: 300, date: '2026-10-09', duePrev: { date: '2026-10-15', amount: 300 } }); save(); ACT.tab({ tab: 'bills' }); ACT.sub({ k: 'bills', v: 'bills' }); });
   await page.click('[data-act="dueToBill"]');
   assert.deepEqual(await ev(page, () => [S.dues.length, S.bills[0].anchor, S.bills[0].every, S.tx[0].billId === S.bills[0].id]), [0, '2026-10-09', 3, true]);
   assert.deepEqual(await lines(0), ['نت✓', 300]);
+});
+
+await test('فاتورة كل 3 شهور في خطة الشهر الحالي: حصص الشهور اللي فاتت متجنّبة، والسطور بتتجمع صح قبل وبعد الدفع', async page => {
+  const chk = () => ev(page, () => { EPOCH++; ACT.tab({ tab: 'home' }); const o = summary(VIEW);
+    const nums = [...document.querySelectorAll('.plan-line')].map(el => { const k = el.querySelector('span').textContent; const v = el.querySelector('b.num') ? el.querySelector('b.num').textContent : '';
+      return [k, +v.replace(/[^\d.]/g, '') * (v.trim().startsWith('−') ? -1 : 1)]; });
+    const idx = nums.findIndex(([k]) => k.includes('متاح للمصروف'));
+    return { top: Math.round(nums.slice(0, idx).reduce((a, [, v]) => a + v, 0)), avail: Math.round(o.varAvail), free: Math.round(o.free), prior: Math.round(o.billPrior), held: Math.round(o.billHeld), unrec: Math.round(o.unrecorded) }; });
+  // الأرضي 150 كل 3 شهور، آخر ميعاد يوليو → أكتوبر ميعاده (اتجنّب أغسطس وسبتمبر = 100)
+  await ev(page, () => { S.bills.push({ id: 'l', name: 'الأرضي', amount: 150, dueDay: 9, every: 3, anchor: '2026-07-09', createdAt: '2026-07-01' });
+    S.cashCounts.push({ id: 'c0', ts: 1, date: '2026-09-30', amount: 5000 }); save(); });
+  let r = await chk();
+  assert.deepEqual([r.top, r.prior, r.held, r.unrec], [r.avail, 100, 100, 0]);
+  const free0 = r.free;
+  await ev(page, () => payBill('l')); await submit(page);
+  r = await chk();
+  assert.deepEqual([r.top, r.prior, r.held, r.unrec, r.free], [r.avail, 100, 0, 0, free0]);   // الدفع ما بيغيّرش "حر للصرف"
 });
 
 await test('شاشة الصنف بتوري الحسبة: جرد + اللي اشتريته − "خلص" = الاستهلاك، أو ليه بنستخدم التقديري', async page => {
