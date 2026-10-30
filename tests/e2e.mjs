@@ -816,19 +816,22 @@ await test('شاشة الصنف بتوري الحسبة: جرد + اللي اش�
   assert.equal(await ev(page, () => +(learnedDaily(byId(S.items, 'fr')) * 30).toFixed(2)), 9.37);
 });
 
-await test('معدل من جرد مدته أقل من شهر بيتخلط مع التقدير (كيلو فراخ اتاكل في يوم ما يطلعش 30 كيلو)', async page => {
+await test('الاستهلاك من المشتريات لو لسه مفيش جردين (من غير ما نعتمد على التقدير)', async page => {
   const r = await ev(page, () => {
-    S.items.push({ id: 'fr', name: 'فراخ', group: 'ألبان وبروتين', base: 'KG', monthly: 4, price: 140 });
-    S.counts.push({ id: 'a', ts: new Date('2026-09-29T10:00:00').getTime(), itemId: 'fr', date: '2026-09-29', qty: 0 });
-    S.tx.push({ id: 'b', ts: new Date('2026-10-08T10:00:00').getTime(), type: 'exp', cat: 'house', itemId: 'fr', qty: 3, amount: 420, date: '2026-10-08' });
-    S.counts.push({ id: 'c', ts: new Date('2026-10-09T10:00:00').getTime(), itemId: 'fr', date: '2026-10-09', qty: 0 });   // اتاكلوا تاني يوم
+    S.items.push({ id: 'fr', name: 'فراخ', group: 'ألبان وبروتين', base: 'KG', monthly: 10, price: 140 });   // تقدير من الدماغ
+    const b = (id, d, q) => S.tx.push({ id, ts: new Date(d + 'T12:00:00').getTime(), type: 'exp', cat: 'house', itemId: 'fr', qty: q, amount: q * 140, date: d });
+    b('a', '2026-09-09', 1); b('b', '2026-09-19', 1.5); b('c', '2026-09-29', 1); b('d', '2026-10-09', 1);   // كل 10 أيام
     save(); const it = byId(S.items, 'fr'), x = dailyRate(it);
-    return [+(learnedDaily(it) * 30).toFixed(1), +(x.v * 30).toFixed(2), x.src];
+    return [x.src, +(x.v * 30).toFixed(2)];
   });
-  // الجرد لوحده: 3 كيلو في 10 أيام = 9 كيلو/شهر · مخلوط: ثلث × 9 + ثلثين × 4 = 5.67
-  assert.deepEqual(r, [9, 5.67, 'learned']);
+  // اتاكل 3.5 كيلو (كل اللي قبل آخر شراء) في 30 يوم = 3.5 في الشهر — مش الـ 10 اللي في التقدير
+  assert.deepEqual(r, ['buys', 3.5]);
   await ev(page, () => itemForm('fr'));
-  assert.match(await page.textContent('#sheetBody'), /بنخلطها مع تقديرك/);
+  assert.match(await page.textContent('#sheetBody'), /من المشتريات: اشتريت 4 مرات/);
+  // أول ما يبقى فيه جردين بينهم أسبوع، الجرد هو اللي بيحكم
+  const r2 = await ev(page, () => { S.counts.push({ id: 'c1', ts: new Date('2026-09-20T10:00:00').getTime(), itemId: 'fr', date: '2026-09-20', qty: 1.5 },
+    { id: 'c2', ts: new Date('2026-10-09T13:00:00').getTime(), itemId: 'fr', date: '2026-10-09', qty: 1 }); save(); return dailyRate(byId(S.items, 'fr')).src; });
+  assert.equal(r2, 'learned');
 });
 
 await test('النت اتجدد قبل ميعاده: الدفعة بتتحسب للشهر الجاي، والشهر ده يفضل زي ما هو', async page => {

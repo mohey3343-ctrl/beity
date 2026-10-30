@@ -516,7 +516,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-30 · 11:00';
+const APP_VER = '2026-10-30 · 12:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -882,26 +882,35 @@ function learnedHtml(it){
   const i = learnedInfo(it), q = x => esc(qtyPlain(it, x)), ev_ = c => (c.qty < 1e-9 ? 'خلص' : 'جرد') + ` ${dayLabel(c.date)}`;
   if(i.ok) return `<div style="margin-top:6px; line-height:1.9"><b>🧮 الحسبة:</b> ${ev_(i.first)} (${q(i.first.qty)})${i.bought > 0 ? ` + اشتريت ${q(i.bought)} (${i.buys.length} مرة)` : ''} − ${ev_(i.last)} (${q(i.last.qty)})
     = استهلكت <b>${q(i.used)}</b> في <b>${durTxt(i.days)}</b> ← يعني <b>${q(i.daily * 30)}</b> في الشهر
-    ${(() => { const r = dailyRate(it); return r.blend != null ? `<br><span class="muted">المدة أقل من شهر، فبنخلطها مع تقديرك (${q(it.monthly)}/شهر): ${Math.round(r.blend * 100)}% جرد + ${Math.round((1 - r.blend) * 100)}% تقدير = <b>${q(r.v * 30)}</b> في الشهر. كل ما الجرد يبعد، الرقم بيقرب للحقيقي.</span>` : ''; })()}</div>`;
+    ${i.days < 30 ? '<br><span class="muted">المدة لسه أقل من شهر، فالرقم ممكن يتغيّر — كل ما تجرد أو تدوس "خلص" بعدين، المدة بتطول (لحد 4 شهور) والرقم بيدق.</span>' : ''}</div>`;
   const why = {none:() => 'لسه ما اتجردش ولا قلت "خلص" — بنستخدم الرقم التقديري.',
     one:() => `فيه جرد واحد بس (${ev_(i.last)}) — محتاج جرد أو "خلص" تاني بعد أسبوع على الأقل.`,
     week:() => `آخر جردين (${ev_(i.prev)} و${ev_(i.last)}) بينهم أقل من أسبوع — المعدل بيتحسب لما يعدّي أسبوع.`,
     more:() => `من ${ev_(i.first)} لـ${ev_(i.last)} معاك أكتر من اللي كان + اللي اشتريته (${q(i.first.qty)} + ${q(i.bought)} < ${q(i.last.qty)}) — غالبًا فيه شراء ما اتسجلش، فبنستخدم التقديري.`,
     zero:() => `${ev_(i.first)} و${ev_(i.last)} الاتنين صفر ومفيش شراء بينهم — مفيش معلومة، فبنستخدم التقديري.`}[i.why]();
-  return `<div class="muted" style="margin-top:6px; line-height:1.8">🧮 ${why}</div>`;
+  const b = buysInfo(it);
+  const fromBuys = b ? `<br><b>🛒 من المشتريات:</b> اشتريت ${b.n} مرات من ${dayLabel(b.first.date)} لـ${dayLabel(b.last.date)} (${durTxt(b.days)}) — اللي اتاكل قبل آخر مرة ${q(b.qty)} ← يعني <b>${q(b.daily * 30)}</b> في الشهر (ده اللي مستخدم دلوقتي)` : '';
+  return `<div class="muted" style="margin-top:6px; line-height:1.8">🧮 ${why.replace('بنستخدم الرقم التقديري', b ? 'بنحسب من المشتريات' : 'بنستخدم الرقم التقديري').replace('فبنستخدم التقديري', b ? 'فبنحسب من المشتريات' : 'فبنستخدم التقديري')}${fromBuys}</div>`;
 }
 const dailyRate = memo(dailyRateRaw, it => it.id);
 const estStock = memo(estStockRaw, it => it.id);
-/* الجرد بيدي الاستهلاك الحقيقي (أول جرد + اللي اشتريته − آخر جرد) — بس لو المدة أقل من شهر
-   (اشتريت كيلو فراخ واتاكل تاني يوم) الرقم بيبقى متطرف، فبنخلطه مع تقديرك بنسبة الأيام: 10 أيام = ثلث جرد وثلثين تقدير.
-   ومع الوقت المدة بتطول (لحد 4 شهور) فالجرد هو اللي بيحكم */
-const BLEND_DAYS = 30;
+/* الاستهلاك بالترتيب ده:
+   1) من الجرد ("خلص" = جرد بصفر): أول جرد + اللي اشتريته − آخر جرد ÷ الأيام (لازم أسبوع على الأقل، ولحد 4 شهور)
+   2) لو لسه مفيش جردين: من المشتريات — اشتريت كام في المدة من أول شراء لآخر شراء (بنفترض إنك بتشتري لما يخلص)
+   3) وإلا الرقم اللي انت كاتبه */
+function buysInfo(it){
+  const td = todayS(), B = itemBuys(it).filter(t => diffDays(t.date, td) <= 125).sort((a, b) => evKey(a) < evKey(b) ? -1 : 1);
+  if(B.length < 2) return null;
+  const first = B[0], last = B[B.length - 1], days = evGap(first, last);
+  if(days < 10) return null;
+  const qty = sum(B.slice(0, -1), t => t.qty);   // آخر شراء لسه بيتاكل — مش داخل في المدة
+  return {first, last, n:B.length, qty, days, daily:qty / days};
+}
 function dailyRateRaw(it){
   const i = learnedInfo(it);
-  if(i.ok){
-    if(it.monthly > 0 && i.days < BLEND_DAYS){ const w = i.days / BLEND_DAYS; return {v:i.daily * w + it.monthly / 30 * (1 - w), src:'learned', blend:w, learnedV:i.daily}; }
-    return {v:i.daily, src:'learned'};
-  }
+  if(i.ok) return {v:i.daily, src:'learned'};
+  const b = buysInfo(it);
+  if(b) return {v:b.daily, src:'buys'};
   if(it.monthly > 0) return {v:it.monthly / 30, src:'manual'};
   return {v:0, src:'none'};
 }
@@ -1671,7 +1680,7 @@ function itemRowHtml(it, showGroup){
   const cls = d == null ? '' : d <= 5 ? 'bad' : d <= 12 ? 'warn' : 'good';
   const pc = priceChange(it);
   const priceTag = pc && Math.abs(pc.pct) >= 5 ? ` <span class="tag ${pc.pct > 0 ? 'bad' : 'good'}">${pc.pct > 0 ? '▲' : '▼'} ${Math.abs(Math.round(pc.pct))}%</span>` : '';
-  const srcTag = (isPaused(it) ? `<span class="tag warn">⏸️ ${pauseTxt(it)}</span> ` : '') + priceTag + ' ' + (r.src === 'learned' ? '<span class="tag good">محسوب من الجرد</span>' : r.src === 'manual' ? '' : '<span class="tag bad">ناقص الاستهلاك</span>');
+  const srcTag = (isPaused(it) ? `<span class="tag warn">⏸️ ${pauseTxt(it)}</span> ` : '') + priceTag + ' ' + (r.src === 'learned' ? '<span class="tag good">محسوب من الجرد</span>' : r.src === 'buys' ? '<span class="tag good">من المشتريات</span>' : r.src === 'manual' ? '' : '<span class="tag bad">ناقص الاستهلاك</span>');
   return `<div class="list-item" data-act="itemForm" data-id="${it.id}" data-nm="${esc(it.name)}" data-grp="${esc(it.group || 'تاني')}" ${hideIf(!qHit('items', it))}>
     <div class="li-main"><div class="li-title">${esc(it.name)} ${srcTag}</div>${showGroup ? `<div class="li-sub">${esc(it.group || 'تاني')}</div>` : ''}
       <div class="li-sub">بتستهلك ${qtyTxt(it, r.v * 30)}/شهر${it.price > 0 ? ` · <span class="num">${fmt(it.price * packF(it))}</span> ج لل${esc(entryUnit(it))}` : ' · <span class="neg">من غير سعر</span>'}</div>
@@ -2697,7 +2706,7 @@ function itemForm(id, preset){
   if(!it) body += Fd.num('stock', '<span data-l="stock">الموجود عندك دلوقتي (اختياري)</span>', '');
   if(it){
     const cs = itemCounts(it).slice(-4).reverse(), bs = itemBuys(it).sort((a, b) => evKey(a) < evKey(b) ? 1 : -1).slice(0, 4);
-    body += `<div class="note">📊 المعدل المستخدم: <b>${qtyTxt(it, r.v * 30)}</b>/شهر ${r.src === 'learned' ? '(محسوب من الجرد)' : '(تقديري)'}
+    body += `<div class="note">📊 المعدل المستخدم: <b>${qtyTxt(it, r.v * 30)}</b>/شهر ${r.src === 'learned' ? '(محسوب من الجرد)' : r.src === 'buys' ? '(محسوب من المشتريات)' : '(تقديري)'}
       ${learnedHtml(it)}
       ${cs.length ? '<br><b>آخر جرد:</b> ' + cs.map(c => `<button type="button" class="chip" style="margin:3px 2px" data-act="delCount" data-id="${c.id}" title="امسح الجرد ده">${dayLabel(c.date)}${tsOk(c) ? ' ' + new Date(c.ts).toLocaleTimeString('ar-EG', {hour:'numeric', minute:'2-digit'}) : ''}: ${esc(qtyPlain(it, c.qty))} ✕</button>`).join('') + '<div class="muted" style="font-size:11.5px">جرد اتسجل غلط؟ دوس عليه وامسحه.</div>' : ''}
       ${bs.length ? '<br><b>آخر شراء:</b> ' + bs.map(b => `${dayLabel(b.date)}: ${esc(qtyPlain(it, b.qty))} بـ ${fmt(b.amount)}ج`).join(' · ') : ''}
