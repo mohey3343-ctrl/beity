@@ -946,6 +946,16 @@ await test('اليومية: الفلاتر مقفولة ورا زرار "فلت�
   assert.equal(await ev(page, () => document.querySelectorAll('#logList [data-act="editTx"]').length), 2);
 });
 
+await test('أشتري إيه متقسمة بالأقسام (زي الهايبر)، وتقدر ترجع لترتيب "اللي هيخلص الأول"', async page => {
+  await ev(page, () => { S.items.push({ id: 'a', name: 'رز', group: 'تموين', base: 'KG', monthly: 3, price: 30 }, { id: 'b', name: 'لبن', group: 'ألبان', base: 'L', monthly: 10, price: 40 },
+      { id: 'c', name: 'سكر', group: 'تموين', base: 'KG', monthly: 2, price: 35 }, { id: 'd', name: 'صابون', group: 'منظفات', base: 'PCS', monthly: 2, price: 20 });
+    ['a', 'b', 'c', 'd'].forEach((id, i) => S.counts.push({ id: 'k' + id, ts: i + 1, itemId: id, date: '2026-10-09', qty: 0 })); save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'shop' }); });
+  const rows = () => ev(page, () => [...document.querySelectorAll('.tbl tr')].slice(1).map(tr => tr.classList.contains('shop-grp') ? '#' + tr.textContent.trim().split(' ')[0] : tr.querySelector('b').textContent));
+  assert.deepEqual(await rows(), ['#تموين', 'رز', 'سكر', '#ألبان', 'لبن', '#منظفات', 'صابون']);
+  await page.click('[data-act="shopSort"][data-v="urgent"]');
+  assert.ok(!(await rows()).some(x => x.startsWith('#')));
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });
