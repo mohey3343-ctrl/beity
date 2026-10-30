@@ -425,7 +425,7 @@ await test('جرد صنف لوحده: الاستهلاك بيتحسب بالسا
   const r = await ev(page, () => {
     S.counts.push({ id: 'a', ts: new Date('2026-10-01T10:00:00').getTime(), itemId: 'z', date: '2026-10-01', qty: 2 },
       { id: 'b', ts: new Date('2026-10-09T08:00:00').getTime(), itemId: 'z', date: '2026-10-09', qty: 1.2 });
-    S.items.push({ id: 'z', name: 'رز', group: 'تموين', base: 'KG', monthly: 30 }); save();
+    S.items.push({ id: 'z', name: 'رز', group: 'تموين', base: 'KG', monthly: 0 }); save();   // من غير تقدير: المعدل = الجرد بس
     const it = byId(S.items, 'z');
     return [+(learnedDaily(it)).toFixed(4), +estStock(it).toFixed(4)];
   });
@@ -814,6 +814,34 @@ await test('شاشة الصنف بتوري الحسبة: جرد + اللي اش�
   assert.match(txt, /الحسبة: جرد .*\(0.5 KG\) \+ اشتريت 2 KG \(1 مرة\) − خلص .*\(0 KG\)/);
   assert.match(txt, /استهلكت 2.5 KG في 8 يوم/);
   assert.equal(await ev(page, () => +(learnedDaily(byId(S.items, 'fr')) * 30).toFixed(2)), 9.37);
+});
+
+await test('معدل من جرد مدته أقل من شهر بيتخلط مع التقدير (كيلو فراخ اتاكل في يوم ما يطلعش 30 كيلو)', async page => {
+  const r = await ev(page, () => {
+    S.items.push({ id: 'fr', name: 'فراخ', group: 'ألبان وبروتين', base: 'KG', monthly: 4, price: 140 });
+    S.counts.push({ id: 'a', ts: new Date('2026-09-29T10:00:00').getTime(), itemId: 'fr', date: '2026-09-29', qty: 0 });
+    S.tx.push({ id: 'b', ts: new Date('2026-10-08T10:00:00').getTime(), type: 'exp', cat: 'house', itemId: 'fr', qty: 3, amount: 420, date: '2026-10-08' });
+    S.counts.push({ id: 'c', ts: new Date('2026-10-09T10:00:00').getTime(), itemId: 'fr', date: '2026-10-09', qty: 0 });   // اتاكلوا تاني يوم
+    save(); const it = byId(S.items, 'fr'), x = dailyRate(it);
+    return [+(learnedDaily(it) * 30).toFixed(1), +(x.v * 30).toFixed(2), x.src];
+  });
+  // الجرد لوحده: 3 كيلو في 10 أيام = 9 كيلو/شهر · مخلوط: ثلث × 9 + ثلثين × 4 = 5.67
+  assert.deepEqual(r, [9, 5.67, 'learned']);
+  await ev(page, () => itemForm('fr'));
+  assert.match(await page.textContent('#sheetBody'), /بنخلطها مع تقديرك/);
+});
+
+await test('النت اتجدد قبل ميعاده: الدفعة بتتحسب للشهر الجاي، والشهر ده يفضل زي ما هو', async page => {
+  const st = k => ev(page, k => { EPOCH++; const p = k ? addMonths(periodOf(todayS()), k) : periodOf(todayS()); return summary(p).billLines.map(l => l.b.name + (l.paidT.length ? '✓' : '✗')).join(); }, k);
+  await ev(page, () => { S.bills.push({ id: 'n', name: 'النت', amount: 380, dueDay: 21 }); save(); payBill('n'); });
+  assert.equal(await page.inputValue('#sheetBody [name="forp"]'), '2026-10');
+  await submit(page);                                            // أكتوبر
+  assert.deepEqual([await st(0), await st(1)], ['النت✓', 'النت✗']);
+  await ev(page, () => billForm('n')); await page.click('#sheetBody [data-act="payBill"]');   // جدّدت نوفمبر بدري
+  assert.equal(await page.inputValue('#sheetBody [name="forp"]'), '2026-11');
+  await submit(page);
+  assert.deepEqual([await st(0), await st(1)], ['النت✓', 'النت✓']);
+  assert.equal(await ev(page, () => S.tx.at(-1).forP), '2026-11');
 });
 
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {

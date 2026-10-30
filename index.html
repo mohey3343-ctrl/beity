@@ -516,7 +516,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-27 · 11:00';
+const APP_VER = '2026-10-30 · 10:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -873,7 +873,8 @@ function learnedDaily(it){ const i = learnedInfo(it); return i.ok ? i.daily : nu
 function learnedHtml(it){
   const i = learnedInfo(it), q = x => esc(qtyPlain(it, x)), ev_ = c => (c.qty < 1e-9 ? 'خلص' : 'جرد') + ` ${dayLabel(c.date)}`;
   if(i.ok) return `<div style="margin-top:6px; line-height:1.9"><b>🧮 الحسبة:</b> ${ev_(i.first)} (${q(i.first.qty)})${i.bought > 0 ? ` + اشتريت ${q(i.bought)} (${i.buys.length} مرة)` : ''} − ${ev_(i.last)} (${q(i.last.qty)})
-    = استهلكت <b>${q(i.used)}</b> في <b>${durTxt(i.days)}</b> ← يعني <b>${q(i.daily * 30)}</b> في الشهر</div>`;
+    = استهلكت <b>${q(i.used)}</b> في <b>${durTxt(i.days)}</b> ← يعني <b>${q(i.daily * 30)}</b> في الشهر
+    ${(() => { const r = dailyRate(it); return r.blend != null ? `<br><span class="muted">المدة أقل من شهر، فبنخلطها مع تقديرك (${q(it.monthly)}/شهر): ${Math.round(r.blend * 100)}% جرد + ${Math.round((1 - r.blend) * 100)}% تقدير = <b>${q(r.v * 30)}</b> في الشهر. كل ما الجرد يبعد، الرقم بيقرب للحقيقي.</span>` : ''; })()}</div>`;
   const why = {none:() => 'لسه ما اتجردش ولا قلت "خلص" — بنستخدم الرقم التقديري.',
     one:() => `فيه جرد واحد بس (${ev_(i.last)}) — محتاج جرد أو "خلص" تاني بعد أسبوع على الأقل.`,
     week:() => `آخر جردين (${ev_(i.prev)} و${ev_(i.last)}) بينهم أقل من أسبوع — المعدل بيتحسب لما يعدّي أسبوع.`,
@@ -883,9 +884,16 @@ function learnedHtml(it){
 }
 const dailyRate = memo(dailyRateRaw, it => it.id);
 const estStock = memo(estStockRaw, it => it.id);
+/* الجرد بيدي الاستهلاك الحقيقي (أول جرد + اللي اشتريته − آخر جرد) — بس لو المدة أقل من شهر
+   (اشتريت كيلو فراخ واتاكل تاني يوم) الرقم بيبقى متطرف، فبنخلطه مع تقديرك بنسبة الأيام: 10 أيام = ثلث جرد وثلثين تقدير.
+   ومع الوقت المدة بتطول (لحد 4 شهور) فالجرد هو اللي بيحكم */
+const BLEND_DAYS = 30;
 function dailyRateRaw(it){
-  const l = learnedDaily(it);
-  if(l != null) return {v:l, src:'learned'};
+  const i = learnedInfo(it);
+  if(i.ok){
+    if(it.monthly > 0 && i.days < BLEND_DAYS){ const w = i.days / BLEND_DAYS; return {v:i.daily * w + it.monthly / 30 * (1 - w), src:'learned', blend:w, learnedV:i.daily}; }
+    return {v:i.daily, src:'learned'};
+  }
   if(it.monthly > 0) return {v:it.monthly / 30, src:'manual'};
   return {v:0, src:'none'};
 }
@@ -1118,7 +1126,7 @@ function summaryRaw(p){
   o.income = r.end < todayS() ? o.incReceived : o.incExpected + o.incExtra;
   // الالتزامات الثابتة
   o.billLines = S.bills.filter(b => !b.off).map(b => {
-    const paidT = billEvery(b) > 1 ? billPaidT(b, p) : T.filter(t => t.type === 'bill' && t.billId === b.id);
+    const paidT = billPaidT(b, p);   // الدفعة بتتحسب لشهرها حتى لو اتدفعت بدري (النت قبل ميعاده)
     const paid = sum(paidT, t => t.amount), due = billDueIn(b, p);
     // كل كام شهر: مش في الشهر ده ومش متدفوع له → مالوش سطر
     if(!due && !paidT.length) return null;
@@ -2311,7 +2319,7 @@ function forecast(N, withRecv){
     });
     S.bills.filter(x => !x.off).forEach(x => {
       const due = billDueIn(x, p); if(!due) return;
-      if(billEvery(x) > 1 ? billPaidT(x, p).length : paidIn(t => t.type === 'bill' && t.billId === x.id, r)) return;
+      if(billPaidT(x, p).length) return;
       const d = at(due); if(d <= end) evs.push({date:d, n:'📋 ' + x.name, a:-(x.amount || 0)});
     });
     S.debts.filter(x => x.monthly > 0).forEach(x => {
@@ -2937,7 +2945,8 @@ function billForm(id){
   body += `<label class="fld"><span>بيتدفع كل</span><select name="every">${[[1, 'شهر'], [2, 'شهرين'], [3, '3 شهور (كل ربع سنة)'], [6, '6 شهور'], [12, 'سنة']].map(([k, t]) => `<option value="${k}" ${k === ev0 ? 'selected' : ''}>${t}</option>`).join('')}</select></label>`;
   body += `<div class="fld2">${Fd.num('amount', 'المبلغ (تقريبًا)', b ? b.amount : '')}<div data-every="1" ${ev0 > 1 ? 'style="display:none"' : ''}>${Fd.day('dueDay', 'بيتدفع يوم', b ? b.dueDay : 1)}</div><div data-every="n" ${ev0 > 1 ? '' : 'style="display:none"'}>${Fd.date('next', 'المرة الجاية (أو اللي النهارده) يوم', next0)}</div></div>
     <div class="muted" data-every="n" style="${ev0 > 1 ? '' : 'display:none; '}margin:-4px 0 10px; line-height:1.7">بيظهر في الالتزامات في الشهر اللي بيتدفع فيه بس، وفي "البيت بيتكلف كام" بيتقسم على الشهور.</div>`;
-  if(b) body += `<label class="switch"><input type="checkbox" name="off" ${b.off ? 'checked' : ''}> متوقف مؤقتًا (مش هيتحسب في الخطة)</label>`;
+  if(b) body += `<label class="switch"><input type="checkbox" name="off" ${b.off ? 'checked' : ''}> متوقف مؤقتًا (مش هيتحسب في الخطة)</label>
+    <div style="margin:-4px 0 10px"><button type="button" class="btn sm good" data-act="payBill" data-id="${b.id}">💳 سجّل دفعة (حتى لو قبل ميعادها)</button></div>`;
   body += Fd.foot(b ? 'حفظ' : 'إضافة', b ? {act:'delBill', id:b.id} : null);
   openSheet(b ? b.name : 'التزام شهري جديد', body, v => {
     if(!need(v.name.trim(), 'اكتب اسم الالتزام')) return false;
@@ -2952,12 +2961,13 @@ function billForm(id){
 }
 function payBill(id){
   const b = byId(S.bills, id);
-  // كل كام شهر: الدفعة دي بتاعة أقرب ميعاد ليه ما اتدفعش (حتى لو دفعته بدري)
-  const tp = billEvery(b) > 1 ? billNextP(b) : null;
+  // الدفعة دي بتاعة أقرب ميعاد ما اتدفعش — ولو الشهر ده اتدفع، يبقى الشهر الجاي (دفعت/جددت بدري). وتقدر تختار اللي بعده
+  const p1 = billNextP(b) || periodOf(todayS()), p2 = billNextP(b, addMonths(p1, 1)), cur = periodOf(todayS());
+  const lbl = p_ => { const d = billDueIn(b, p_); return `${dayLabel(d)} ${pd(d).getFullYear()}${pKey(p_) > pKey(cur) ? ' — بدري' : ''}`; };
   NEXT_WALLET = {label:'دفعت من'};
-  openSheet('دفعت ' + b.name, `${tp ? `<div class="note" style="margin:0 0 10px">دي دفعة ${dayLabel(billDueIn(b, tp))} ${pd(billDueIn(b, tp)).getFullYear()} — والجاية بعدها بـ${REPEATS[billEvery(b)] ? REPEATS[billEvery(b)].replace('كل ', '') : billEvery(b) + ' شهور'}</div>` : ''}${Fd.num('amount', 'المبلغ اللي اتدفع', b.amount, 'autofocus', 'لو الفاتورة جت مختلفة (كهربا مثلًا) اكتب الرقم الحقيقي.')}${Fd.date('date', 'التاريخ', defaultDate())}${Fd.text('note', 'ملاحظة', '')}${Fd.foot('سجّل الدفع')}`, v => {
+  openSheet('دفعت ' + b.name, `<label class="fld"><span>دي دفعة ميعاد</span><select name="forp">${[p1, p2].filter(Boolean).map((p_, i) => `<option value="${pKey(p_)}" ${i === 0 ? 'selected' : ''}>${lbl(p_)}</option>`).join('')}</select></label>${Fd.num('amount', 'المبلغ اللي اتدفع', b.amount, 'autofocus', 'لو الفاتورة جت مختلفة (كهربا مثلًا) اكتب الرقم الحقيقي.')}${Fd.date('date', 'التاريخ', defaultDate())}${Fd.text('note', 'ملاحظة', '')}${Fd.foot('سجّل الدفع')}`, v => {
     const a = num(v.amount); if(!need(a > 0, 'اكتب المبلغ')) return false;
-    const date = v.date || todayS(), fp = tp && pKey(tp) !== pKey(periodOf(date)) ? pKey(tp) : undefined;
+    const date = v.date || todayS(), fp = v.forp && v.forp !== pKey(periodOf(date)) ? v.forp : undefined;
     S.tx.push({id:uid(), ts:Date.now(), type:'bill', billId:id, amount:a, note:v.note.trim(), date, forP:fp});
     save(); toast('اتسجّل ✔');
   });
