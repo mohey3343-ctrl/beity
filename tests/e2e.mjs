@@ -956,6 +956,14 @@ await test('أشتري إيه متقسمة بالأقسام (زي الهايبر
   assert.ok(!(await rows()).some(x => x.startsWith('#')));
 });
 
+await test('هدية من ضيوف (بيض): تتضاف للموجود من غير مصروف ومن غير ما السعر يتغيّر', async page => {
+  await ev(page, () => { S.items.push({ id: 'egg', name: 'بيض', group: 'ألبان وبروتين', base: 'PCS', pu: 'طبق', pf: 30, monthly: 60, price: 4.5 });
+    S.counts.push({ id: 'k', ts: Date.now() - 1000, itemId: 'egg', date: todayS(), qty: 10 }); save(); buyItem('egg'); });
+  await fill(page, 'qty', 1); await page.check('#sheetBody [name="gift"]'); await submit(page);
+  const r = await ev(page, () => { EPOCH++; const it = byId(S.items, 'egg'), x = S.tx.at(-1); return [x.qty, x.amount, x.gift, it.price, Math.round(estStock(it)), summary(VIEW).houseSpent]; });
+  assert.deepEqual(r, [30, 0, true, 4.5, 40, 0]);
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });

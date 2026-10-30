@@ -517,7 +517,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-31 · 16:00';
+const APP_VER = '2026-10-31 · 17:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -2874,12 +2874,13 @@ function buyItem(id){
       ${Fd.num('npf', `<span data-bl-l="npf">فيها كام ${base.en}</span>`, '', 'data-bl')}</div>
       <div class="muted" data-bl-l="sizeNote" style="margin:-6px 0 10px"></div>
       <label class="switch" data-bl-new style="margin:-4px 0 10px"><input type="checkbox" name="main" ${hasPack(it) ? '' : 'checked'}> <span>خليها العبوة الأساسية لـ${esc(it.name)} (في الجرد وقايمة الشراء)</span></label></div>
-    ${quickQtyChips(it)}<div class="fld2">${Fd.num('qty', '<span data-bl-l="qty">الكمية</span>', q0, 'autofocus data-bl')}${Fd.num('amount', 'دفعت كام إجمالي', it.price ? Math.round(q0 * f0 * it.price) : '', 'data-amt')}</div>
+    ${quickQtyChips(it)}<div class="fld2">${Fd.num('qty', '<span data-bl-l="qty">الكمية</span>', q0, 'autofocus data-bl')}<div data-paid>${Fd.num('amount', 'دفعت كام إجمالي', it.price ? Math.round(q0 * f0 * it.price) : '', 'data-amt')}</div></div>
+    <label class="switch" style="margin:-4px 0 10px"><input type="checkbox" name="gift"> <span>🎁 هدية / جت من ضيوف (من غير فلوس) — تتضاف للموجود بس</span></label>
     <div class="muted" data-bl-l="conv" style="margin:-4px 0 10px"></div>
     ${Fd.date('date', 'التاريخ', defaultDate())}<div class="muted">هيتسجّل كمصروف "استوك البيت"، والكمية هتتضاف للموجود، والسعر هيتحدّث. والعبوة الجديدة بتتحفظ للصنف عشان تلاقيها المرة الجاية.</div>${Fd.foot('سجّل الشراء')}`;
   NEXT_WALLET = {label:'دفعت من'};
   openSheet('اشتريت ' + it.name, body, v => {
-    const q = num(v.qty), a = num(v.amount);
+    const q = num(v.qty), a = v.gift ? 0 : num(v.amount);   // الهدية: الكمية بس، من غير مصروف ومن غير ما السعر يتغيّر
     if(!need(q > 0, 'اكتب الكمية')) return false;
     let f;
     if(v.bu === '__new'){
@@ -2895,8 +2896,9 @@ function buyItem(id){
       f = u.base ? 1 : num(v.npf) > 0 ? num(v.npf) : u.f;
     }
     const un = v.bu === '__new' ? (v.npu || '').trim() : unitOf(it, v.bu).name;
-    recordBuy(it, q * f, a, v.date || todayS(), !$('#sheetBody [name="amount"]').dataset.dirty, {n:un, f});
-    save(); toast('اتسجّل الشراء');
+    recordBuy(it, q * f, a, v.date || todayS(), !!v.gift || !$('#sheetBody [name="amount"]').dataset.dirty, {n:un, f});
+    if(v.gift){ const t = S.tx[S.tx.length - 1]; t.gift = true; t.note = it.name + ' — 🎁 هدية'; }
+    save(); toast(v.gift ? `🎁 اتضاف للموجود — ${it.name}` : 'اتسجّل الشراء');
   });
   $('#sheetBody').dataset.item = it.id;
   buyLabels(it);
@@ -4028,6 +4030,7 @@ document.addEventListener('change', e => {
     if(us) us.innerHTML = it ? itemUnits(it).map(u => `<option value="${u.k}">${esc(unitShort(it, u))}</option>`).join('') : '<option value="">—</option>';
     return;
   }
+  if(el.name === 'gift' && el.closest('#sheetBody')){ const w = $('#sheetBody [data-paid]'); if(w) w.style.opacity = el.checked ? '.35' : ''; const a = $('#sheetBody [name="amount"]'); if(a) a.disabled = el.checked; return; }
   if(el.name === 'every'){ document.querySelectorAll('#sheetBody [data-every]').forEach(x => x.style.display = (x.dataset.every === '1') === (el.value === '1') ? '' : 'none'); return; }
   if(el.name === 'evdone'){ const h = $('#sheetBody [data-evhint]'); if(h) h.textContent = el.value === '1' ? 'المناسبة هتتقفل، واللي فاضل من ميزانيتها يرجع لرصيدك.' : 'الميزانية هتفضل مفتوحة بالباقي، وتكمّل تسجّل عليها.'; return; }
   if(el.dataset && el.dataset.mp){
