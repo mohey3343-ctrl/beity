@@ -522,7 +522,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-31 · 19:00';
+const APP_VER = '2026-10-31 · 20:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -566,10 +566,14 @@ const sum = (a, f) => a.reduce((s, x) => s + (f ? f(x) : x), 0);
 const pad = n => String(n).padStart(2, '0');
 /* بيقبل أرقام عربي/إنجليزي، والفاصلة العشرية (. أو ٫)، وبيشيل فواصل الآلاف */
 function normNum(v){
-  return String(v == null ? '' : v).trim()
+  const s = String(v == null ? '' : v).trim()
     .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
     .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
-    .replace(/٫/g, '.').replace(/[,،٬\s]/g, '');
+    .replace(/٫/g, '.').replace(/\s/g, '');
+  // فاصلة واحدة بين رقمين = علامة عشرية (1,1 = 1.1 · 0,250 = 0.25) — إلا لو بعدها 3 أرقام بالظبط (1,500 = ألف وخمسمية)
+  const m = s.match(/^(-?\d+)[,،](\d+)$/);
+  if(m) return m[2].length !== 3 || /^-?0+$/.test(m[1]) ? m[1] + '.' + m[2] : m[1] + m[2];
+  return s.replace(/[,،٬]/g, '');
 }
 function num(v){
   if(typeof v === 'number') return isFinite(v) ? v : 0;
