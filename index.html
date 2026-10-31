@@ -231,6 +231,11 @@
   .hero-mini{display:flex; flex-wrap:wrap; gap:6px 14px; justify-content:space-between; font-size:12.5px; color:var(--soft); cursor:pointer;}
   .hero-mini b{color:var(--ink); font-size:15px; margin-inline-start:4px;}
   .tbl tr.shop-grp td{background:rgba(255,255,255,.06); padding-top:10px; font-size:13.5px;}
+  .imp-list{display:flex; flex-direction:column; gap:10px; margin-bottom:10px}
+  .imp-row{border:1px solid var(--line); border-radius:12px; padding:8px 10px; display:flex; flex-direction:column; gap:6px}
+  .imp-row.miss{border-color:var(--bad, #e66)}
+  .imp-row select, .imp-row input{padding:8px; border:1px solid var(--line); border-radius:10px; background:var(--card-2); color:var(--ink); font-size:14px; min-width:0}
+  .imp-nums{display:flex; gap:6px} .imp-nums input{flex:1; width:0}
   .hero-total{margin:-4px 0 10px; font-size:13px; color:var(--soft);}
   .hero-total b{color:var(--ink); font-size:17px; margin-inline-start:4px;}
   .hero-total small{opacity:.7; margin-inline-start:4px;}
@@ -517,7 +522,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-31 · 17:00';
+const APP_VER = '2026-10-31 · 19:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -1692,7 +1697,7 @@ function itemsHtml(){
   const incomplete = S.items.filter(it => dailyRate(it).src === 'none' || !(it.price > 0)).length;
   const cur = summary(periodOf(todayS()));
   let h = `<div class="card"><div class="row"><div><div class="muted">البيت بيستهلك من الاستوك في الشهر</div><div style="font-size:22px">${money(cost)}</div></div>
-    <button class="btn dark" data-act="itemForm">+ صنف</button></div>
+    <div style="display:flex; flex-direction:column; gap:6px"><button class="btn dark" data-act="itemForm">+ صنف</button><button class="btn sm" data-act="importBuy">🧾 فاتورة كاملة</button></div></div>
     <div class="muted" style="line-height:1.7; margin-top:4px">الشهر ده: اتصرف <span class="num">${fmt(cur.houseSpent)}</span> + فاضل تشتري لآخر الشهر <span class="num">${fmt(cur.houseToBuy)}</span></div>
     ${incomplete ? `<div class="note">فيه <b>${incomplete}</b> صنف ناقصهم الاستهلاك الشهري أو السعر — دوس على الصنف وكمّله عشان الحسابات تبقى مظبوطة.</div>` : ''}
     <div class="muted" style="font-size:12px; margin-top:6px">💡 سجّل كل شراء ودوس "خلص" لما حاجة تخلص — الاستهلاك بيتحسب من كده لوحده.</div></div>
@@ -1782,7 +1787,8 @@ function jardDone(filled, zeros){
 function jardHtml(){
   const jv = S.settings.jardView === 'base' ? 'base' : 'pack';
   const jd = jardDraft(), jdn = Object.keys(jd).filter(id => byId(S.items, id)).length;
-  let h = `<div class="card"><h3>📝 الجرد — اكتب اللي عندك دلوقتي</h3>
+  let h = `<button class="btn block" data-act="importJard" style="margin-bottom:10px">📋 جرد من ورقة أو كتابة (أو صورة) — كله مرة واحدة</button>
+    <div class="card"><h3>📝 الجرد — اكتب اللي عندك دلوقتي</h3>
     <div class="muted" style="line-height:1.8">اكتب الكمية الموجودة فعلًا من كل صنف، واختار الوحدة جنبها (كيس أو KG…). سيب الخانة فاضية لو مش عاوز تجرده دلوقتي، ولو خلص اكتب <b>0</b>. ولو بيانات صنف غلط (الوحدة، العبوة…) دوس على اسمه وعدّلها. الرقم الرمادي هو اللي البرنامج متوقعه.<br>اللي بتكتبه بيفضل محفوظ لو خرجت ورجعت، وبيتسجّل لما تدوس <b>احفظ</b> في الآخر.</div>
     <div class="row" style="margin-top:10px"><span class="muted">اجرد الكل بـ</span>
       <div class="seg" style="margin:0; flex:1; max-width:250px">
@@ -2931,6 +2937,124 @@ function buyLabels(it){
   // المبلغ المقترح بيتحسب من الكمية لحد ما تكتب انت المبلغ
   const am = q('amount'); if(am && !am.dataset.dirty && it.price > 0 && qty > 0 && f > 0) am.value = Math.round(qty * f * it.price);
 }
+
+/* ===================== لصق قايمة (جرد أو فاتورة) =====================
+   بدل ما تدخّل صنف صنف: تكتب أو تلصق سطور ("سكر 2"، "زيت | 1 | زجاجة | 104")، والبرنامج يطابق كل سطر على أصنافك
+   وتراجع قبل الحفظ. ولو معاك صورة (فاتورة أو ورقة جرد): تبعتها لـ Claude بالطلب الجاهز ويرجّعلك السطور بنفس الشكل. */
+const UNIT_WORDS = [[/^(كيلو|كيلوجرام|كجم|كج|ك|kg|kilo)$/, 'KG', 1], [/^(جرام|جرامات|جم|غرام|g|gm|gr)$/, 'KG', 0.001], [/^(لتر|لترات|ل|l|lt|liter)$/, 'L', 1],
+  [/^(مل|ملي|مللي|ml)$/, 'L', 0.001], [/^(قطعه|قطع|حبه|حبات|عدد|pcs|pc)$/, 'PCS', 1]];
+const MONEY_WORDS = /^(ج|جم\.|جنيه|جنيها|جنيهات|le|egp|ج\.م)$/;
+function parseListText(txt){
+  return String(txt || '').split(/\n|؛|;/).map(l => l.trim()).filter(l => l && /[^\s\-–—|•*]/.test(l)).map(raw => {
+    const toks = raw.replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/٫/g, '.').replace(/^[\-–—•*\d]+[.)]\s+/, '')
+      .split(/[\s|:=×*،,]+/).filter(Boolean);
+    const nums = [], words = []; let unit = '';
+    toks.forEach((t, i) => {
+      const n = t.match(/^(\d+(?:\.\d+)?)([^\d.]*)$/);
+      if(n){ nums.push(+n[1]); if(n[2] && !unit) unit = n[2]; return; }
+      const w = normAr(t).replace(/^[(\[]|[)\].]$/g, '');
+      if(MONEY_WORDS.test(w)) return;
+      // الوحدة: كيلو/جرام/لتر… في أي حتة، أو اسم عبوة (كيس، زجاجة…) جاي بعد الكمية — قبل الكمية بيبقى جزء من الاسم ("علبة قشطة")
+      const isUnit = UNIT_WORDS.some(u => u[0].test(w)), isPack = PACKS.concat(S.settings.packs || []).some(p_ => normAr(p_) === w);
+      if(!unit && (isUnit || (isPack && nums.length))){ unit = t; return; }
+      words.push(t);
+    });
+    return {raw, name:words.join(' '), qty:nums.length ? nums[0] : null, price:nums.length > 1 ? nums[nums.length - 1] : null, unit};
+  });
+}
+/* أقرب صنف للاسم: نفس الاسم، أو واحد جوه التاني، أو كلمات مشتركة */
+function matchItem(name){
+  const n = normAr(name).replace(/\s+/g, ' '); if(!n) return null;
+  const nw = n.split(' ');
+  let best = null, bs = 0;
+  S.items.forEach(it => {
+    const m = normAr(it.name).replace(/\s+/g, ' '), mw = m.split(' ');
+    let sc = m === n ? 100 : (m.includes(n) || n.includes(m)) ? 80 - Math.abs(m.length - n.length) / 2 : 0;
+    const common = nw.filter(w => w.length > 1 && mw.some(x => x === w || (w.length > 2 && (x.startsWith(w) || w.startsWith(x))))).length;
+    sc = Math.max(sc, common / Math.max(nw.length, mw.length) * 70);
+    if(sc > bs){ bs = sc; best = it; }
+  });
+  return bs >= 35 ? best : null;
+}
+/* الوحدة اللي في السطر → وحدة الصنف (كيس/زجاجة…) أو المقياس، والجرام والمللي بيتحولوا لكيلو ولتر */
+function lineUnit(it, unit, mode){
+  const us = itemUnits(it), w = normAr(unit);
+  if(w){
+    const pk = us.find(u => !u.base && (normAr(u.name) === w || normAr(u.name).startsWith(w) || w.startsWith(normAr(u.name))));
+    if(pk) return {k:pk.k, mul:1};
+    const uw = UNIT_WORDS.find(u => u[0].test(w));
+    if(uw && uw[1] === baseOf(it)) return {k:'base', mul:uw[2]};
+  }
+  const def = mode === 'jard' ? (S.settings.jardView === 'base' || !hasPack(it) ? 'base' : 'pack') : (hasPack(it) && !isLoose(it) ? 'pack' : 'base');
+  return {k:us.some(u => u.k === def) ? def : us[0].k, mul:1};
+}
+function importPrompt(mode){
+  const names = S.items.filter(it => !isPaused(it)).map(it => it.name).join('، ');
+  return (mode === 'jard'
+    ? `اقرا ورقة الجرد اللي في الصورة واكتبلي كل صنف في سطر لوحده بالشكل ده بالظبط:\nالاسم | الكمية | الوحدة\n`
+    : `اقرا الفاتورة اللي في الصورة واكتبلي كل صنف في سطر لوحده بالشكل ده بالظبط:\nالاسم | الكمية | الوحدة | السعر الإجمالي للسطر\n`)
+    + `- الوحدة: كيلو أو جرام أو لتر أو مل أو قطعة أو اسم العبوة (كيس، علبة، زجاجة، طبق، برطمان…)\n- لو اسم الصنف شبه واحد من دول اكتبه زيه بالظبط: ${names}\n- الأرقام بالإنجليزي، ومن غير أي كلام تاني قبل أو بعد السطور.`;
+}
+function importStart(mode){
+  const jard = mode === 'jard';
+  openSheet(jard ? '📋 جرد من ورقة أو كتابة' : '🧾 فاتورة كاملة مرة واحدة', `<div class="muted" style="line-height:1.8; margin-bottom:8px">اكتب أو الصق كل صنف في سطر:
+      <b>${jard ? 'سكر 2 كيلو' : 'سكر 2 كيلو 74'}</b> أو <b>${jard ? 'زيت | 1 | زجاجة' : 'زيت | 1 | زجاجة | 104'}</b>. البرنامج هيطابق الأسماء على أصنافك وتراجعها قبل الحفظ.</div>
+    <label class="fld"><textarea name="txt" rows="9" style="width:100%; padding:10px; border:1px solid var(--line); border-radius:12px; background:var(--card-2); color:var(--ink); font-size:15px; line-height:1.7" placeholder="${jard ? 'سكر 2\nرز 1.5 كيلو\nبيض 25 قطعة' : 'سكر 2 كيلو 74\nلبن 3 علبة 140\nمناديل 2 120'}"></textarea></label>
+    <div class="note">📷 معاك صورة ${jard ? 'لورقة الجرد' : 'للفاتورة'}؟ انسخ الطلب ده، وابعته مع الصورة لـ Claude، وهيرجّعلك السطور جاهزة تلصقها هنا.
+      <div style="margin-top:8px"><button type="button" class="btn sm" data-act="copyImpPrompt" data-m="${mode}">📋 انسخ الطلب</button></div></div>
+    ${Fd.foot('كمّل ← راجع')}`, v => {
+    const rows = parseListText(v.txt);
+    if(!need(rows.length, 'اكتب سطر واحد على الأقل')) return false;
+    importReview(mode, rows);
+    return false;
+  });
+}
+function importReview(mode, rows){
+  const jard = mode === 'jard';
+  const opts = (sel) => (jard ? '' : `<option value="__exp" ${sel === '__exp' ? 'selected' : ''}>🛒 مش صنف — مصروف سوبر ماركت</option>`) + `<option value="" ${!sel ? 'selected' : ''}>— تجاهل السطر ده —</option>`
+    + groupsOf().map(g => { const L = S.items.filter(x => (x.group || 'تاني') === g).sort((a, b) => a.name.localeCompare(b.name, 'ar')); return L.length ? `<optgroup label="${esc(g)}">${L.map(x => `<option value="${x.id}" ${x.id === sel ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</optgroup>` : ''; }).join('');
+  const unitOpts = (it, k) => it ? itemUnits(it).map(u => `<option value="${u.k}" ${u.k === k ? 'selected' : ''}>${esc(unitShort(it, u))}</option>`).join('') : '<option value="">—</option>';
+  let miss = 0;
+  const body = `<div class="muted" style="margin-bottom:8px; line-height:1.7">راجع كل سطر: الصنف اللي اتطابق، الكمية والوحدة${jard ? '' : ' والسعر'}. اللي مالقيتلوش صنف معلّم بـ ⚠️ — اختارله صنف أو سيبه.</div>
+    <div class="imp-list">${rows.map((r, i) => {
+      const it = matchItem(r.name), lu = it ? lineUnit(it, r.unit, mode) : null, sel = it ? it.id : (jard ? '' : (r.price ? '__exp' : ''));
+      if(!it) miss++;
+      const q = r.qty == null ? '' : +(r.qty * (lu ? lu.mul : 1)).toFixed(3);
+      return `<div class="imp-row${it ? '' : ' miss'}"><div class="muted" style="font-size:12px">${it ? '' : '⚠️ '}${esc(r.raw)}</div>
+        <select name="it_${i}" data-imp="${i}">${opts(sel)}</select>
+        <div class="imp-nums"><input name="q_${i}" inputmode="decimal" placeholder="الكمية" value="${q}"><select name="u_${i}" data-impu="${i}">${unitOpts(it, lu && lu.k)}</select>${jard ? '' : `<input name="p_${i}" inputmode="decimal" placeholder="السعر" value="${r.price != null ? r.price : ''}">`}</div></div>`;
+    }).join('')}</div>
+    ${jard ? '' : `<div class="note" data-imptotal></div>${Fd.text('note', 'المكان (اختياري)', '', 'placeholder="مثلاً: كارفور"')}${Fd.date('date', 'التاريخ', defaultDate())}`}
+    ${Fd.foot(jard ? 'احفظ الجرد' : 'سجّل الفاتورة')}`;
+  if(!jard) NEXT_WALLET = {label:'دفعت من'};
+  openSheet(jard ? `راجع الجرد (${rows.length} سطر${miss ? ` · ${miss} محتاجين صنف` : ''})` : `راجع الفاتورة (${rows.length} سطر${miss ? ` · ${miss} محتاجين صنف` : ''})`, body, v => {
+    const L = rows.map((r, i) => ({r, id:v['it_' + i], q:v['q_' + i], u:v['u_' + i], p:num(v['p_' + i])})).filter(x => x.id);
+    if(jard){
+      const list = L.filter(x => x.id !== '__exp' && String(x.q).trim() !== '').map(x => { const it = byId(S.items, x.id); return {it, qty:num(x.q) * unitOf(it, x.u).f}; });
+      if(!need(list.length, 'مفيش ولا سطر متطابق بكمية')) return false;
+      return pushCounts(list, () => { save(); toast(`اتسجّل جرد ${list.length} صنف`); });
+    }
+    const ts = Date.now(), grp = uid(), date = v.date || todayS(), place = (v.note || '').trim();
+    let n = 0, tot = 0;
+    L.forEach((x, i) => {
+      if(x.id === '__exp'){ if(x.p > 0){ S.tx.push({id:uid(), ts:ts + i, grp, type:'exp', cat:'market', amount:x.p, note:[x.r.name || x.r.raw, place].filter(Boolean).join(' — '), date}); n++; tot += x.p; } return; }
+      const it = byId(S.items, x.id), q = num(x.q); if(!it || !(q > 0)) return;
+      const u = unitOf(it, x.u);
+      recordBuy(it, q * u.f, x.p, date, !(x.p > 0), {n:u.name, f:u.f});
+      Object.assign(S.tx[S.tx.length - 1], {ts:ts + i, grp, note:it.name + (place ? ' — ' + place : '')});
+      n++; tot += x.p;
+    });
+    if(!need(n, 'مفيش ولا سطر يتسجّل')) return false;
+    save(); toast(`🧾 اتسجّل ${n} سطر بـ ${fmt(tot)} ج`);
+  });
+  importTotal();
+}
+function importTotal(){
+  const el = $('#sheetBody [data-imptotal]'); if(!el) return;
+  const ps = [...document.querySelectorAll('#sheetBody [name^="p_"]')].filter(x => { const i = x.name.slice(2), s_ = $(`#sheetBody [name="it_${i}"]`); return s_ && s_.value; });
+  el.innerHTML = `إجمالي الفاتورة: <b class="num">${fmt(sum(ps, x => num(x.value)))}</b> ج`;
+}
+
 /* ---- تسجيل كذا حاجة مع بعض (فاتورة) ----
    كل حاجة سطر: تصنيف + مبلغ. لو التصنيف "استوك البيت" تختار الصنف والكمية فتتضاف للمخزون.
    سطر جديد بيتفتح لوحده أول ما تكتب مبلغ في آخر سطر. */
@@ -2964,6 +3088,7 @@ function multiAdd(preset){
   ML = [{cat:'market'}, {cat:'market'}];
   const body = `<div class="seg"><button type="button" data-act="qaType" data-v="exp">مصروف</button><button type="button" class="on">🧾 كذا حاجة</button><button type="button" data-act="qaType" data-v="inc">دخل إضافي</button></div>
     <div class="muted" style="margin-bottom:8px; line-height:1.7">كل حاجة في سطر: التصنيف والمبلغ. لو حاجة من أصناف البيت اختار "استوك البيت" والصنف والكمية — هتتضاف للمخزون.</div>
+    <button type="button" class="btn sm" data-act="importBuy" style="margin-bottom:8px">🧾 الصق فاتورة كاملة (أو من صورة)</button>
     <div id="mlines"></div>
     <button type="button" class="btn sm" data-act="mlAdd">+ سطر</button>
     <div class="note" id="mlTotal"></div>
@@ -3762,6 +3887,9 @@ const ACT = {
     else openSheet('القائمة', `<div class="pre">${esc(txt)}</div>`);
   },
   shopSort:(d) => { S.settings.shopSort = d.v; save(); },
+  importJard:() => importStart('jard'),
+  importBuy:() => importStart('buy'),
+  copyImpPrompt:(d) => { const t = importPrompt(d.m); if(navigator.clipboard) navigator.clipboard.writeText(t).then(() => toast('اتنسخ — ابعته مع الصورة لـ Claude')).catch(() => openSheet('الطلب', `<div class="pre">${esc(t)}</div>`)); else openSheet('الطلب', `<div class="pre">${esc(t)}</div>`); },
   billForm:(d) => billForm(d.id),
   payBill:(d) => payBill(d.id),
   delBill:(d) => { if(!confirm('تمسح الالتزام ده؟ (المدفوعات القديمة هتفضل)')) return; S.bills = S.bills.filter(b => b.id !== d.id); closeSheet(); save(); },
@@ -4031,6 +4159,11 @@ document.addEventListener('change', e => {
     return;
   }
   if(el.name === 'gift' && el.closest('#sheetBody')){ const w = $('#sheetBody [data-paid]'); if(w) w.style.opacity = el.checked ? '.35' : ''; const a = $('#sheetBody [name="amount"]'); if(a) a.disabled = el.checked; return; }
+  if(el.matches && el.matches('[data-imp]')){
+    const i = el.dataset.imp, it = byId(S.items, el.value), us = $(`#sheetBody [data-impu="${i}"]`);
+    if(us) us.innerHTML = it ? itemUnits(it).map(u => `<option value="${u.k}" ${u.k === lineUnit(it, '', 'buy').k ? 'selected' : ''}>${esc(unitShort(it, u))}</option>`).join('') : '<option value="">—</option>';
+    el.closest('.imp-row').classList.toggle('miss', !el.value); importTotal(); return;
+  }
   if(el.name === 'every'){ document.querySelectorAll('#sheetBody [data-every]').forEach(x => x.style.display = (x.dataset.every === '1') === (el.value === '1') ? '' : 'none'); return; }
   if(el.name === 'evdone'){ const h = $('#sheetBody [data-evhint]'); if(h) h.textContent = el.value === '1' ? 'المناسبة هتتقفل، واللي فاضل من ميزانيتها يرجع لرصيدك.' : 'الميزانية هتفضل مفتوحة بالباقي، وتكمّل تسجّل عليها.'; return; }
   if(el.dataset && el.dataset.mp){
@@ -4062,6 +4195,7 @@ document.addEventListener('change', e => {
   if(el.dataset.act === 'rollDebts'){ const g = byId(S.goals, el.dataset.id); if(g){ g.rollDebts = el.checked; save(); } }
 });
 document.addEventListener('input', e => {
+  if(e.target.name && /^p_\d+$/.test(e.target.name) && e.target.closest('.imp-row')) importTotal();
   // مبلغ كتبته بإيدك ما بيتغيرش لوحده، والمقترح بيتحسب من الكمية
   if(e.target.hasAttribute && e.target.hasAttribute('data-amt')) e.target.dataset.dirty = '1';
   if(e.target.dataset && e.target.dataset.bm){

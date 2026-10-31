@@ -964,6 +964,32 @@ await test('هدية من ضيوف (بيض): تتضاف للموجود من غي
   assert.deepEqual(r, [30, 0, true, 4.5, 40, 0]);
 });
 
+await test('لصق قايمة: جرد من ورقة وفاتورة كاملة — مطابقة الأسماء والوحدات (جرام/عبوة) والسعر، والمش متطابق يتعلّم', async page => {
+  await ev(page, () => { S.items.push({ id: 's', name: 'سكر', group: 'تموين', base: 'KG', pu: 'كيس', pf: 1, monthly: 2, price: 37 },
+      { id: 'z', name: 'زيت عافية', group: 'تموين', base: 'L', pu: 'زجاجة', pf: 2.2, monthly: 1.1, price: 100 },
+      { id: 'q', name: 'علبة قشطة', group: 'ألبان', base: 'KG', pu: 'علبة', pf: 0.11, monthly: 0.22, price: 200 },
+      { id: 'k', name: 'كمون', group: 'توابل', base: 'KG', pu: 'كيس', pf: 1, monthly: 0.08, price: 180 }); save(); });
+  const p = await ev(page, () => parseListText('سكر 2 كيلو 74\nزيت | 1 | زجاجة | 104\nعلبة قشطه ٢\nكمون 50 جرام 9\nمناديل 2 120\n١. شاي 3'));
+  assert.deepEqual(p.map(r => [r.name, r.qty, r.price, r.unit]), [['سكر', 2, 74, 'كيلو'], ['زيت', 1, 104, 'زجاجة'], ['علبة قشطه', 2, null, ''], ['كمون', 50, 9, 'جرام'], ['مناديل', 2, 120, ''], ['شاي', 3, null, '']]);
+  // فاتورة
+  await ev(page, () => importStart('buy'));
+  await page.fill('#sheetBody [name="txt"]', 'سكر 2 كيلو 74\nزيت | 1 | زجاجة | 104\nكمون 50 جرام 9\nمناديل 2 120');
+  await submit(page);
+  assert.match(await page.textContent('#sheetBody'), /⚠️ مناديل/);
+  assert.match(await page.textContent('#sheetBody [data-imptotal]'), /307/);
+  await submit(page);
+  const r = await ev(page, () => S.tx.filter(t => t.grp).map(t => [t.itemId || t.cat, +(t.qty || 0).toFixed(3), t.amount]));
+  assert.deepEqual(r, [['s', 2, 74], ['z', 2.2, 104], ['k', 0.05, 9], ['market', 0, 120]]);
+  assert.equal(await ev(page, () => byId(S.items, 'k').price), 180);   // 9 ج لـ 50 جرام = 180 للكيلو
+  // جرد من ورقة
+  await ev(page, () => importStart('jard'));
+  await page.fill('#sheetBody [name="txt"]', 'سكر 1.5\nعلبة قشطة 2 علبة\nحاجة غريبة 4');
+  await submit(page); await submit(page);
+  if (await page.isVisible('#sheetWrap.open')) await submit(page);
+  const c = await ev(page, () => S.counts.map(x => [x.itemId, +x.qty.toFixed(3)]));
+  assert.deepEqual(c, [['s', 1.5], ['q', 0.22]]);
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });
