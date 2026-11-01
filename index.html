@@ -522,7 +522,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-10-31 · 20:00';
+const APP_VER = '2026-11-01 · 12:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -1300,7 +1300,9 @@ function summaryRaw(p){
         fwd += (last ? last.amount : 0) + sum(S.tx.filter(t => evKey(t) > lk && evKey(t) < startK), t => walletFlow(t, w.id));
       });
       const back = b.value - sum(S.tx.filter(t => t.type !== 'xfer' && evKey(t) >= startK), t => t.type === 'inc' ? t.amount : -t.amount);
-      o.opening = fwdOk ? fwd : back; o.openingBack = !fwdOk;
+      // دخل الشهر ده اللي نزل بدري (قبل ما الشهر يبدأ): داخل في "الدخل" فوق، فمايتحسبش تاني في رصيد أول الشهر
+      o.earlyIn = sum(S.tx.filter(t => t.type === 'inc' && t.forP === pk && t.date < r.start), t => t.amount);
+      o.opening = (fwdOk ? fwd : back) - o.earlyIn; o.openingBack = !fwdOk;
       // اللي فاضل من الفرق بعد رصيد أول الشهر = فروق ظهرت في جرد الفلوس جوه الشهر
       o.unrecorded = o.cashGap + o.incPending - o.opening + o.billPrior;
       o.perDay = (o.free + o.spentToday) / o.daysLeft;
@@ -1465,7 +1467,7 @@ PAGES.home = function(){
 
   h += `<div class="card"><h3>خطة الشهر <span class="muted">الفلوس رايحة فين</span></h3>
     <div class="plan-line"><span>💰 الدخل ${o.incReceived < o.income ? '<span class="tag">متوقع</span>' : ''}</span><b class="num pos">${fmt(o.income)}</b></div>
-    ${o.isCurrent && o.cashKnown && Math.abs(o.opening) >= 1 ? `<div class="plan-line"><span>💼 رصيد أول الشهر<div class="muted" style="font-size:11.5px; line-height:1.6">${o.openingBack ? (o.opening < 0 ? 'محسوب من أول جرد فلوس في الشهر — بالسالب يعني فيه مصاريف قبل الجرد ده ما اتسجلتش (زي أول ما بدأت تستخدم البرنامج)' : 'محسوب من أول جرد فلوس في الشهر — فلوس كانت معاك قبل الدخل') : 'اللي كان معاك أول الشهر (فاضل من الشهر اللي فات)'}</div></span><b class="num ${o.opening < 0 ? 'neg' : 'pos'}">${o.opening < 0 ? '− ' : '+ '}${fmt(Math.abs(o.opening))}</b></div>` : ''}
+    ${o.isCurrent && o.cashKnown && Math.abs(o.opening) >= 1 ? `<div class="plan-line"><span>💼 رصيد أول الشهر<div class="muted" style="font-size:11.5px; line-height:1.6">${o.openingBack ? (o.opening < 0 ? 'محسوب من أول جرد فلوس في الشهر — بالسالب يعني فيه مصاريف قبل الجرد ده ما اتسجلتش (زي أول ما بدأت تستخدم البرنامج)' : 'محسوب من أول جرد فلوس في الشهر — فلوس كانت معاك قبل الدخل') : 'اللي كان معاك أول الشهر (فاضل من الشهر اللي فات)'}${o.earlyIn > 0.5 ? ` — من غير الـ <span class="num">${fmt(o.earlyIn)}</span> اللي اتقبضوا بدري من دخل الشهر ده (محسوبين في الدخل فوق)${o.opening < 0 ? '، يعني اتصرفوا قبل الشهر ما يبدأ' : ''}` : ''}</div></span><b class="num ${o.opening < 0 ? 'neg' : 'pos'}">${o.opening < 0 ? '− ' : '+ '}${fmt(Math.abs(o.opening))}</b></div>` : ''}
     <div class="plan-line"><span>📋 الالتزامات الثابتة</span><b class="num">− ${fmt(o.billPlanned)}</b></div>
     ${o.isCurrent && o.cashKnown && o.billPrior > 0.5 ? `<div class="plan-line"><span>🔁 فواتير كل كام شهر: حصص الشهور اللي فاتت<div class="muted" style="font-size:11.5px">${o.billLines.filter(l => l.prior > 0.5).map(l => `${esc(l.b.name)} ${fmt(l.prior)} ${l.isDue && l.paidT.length ? '(اتدفعت فيها)' : '(متجنّبة لحد ميعادها)'}`).join(' · ')}</div></span><b class="num">− ${fmt(o.billPrior)}</b></div>` : ''}
     <div class="plan-line"><span>💳 أقساط الديون</span><b class="num">− ${fmt(o.debtPlanned)}</b></div>

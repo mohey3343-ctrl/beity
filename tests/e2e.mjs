@@ -995,6 +995,20 @@ await test('الفاصلة العشرية: ١,١ = 1.1 و0,250 = 0.25، و1,500 
   assert.deepEqual(r, [1.1, 1.1, 0.25, 0.25, 1500, 12.5, 1.5, 1.5, 123, 2000, 15000]);
 });
 
+await test('الشهر الجديد بعد ما قبضت جزء من مرتبه بدري: مايتحسبش مرتين (مفيش "فلوس خرجت ومش متسجلة" وهمية)', async page => {
+  const r = await ev(page, () => {
+    S.incomes.push({ id: 'd', name: 'الدكتور', amount: 9600, day: 10 });
+    // جرد سبتمبر، و5000 من مرتب أكتوبر نزلوا 25 سبتمبر واتصرفوا ("هصرف منه")
+    S.cashCounts.push({ id: 'c', ts: 1, date: '2026-09-20', amount: 3000 });
+    S.tx.push({ id: 'e', ts: 2, type: 'inc', incomeId: 'd', amount: 5000, date: '2026-09-25', forP: '2026-10', useNow: true },
+      { id: 'x', ts: 3, type: 'exp', cat: 'food', amount: 6000, date: '2026-09-28' });
+    save(); EPOCH++; const o = summary(VIEW);
+    return [Math.round(o.opening), Math.round(o.unrecorded), o.incReceived, Math.round(o.incPending), Math.round(o.free)];
+  });
+  // رصيد أول أكتوبر في الخزنة 2000، بس الـ5000 دول من دخل أكتوبر → رصيد أول الشهر = −3000، والدخل فاضل منه 4600
+  assert.deepEqual(r.slice(0, 4), [-3000, 0, 5000, 4600]);
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });
