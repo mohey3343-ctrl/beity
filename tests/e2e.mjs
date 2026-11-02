@@ -1053,6 +1053,17 @@ await test('أشتري إيه: عدد أيام بتختاره، ونسكافيه
   assert.deepEqual(await ev(page, () => [document.querySelector('#sheetBody [name="k_r"]').checked, document.querySelector('#sheetBody [name="k_n"]').checked]), [true, false]);
 });
 
+await test('قايمة الشراء: زرار "فرط / عبوة" جنب الصنف بيغيّر طريقة الحساب على طول', async page => {
+  await ev(page, () => { S.items.push({ id: 'n', name: 'نشا', group: 'تموين', base: 'KG', pu: 'كيس', pf: 1, monthly: 0.12, price: 40 });
+    S.counts.push({ id: 'c', ts: 1, itemId: 'n', date: '2026-10-09', qty: 0.08 }); save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'shop' }); });
+  const q = () => ev(page, () => shopList().find(x => x.it.id === 'n').qty);
+  assert.equal(await q(), 1);                                   // عبوة كاملة (كيس كيلو)
+  assert.match(await page.textContent('[data-act="toggleLoose"][data-id="n"]'), /كيس/);
+  await page.click('[data-act="toggleLoose"][data-id="n"]');
+  assert.equal(await q(), 0.06);                                // فرط: 0.12 × 33/30 − 0.08
+  assert.match(await page.textContent('[data-act="toggleLoose"][data-id="n"]'), /فرط/);
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });
