@@ -231,6 +231,12 @@
   .hero-mini{display:flex; flex-wrap:wrap; gap:6px 14px; justify-content:space-between; font-size:12.5px; color:var(--soft); cursor:pointer;}
   .hero-mini b{color:var(--ink); font-size:15px; margin-inline-start:4px;}
   .tbl tr.shop-grp td{background:rgba(255,255,255,.06); padding-top:10px; font-size:13.5px;}
+  #jardForm.only-empty .jard-row.filled{display:none}
+  .jard-row:not(.filled) input[data-item]{border-color:rgba(255,200,80,.45)}
+  .jsum{font-size:11.5px; color:var(--soft); min-width:0}
+  .tbl tr.ticked td{opacity:.45} .tbl tr.ticked b{text-decoration:line-through}
+  .tick{width:24px; height:24px; flex:none; border-radius:7px; border:1.5px solid var(--line); background:transparent; color:#fff; font-weight:700; padding:0; line-height:1}
+  .tick.on{background:var(--good, #2bb673); border-color:var(--good, #2bb673)}
   .imp-list{display:flex; flex-direction:column; gap:10px; margin-bottom:10px}
   .imp-row{border:1px solid var(--line); border-radius:12px; padding:8px 10px; display:flex; flex-direction:column; gap:6px}
   .imp-row.miss{border-color:var(--bad, #e66)}
@@ -522,7 +528,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-02 · 10:00';
+const APP_VER = '2026-11-02 · 14:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -577,11 +583,19 @@ function normNum(v){
 }
 function num(v){
   if(typeof v === 'number') return isFinite(v) ? v : 0;
+  // "0.03+0.1" (لقيت حتة هنا وحتة هناك في الجرد) = 0.13
+  if(typeof v === 'string' && /\d\s*\+\s*[\d٠-٩.]/.test(v)) return v.split('+').reduce((a, x) => a + num(x), 0);
   const n = parseFloat(normNum(v));
   return isFinite(n) ? n : 0;
 }
 /* التحقق من خانة رقم: فاضي، أو رقم سليم موجب، وإلا رسالة الغلط */
 function numCheck(raw, el){
+  if(typeof raw === 'string' && raw.includes('+')){
+    const parts = raw.split('+');
+    if(parts.some(x => normNum(x) === '')) return {err:'اكتب رقم قبل وبعد علامة +'};
+    const bad = parts.map(x => numCheck(x, el)).find(r => r.err); if(bad) return bad;
+    return {v:num(raw)};
+  }
   const t = normNum(raw);
   if(t === '') return {empty:true};
   if(!/^(\d+\.?\d*|\.\d+)$/.test(t)) return {err:/^-/.test(t) ? 'الرقم مينفعش يبقى بالسالب' : 'اكتب رقم بس، من غير حروف أو رموز'};
@@ -614,9 +628,11 @@ const entryUnit = it => hasPack(it) ? it.pu : BASES[baseOf(it)].en;
 /* بيتباع فرط (بأي كمية: ربع، نص، كيلو ونص…): الكيلو واللتر من غير عبوة، والخضار والفاكهة واللحوم والجبن بالوزن.
    الباقي (رز، سكر، زيت…) عبوة مقفولة — وتقدر تغيّر ده من الصنف */
 const LOOSE_G = /خضار|فاكه|لحوم|لحمة|فراخ|سمك|جبن|ألبان|توابل|بهارات|عطار/;
-const isLoose = it => baseOf(it) !== 'PCS' && (it.loose != null ? !!it.loose : !hasPack(it) || LOOSE_G.test(it.group || ''));
+// القطع (أكياس نسكافيه، علب زبادي…) بتبقى "فرط" لو انت علّمت عليها بس — يعني تتشري بالقطعة مش علبة كاملة
+const isLoose = it => baseOf(it) === 'PCS' ? !!it.loose && hasPack(it) : (it.loose != null ? !!it.loose : !hasPack(it) || LOOSE_G.test(it.group || ''));
 /* "نص كيلو" بدل 0.5 KG */
 function looseTxt(it, q){
+  if(baseOf(it) === 'PCS') return `${fmtQ(q)} ${BASES.PCS.ar}`;
   const ar = BASES[baseOf(it)].ar, r = Math.round(q * 4) / 4, n = {0.25:'ربع ' + ar, 0.5:'نص ' + ar, 0.75:'تلت تربع ' + ar, 1:ar, 1.5:ar + ' ونص', 2:'2 ' + ar}[r];
   return Math.abs(q - r) < 1e-6 && n ? n : `${fmtQ(q)} ${ar}`;
 }
@@ -969,6 +985,7 @@ const isPaused = it => !!it.pause && (it.pause === 'always' || todayS() <= it.pa
 const pauseTxt = it => it.pause === 'always' ? 'موقوف (موسمي)' : 'مش الشهر ده';
 function houseMonthlyCost(){ return sum(S.items.filter(it => it.pause !== 'always'), it => dailyRate(it).v * 30 * (it.price || 0)); }
 function coverDays(){
+  if(S.settings.coverMode === 'days') return Math.max(1, Math.min(120, +S.settings.coverN || 7));
   if(S.settings.coverMode === 'period'){
     const r = periodRange(periodOf(todayS()));
     return diffDays(todayS(), r.end) + 1;
@@ -983,7 +1000,7 @@ function shopList(days){
     const need = rate.v * cover - have;
     let qty = 0;
     // العبوة المقفولة بنقرّبها لعدد عبوات كامل — والفرط (خضار، فاكهة، لحمة…) بالظبط على قد الاستهلاك (لأقرب 10 جرام/مللي)
-    if(need > 0.001){ const step = isLoose(it) ? 0.01 : hasPack(it) ? it.pf : 1; qty = Math.round(Math.ceil(need / step - 1e-9) * step * 1000) / 1000; }
+    if(need > 0.001){ const step = isLoose(it) ? (baseOf(it) === 'PCS' ? 1 : 0.01) : hasPack(it) ? it.pf : 1; qty = Math.round(Math.ceil(need / step - 1e-9) * step * 1000) / 1000; }
     return {it, rate, est, have, need, qty, cost:qty * (it.price || 0)};
   });
 }
@@ -1743,6 +1760,11 @@ function jardUnitSel(it, u, attrs){
 /* مسودة الجرد: اللي بتكتبه بيتحفظ على الموبايل أول بأول، فلو خرجت من الصفحة أو جالك تليفون
    ترجع تلاقيه زي ما هو. بيتسجّل فعلًا بس لما تدوس "احفظ الجرد". */
 function jardDraft(){ try{ return JSON.parse(localStorage.getItem(JDRAFT_KEY) || '{}') || {}; }catch(e){ return {}; } }
+function jardRowMark(inp){
+  const row = inp.closest('.jard-row'); if(!row) return;
+  row.classList.toggle('filled', inp.value.trim() !== '');
+  const sm = row.querySelector('.jsum'); if(sm) sm.textContent = inp.value.includes('+') && num(inp.value) ? '= ' + fmtQ(num(inp.value)) : '';
+}
 function jardDraftSave(){
   const d = {}, old = jardDraft();
   document.querySelectorAll('#jardForm input[data-item]').forEach(inp => {
@@ -1802,8 +1824,10 @@ function jardHtml(){
         <button type="button" class="${jv === 'base' ? 'on' : ''}" data-act="jardAll" data-v="base">KG / L / PCS</button></div></div>
     <div class="row" style="margin-top:10px"><span class="muted">لقيت حاجة مش في القايمة؟</span><button type="button" class="btn sm dark" data-act="itemNew" data-k="jard">+ صنف جديد</button></div></div>
     ${jdn ? `<div class="note" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">📝 <span style="flex:1">فيه جرد لسه ما اتحفظش (<b class="num">${jdn}</b> صنف) — كمّل من مكان ما وقفت، وفي الآخر دوس احفظ.</span><button type="button" class="btn sm ghost" data-act="jardDraftClear">ابدأ من الأول</button></div>` : ''}
-    <div class="card" id="jardForm">
-    ${searchBox('jard')}`;
+    <div class="card${JARD_ONLY_EMPTY ? ' only-empty' : ''}" id="jardForm">
+    ${searchBox('jard')}
+    <div class="muted" style="margin:-2px 0 8px; font-size:12.5px; line-height:1.7">💡 لقيت حتة هنا وحتة هناك؟ اكتب <b>0.03+0.1</b> والبرنامج يجمعهم.
+      <button type="button" class="chip ${JARD_ONLY_EMPTY ? 'on' : ''}" data-act="jardOnlyEmpty" style="margin-inline-start:4px">👀 اللي لسه ما اتجردش بس</button></div>`;
   groupsOf().forEach(g => {
     const its = S.items.filter(it => (it.group || 'تاني') === g);
     h += `<div data-g="${esc(g)}" ${hideIf(!its.some(it => qHit('jard', it)))}><div class="group-h">${esc(g)}</div>`;
@@ -1811,9 +1835,9 @@ function jardHtml(){
       const dr = jd[it.id], u = dr && dr.u ? dr.u : jv;
       const e = estStock(it), f = jardF(it, u);
       const conv = hasPack(it) && !(baseOf(it) === 'PCS' && it.pf === 1) ? `1 ${esc(it.pu)} = <span dir="ltr" style="unicode-bidi:isolate">${fmtQ(it.pf)} ${BASES[baseOf(it)].en}</span>` : '';
-      h += `<div class="jard-row" data-nm="${esc(it.name)}" ${hideIf(!qHit('jard', it))}><div class="nm" data-act="itemForm" data-id="${it.id}" style="cursor:pointer">${esc(it.name)} <span class="ed" aria-label="تعديل">✏️</span><small>${conv}${e != null ? `${conv ? ' · ' : ''}متوقع <span data-est>${fmtQ(e / f)}</span>` : ''}</small></div>
+      h += `<div class="jard-row${dr ? ' filled' : ''}" data-nm="${esc(it.name)}" ${hideIf(!qHit('jard', it))}><div class="nm" data-act="itemForm" data-id="${it.id}" style="cursor:pointer">${esc(it.name)} <span class="ed" aria-label="تعديل">✏️</span><small>${conv}${e != null ? `${conv ? ' · ' : ''}متوقع <span data-est>${fmtQ(e / f)}</span>` : ''}</small></div>
         ${jardUnitSel(it, u, `data-junit="${it.id}"`)}
-        <input data-item="${it.id}" inputmode="decimal" value="${dr ? esc(dr.v) : ''}" placeholder="${e != null ? fmtQ(e / f) : '—'}"></div>`;
+        <input data-item="${it.id}" inputmode="decimal" value="${dr ? esc(dr.v) : ''}" placeholder="${e != null ? fmtQ(e / f) : '—'}">${dr && String(dr.v).includes('+') ? `<span class="jsum">= ${fmtQ(num(dr.v))}</span>` : '<span class="jsum"></span>'}</div>`;
     });
     h += `</div>`;
   });
@@ -1866,14 +1890,17 @@ function shopQty(it, q, view, html){
   return `${fmtQ(q / it.pf)} ${html ? esc(it.pu) : it.pu}`;
 }
 function shopHtml(){
-  const L = shopList(), need = L.filter(x => x.qty > 0).sort((a, b) => (daysLeft(a.it) || 0) - (daysLeft(b.it) || 0));
+  const L = shopList(), TICKS = shopTicks(), need = L.filter(x => x.qty > 0).sort((a, b) => (!!TICKS[a.it.id] - !!TICKS[b.it.id]) || (daysLeft(a.it) || 0) - (daysLeft(b.it) || 0));
+  const nTick = need.filter(x => TICKS[x.it.id]).length;
   const total = sum(need, x => x.cost), cover = coverDays();
   const unknown = S.items.filter(it => estStock(it) == null && dailyRate(it).v > 0).length;
   const curO = summary(periodOf(todayS()));
   let h = `<div class="card"><h3>🛒 أشتري إيه عشان أكمّل الشهر</h3>
     <div class="seg" style="margin-bottom:10px">
-      <button type="button" class="${S.settings.coverMode !== 'period' ? 'on' : ''}" data-act="cover" data-v="month">يكفي شهر كامل</button>
-      <button type="button" class="${S.settings.coverMode === 'period' ? 'on' : ''}" data-act="cover" data-v="period">لحد آخر الشهر المالي</button></div>
+      <button type="button" class="${!['period', 'days'].includes(S.settings.coverMode) ? 'on' : ''}" data-act="cover" data-v="month">شهر كامل</button>
+      <button type="button" class="${S.settings.coverMode === 'period' ? 'on' : ''}" data-act="cover" data-v="period">لآخر الشهر</button>
+      <button type="button" class="${S.settings.coverMode === 'days' ? 'on' : ''}" data-act="cover" data-v="days">عدد أيام</button></div>
+    ${S.settings.coverMode === 'days' ? `<div class="row" style="margin:-4px 0 10px; gap:6px; flex-wrap:wrap"><span class="muted">اشتري على قد</span>${[7, 10, 15].map(n => `<button type="button" class="chip ${coverDays() === n ? 'on' : ''}" data-act="coverN" data-n="${n}">${n === 7 ? 'أسبوع' : n + ' يوم'}</button>`).join('')}<input id="coverN" inputmode="numeric" value="${coverDays()}" style="width:58px; padding:6px; border:1px solid var(--line); border-radius:10px; background:var(--card-2); color:var(--ink); text-align:center"> <span class="muted">يوم</span></div>` : ''}
     <div class="row muted"><span>بنحسب على <b class="num">${cover}</b> يوم + احتياطي <b class="num">${S.settings.bufferDays || 0}</b> يوم</span>
       <span class="btns"><button class="btn sm" data-act="buffer" data-d="-1">−</button><button class="btn sm" data-act="buffer" data-d="1">+</button></span></div>
     <div class="row" style="margin-top:10px"><span class="muted">اعرض الكميات بـ</span>
@@ -1886,16 +1913,23 @@ function shopHtml(){
   if(!need.length) return h + `<div class="card empty"><div class="e-ic">✅</div>البيت مكفي للمدة دي — مش محتاج تشتري حاجة.</div>` + pausedHtml();
   h += `<div class="card"><div class="row" style="margin-bottom:8px"><div><div class="muted">التكلفة المتوقعة</div><div style="font-size:22px">${money(total)}</div></div>
     <div class="btns"><button class="btn" data-act="shareList">مشاركة</button><button class="btn primary" data-act="buyMany">اشتريتهم</button></div></div>
+    <div class="note" style="margin:4px 0 10px; display:flex; align-items:center; gap:8px">🛒 <span style="flex:1">وانت بتلف: دوس ✓ جنب اللي حطيته في السلة — ${nTick ? `<b>في السلة ${nTick} من ${need.length}</b>، فاضل <b class="num">${need.length - nTick}</b>` : 'اللي في السلة بينزل تحت ويتشطب'}</span>${nTick ? '<button type="button" class="btn sm" data-act="shopTickClear">امسح العلامات</button>' : ''}</div>
     <div class="seg" style="margin:4px 0 10px"><button type="button" class="${S.settings.shopSort !== 'urgent' ? 'on' : ''}" data-act="shopSort" data-v="group">🏬 حسب القسم</button><button type="button" class="${S.settings.shopSort === 'urgent' ? 'on' : ''}" data-act="shopSort" data-v="urgent">⏳ اللي هيخلص الأول</button></div>
     <table class="tbl"><tr><th>الصنف</th><th>عندي</th><th>محتاج</th><th>اشتري</th><th>التكلفة</th></tr>
     ${shopRows(need).map(x => x.head ? `<tr class="shop-grp"><td colspan="5"><b>${esc(x.head)}</b> <span class="muted">· ${x.n} صنف${x.cost ? ` · <span class="num">${fmt(x.cost)}</span> ج` : ''}</span></td></tr>` : (() => { const sv = S.settings.shopView, alt = isLoose(x.it) || !hasPack(x.it) ? '' : shopQty(x.it, x.qty, sv === 'base' ? 'pack' : 'base', true);
-      return `<tr data-act="buyItem" data-id="${x.it.id}" style="cursor:pointer"><td><b>${esc(x.it.name)}</b><div><button type="button" class="btn sm ghost pause-btn" data-act="itemPause" data-id="${x.it.id}">⏸️ مش دلوقتي</button></div></td>
+      const tk = !!TICKS[x.it.id];
+      return `<tr data-act="buyItem" data-id="${x.it.id}" class="${tk ? 'ticked' : ''}" style="cursor:pointer"><td><div style="display:flex; gap:8px; align-items:flex-start"><button type="button" class="tick ${tk ? 'on' : ''}" data-act="shopTick" data-id="${x.it.id}" aria-label="في السلة">${tk ? '✓' : ''}</button><div><b>${esc(x.it.name)}</b><div><button type="button" class="btn sm ghost pause-btn" data-act="itemPause" data-id="${x.it.id}">⏸️ مش دلوقتي</button></div></div></div></td>
       <td>${x.est == null ? '؟' : shopQty(x.it, x.have, sv, true)}</td><td>${shopQty(x.it, x.rate.v * (cover + (S.settings.bufferDays || 0)), sv, true)}</td>
       <td><b>${shopQty(x.it, x.qty, sv, true)}</b>${alt ? `<div class="muted" style="font-size:11px">${alt}</div>` : ''}</td>
       <td class="num">${x.it.price > 0 ? fmt(x.cost) : '<span class="neg">؟</span>'}</td></tr>`; })()).join('')}
     </table><div class="muted" style="margin-top:8px">دوس على أي صنف عشان تسجّل إنك اشتريته بالسعر الفعلي. ولو مش هتجيبه دلوقتي دوس ⏸️.</div></div>`;
   return h + pausedHtml();
 }
+/* علامات السلة وانت في الهايبر (على الموبايل ده بس، وبتتمسح لوحدها بعد يومين) */
+const TICK_KEY = KEY + '::shopTick';
+let JARD_ONLY_EMPTY = false;
+function shopTicks(){ try{ const o = JSON.parse(localStorage.getItem(TICK_KEY) || '{}'); return o.d && diffDays(o.d, todayS()) <= 1 ? (o.t || {}) : {}; }catch(e){ return {}; } }
+function shopTicksSave(t){ try{ localStorage.setItem(TICK_KEY, JSON.stringify({d:todayS(), t})); }catch(e){} }
 /* قايمة الشراء متقسمة بالأقسام (زي الهايبر: تموين، ألبان، خضار، منظفات…) — وجوه كل قسم اللي هيخلص الأول فوق */
 function shopRows(need){
   if(S.settings.shopSort === 'urgent') return need;
@@ -3158,13 +3192,13 @@ function recordBuy(it, q, a, date, keepPrice, u){
   }
 }
 function buyMany(){
-  const L = shopList().filter(x => x.qty > 0);
+  const L = shopList().filter(x => x.qty > 0), TK = shopTicks();   // لو علّمت في السلة: المتعلّم بس يبقى مختار
   // الفرط بيتكتب بالكيلو/اللتر، والباقي بالعبوة
   const bf = it => isLoose(it) ? 1 : packF(it), bu = it => isLoose(it) ? BASES[baseOf(it)].en : entryUnit(it);
   let body = `<div class="muted" style="margin-bottom:8px">عدّل الكمية والسعر الفعلي، وشيل علامة ✓ من اللي ما اشترتهوش.</div><table class="tbl"><tr><th></th><th>الصنف</th><th>الكمية</th><th>دفعت</th></tr>`;
   shopRows(L).forEach(x => {
     if(x.head){ body += `<tr class="shop-grp"><td colspan="4"><b>${esc(x.head)}</b></td></tr>`; return; }
-    body += `<tr><td><input type="checkbox" name="k_${x.it.id}" checked style="width:20px;height:20px;accent-color:var(--gold)"></td><td><b>${esc(x.it.name)}</b><div class="muted">بالـ${isLoose(x.it) ? BASES[baseOf(x.it)].ar : esc(entryUnit(x.it))}</div></td>
+    body += `<tr><td><input type="checkbox" name="k_${x.it.id}" ${!Object.keys(TK).length || TK[x.it.id] ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--gold)"></td><td><b>${esc(x.it.name)}</b><div class="muted">بالـ${isLoose(x.it) ? BASES[baseOf(x.it)].ar : esc(entryUnit(x.it))}</div></td>
       <td><input name="q_${x.it.id}" data-bm="${x.it.id}" data-up="${(x.it.price || 0) * bf(x.it)}" inputmode="decimal" value="${+(x.qty / bf(x.it)).toFixed(2)}" style="width:64px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center"></td>
       <td><input name="c_${x.it.id}" data-amt inputmode="decimal" value="${x.cost ? Math.round(x.cost) : ''}" style="width:78px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center"></td></tr>`;
   });
@@ -3896,6 +3930,10 @@ const ACT = {
   },
   jardDraftClear:() => { if(!confirm('تمسح كل اللي كتبته في الجرد ده وتبدأ من الأول؟')) return; try{ localStorage.removeItem(JDRAFT_KEY); }catch(e){} render(); },
   cover:(d) => { S.settings.coverMode = d.v; save(); },
+  coverN:(d) => { S.settings.coverN = +d.n; save(); },
+  shopTick:(d) => { const t = shopTicks(); t[d.id] ? delete t[d.id] : (t[d.id] = 1); shopTicksSave(t); render(); },
+  shopTickClear:() => { if(!confirm('تشيل كل العلامات من السلة؟')) return; shopTicksSave({}); render(); },
+  jardOnlyEmpty:() => { const f = $('#jardForm'); if(!f) return; const on = f.classList.toggle('only-empty'); JARD_ONLY_EMPTY = on; const b = $('[data-act="jardOnlyEmpty"]'); if(b) b.classList.toggle('on', on); },
   // بيقلب وحدة كل صفوف الجرد من غير ما يمسح اللي اتكتب
   jardAll:(d, el) => {
     S.settings.jardView = d.v; persist();
@@ -4224,6 +4262,7 @@ document.addEventListener('change', e => {
   if(el.dataset.act === 'rollDebts'){ const g = byId(S.goals, el.dataset.id); if(g){ g.rollDebts = el.checked; save(); } }
 });
 document.addEventListener('input', e => {
+  if(e.target.id === 'coverN'){ const n = Math.round(num(e.target.value)); if(n >= 1 && n <= 120){ clearTimeout(e.target._t); e.target._t = setTimeout(() => { S.settings.coverN = n; save(); }, 700); } return; }
   if(e.target.name && /^p_\d+$/.test(e.target.name) && e.target.closest('.imp-row')) importTotal();
   // مبلغ كتبته بإيدك ما بيتغيرش لوحده، والمقترح بيتحسب من الكمية
   if(e.target.hasAttribute && e.target.hasAttribute('data-amt')) e.target.dataset.dirty = '1';
@@ -4234,7 +4273,7 @@ document.addEventListener('input', e => {
   if(e.target.hasAttribute && e.target.hasAttribute('data-bl')) buyLabels();
   if(e.target.matches && e.target.matches('input[inputmode="decimal"]')) markField(e.target);
   if(e.target.dataset && e.target.dataset.q){ listFilter(e.target.dataset.q, e.target.value); return; }
-  if(e.target.matches && e.target.matches('#jardForm input[data-item]')) jardDraftSave();
+  if(e.target.matches && e.target.matches('#jardForm input[data-item]')){ jardRowMark(e.target); jardDraftSave(); }
   if(e.target.id === 'logQ'){ LOGQ = e.target.value; $('#logList').innerHTML = logListHtml(summary(VIEW)); }
   if(e.target.matches && e.target.matches('#mlines [data-f="amount"]')){
     const rows = document.querySelectorAll('#mlines .ml-row'), row = e.target.closest('.ml-row');

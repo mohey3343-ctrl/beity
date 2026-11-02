@@ -1019,6 +1019,40 @@ await test('تقرير الشهر: دوسة على سطر في "الفلوس ر�
   assert.equal(await ev(page, () => document.querySelectorAll('#sheetBody [data-act="editTx"]').length), 3);
 });
 
+await test('الجرد: 0.03+0.1 بيتجمع، و"اللي لسه ما اتجردش بس" بيخبّي اللي اتكتب', async page => {
+  await ev(page, () => { S.items.push({ id: 'm', name: 'مكرونة', group: 'تموين', base: 'KG', monthly: 1, price: 40 }, { id: 'r', name: 'رز', group: 'تموين', base: 'KG', monthly: 2, price: 35 });
+    save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'jard' }); });
+  await page.fill('#jardForm input[data-item="m"]', '0.03+0.1'); await page.dispatchEvent('#jardForm input[data-item="m"]', 'input');
+  assert.match(await page.textContent('#jardForm .jard-row.filled .jsum'), /= 0.13/);
+  await page.click('[data-act="jardOnlyEmpty"]');
+  assert.ok(!(await page.isVisible('#jardForm input[data-item="m"]')) && await page.isVisible('#jardForm input[data-item="r"]'));
+  await page.click('[data-act="jardOnlyEmpty"]');
+  await page.click('[data-act="saveJard"]'); if (await page.isVisible('#sheetWrap.open')) await submit(page);
+  assert.equal(await ev(page, () => +S.counts.find(c => c.itemId === 'm').qty.toFixed(3)), 0.13);
+});
+
+await test('أشتري إيه: عدد أيام بتختاره، ونسكافيه أكياس "فرط" بيتشرى بالكيس ويفضل متعلّم، وعلامات السلة', async page => {
+  await ev(page, () => { S.items.push({ id: 'n', name: 'نسكافيه 3x1', group: 'تموين', base: 'PCS', pu: 'علبة', pf: 24, monthly: 24, price: 6 }, { id: 'r', name: 'رز', group: 'تموين', base: 'KG', pu: 'كيس', pf: 1, monthly: 3, price: 35 });
+    S.counts.push({ id: 'c', ts: 1, itemId: 'n', date: '2026-10-09', qty: 20 }, { id: 'd', ts: 2, itemId: 'r', date: '2026-10-09', qty: 0 }); save(); itemForm('n'); document.querySelectorAll('#sheetBody details').forEach(d => d.open = true); });
+  await page.check('#sheetBody [name="loose"]'); await submit(page);
+  await ev(page, () => { itemForm('n'); document.querySelectorAll('#sheetBody details').forEach(d => d.open = true); });
+  assert.ok(await page.isChecked('#sheetBody [name="loose"]'), 'علامة الفرط لازم تفضل بعد الحفظ');
+  await ev(page, () => { closeSheet(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'shop' }); ACT.cover({ v: 'days' }); });
+  await page.click('[data-act="coverN"][data-n="15"]');
+  // 15 يوم + 3 احتياطي: نسكافيه 14.4 − 20 عندك = مش محتاج · رز 1.8 كيلو → 2 كيس
+  let r = await ev(page, () => shopList().filter(x => x.qty > 0).map(x => [x.it.id, x.qty]));
+  assert.deepEqual(r, [['r', 2]]);
+  await ev(page, () => ACT.coverN({ n: 30 }));
+  r = await ev(page, () => shopList().filter(x => x.qty > 0).map(x => [x.it.id, x.qty]));
+  assert.deepEqual(r, [['n', 7], ['r', 4]]);      // (30 يوم + 3 احتياطي) × 24/30 − 20 = 6.4 → 7 أكياس مش علبة كاملة
+  // علامة السلة
+  await page.click('[data-act="shopTick"][data-id="r"]');
+  assert.match(await page.textContent('#view'), /في السلة 1 من 2/);
+  assert.ok(await ev(page, () => document.querySelector('tr[data-id="r"]').classList.contains('ticked')));
+  await ev(page, () => buyMany());
+  assert.deepEqual(await ev(page, () => [document.querySelector('#sheetBody [name="k_r"]').checked, document.querySelector('#sheetBody [name="k_n"]').checked]), [true, false]);
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });
