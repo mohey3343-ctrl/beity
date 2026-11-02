@@ -522,7 +522,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-01 · 12:00';
+const APP_VER = '2026-11-02 · 10:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -1627,7 +1627,7 @@ function txRow(t){
   return `<div class="list-item" data-act="editTx" data-id="${t.id}">
     <div class="li-ic">${i.ic}</div>
     <div class="li-main"><div class="li-title">${esc(i.title)}${t.grp ? ' <span class="tag">🧾</span>' : ''}</div>${t.note && t.note !== i.title ? `<div class="li-sub">${esc(t.note)}</div>` : ''}</div>
-    <div class="li-end"><b class="num ${plus ? 'pos' : ''}">${plus ? '+' : '−'}${fmt(Math.abs(t.amount))}</b></div></div>`;
+    <div class="li-end"><b class="num ${plus ? 'pos' : ''}">${!t.amount ? (t.gift ? '🎁 ' : '') : plus ? '+' : '−'}${fmt(Math.abs(t.amount))}</b></div></div>`;
 }
 /* نص البحث لكل حركة: العنوان والملاحظة والمبلغ والتصنيف والمحفظة */
 function txSearchText(t){
@@ -2230,6 +2230,28 @@ function outflowRows(o){
   for(const c in by) if(by[c] > 0) rows.push({k:c, name:catOf(c).icon + ' ' + catOf(c).name, v:by[c]});
   return rows.sort((a, b) => b.v - a.v);
 }
+/* تفاصيل سطر من "الفلوس راحت فين": الحركات نفسها، ومجمّعة بالاسم (الصنف، الالتزام، الملاحظة) */
+function rowTxs(o, k){
+  const T = o.T;
+  if(k === 'bill') return T.filter(t => t.type === 'bill' && !t.dueId);
+  if(k === 'due') return T.filter(t => t.type === 'bill' && t.dueId);
+  if(['debt', 'save', 'reserve', 'lend'].includes(k)) return T.filter(t => t.type === k);
+  return T.filter(t => t.type === 'exp' && (t.cat || 'other') === k);
+}
+function rowDetail(k){
+  const o = summary(VIEW), L = rowTxs(o, k).slice().sort((a, b) => evKey(a) < evKey(b) ? 1 : -1);
+  const row = outflowRows(o).concat(outflowBack(o)).find(r => r.k === k), total = sum(L, t => t.amount);
+  const label = t => k === 'house' ? (byId(S.items, t.itemId) || {}).name || (t.note || '').split(' — ')[0] || 'استوك من غير صنف'
+    : ['exp'].includes(t.type) ? (t.note || '').split(' — ')[0].trim() || 'من غير ملاحظة' : txInfo(t).title.replace(/^التزام: /, '');
+  const by = {}; L.forEach(t => { const n = label(t); by[n] = by[n] || {n, v:0, c:0}; by[n].v += t.amount; by[n].c++; });
+  const groups = Object.values(by).sort((a, b) => b.v - a.v);
+  let body = `<div class="note" style="margin-top:0"><b class="num">${fmt(total)}</b> ج في <b class="num">${L.length}</b> حركة · ${periodLabel(VIEW).replace(/<small>.*<\/small>/, '')}</div>`;
+  if(groups.length > 1) body += `<div class="card" style="padding:8px 12px; margin-bottom:10px">${groups.slice(0, 12).map(g => `<div class="row" style="padding:5px 0; border-bottom:1px solid var(--line)"><span>${esc(g.n)}${g.c > 1 ? ` <span class="muted" style="font-size:11.5px">× ${g.c}</span>` : ''}</span><span><b class="num">${fmt(g.v)}</b> <span class="muted num" style="font-size:11.5px">${total ? Math.round(g.v / total * 100) : 0}%</span></span></div>`).join('')}
+    ${groups.length > 12 ? `<div class="muted" style="font-size:12px; padding-top:5px">و${groups.length - 12} تانيين</div>` : ''}</div>`;
+  let lastD = '';
+  body += L.map(t => { const h = t.date !== lastD ? `<div class="day-h"><span>${dayLabel(t.date)}</span></div>` : ''; lastD = t.date; return h + txRow(t); }).join('') || '<div class="muted">مفيش حركات.</div>';
+  openSheet(row ? row.name : 'التفاصيل', body + `<div class="muted" style="margin-top:8px">دوس على أي حركة تعدّلها.</div>`);
+}
 /* اللي رجع لرصيدك من المحجوز أو التحويش (اتدفع منه ميعاد اتشال له قبل كده، أو سحبت من هدف).
    بيتطرح من "خارج" عشان كل الأماكن (الرئيسية، التقرير، المشاركة) يبقى فيها نفس الرقم = outActual */
 function outflowBack(o){
@@ -2326,7 +2348,7 @@ PAGES.report = function(){
   if(rows.length){
     h += `<div class="card"><h3>الفلوس راحت فين</h3><div class="muted" style="margin:-6px 0 10px">النسبة الملوّنة = التغيير ${vsTxt}</div>` + rows.map(r => {
       const pv = rowVal(prev, r.k);
-      return `<div class="cat-row"><div class="row"><span>${esc(r.name)}</span><span><b class="num">${fmt(r.v)}</b> <span class="muted num">${Math.round(r.v / gross * 100)}%</span> ${pv ? deltaTag(r.v, pv, !['save', 'debt', 'reserve'].includes(r.k)) : ''}</span></div>
+      return `<div class="cat-row" data-act="rowDetail" data-k="${esc(r.k)}" style="cursor:pointer"><div class="row"><span>${esc(r.name)} <span class="muted" style="font-size:11px">›</span></span><span><b class="num">${fmt(r.v)}</b> <span class="muted num">${Math.round(r.v / gross * 100)}%</span> ${pv ? deltaTag(r.v, pv, !['save', 'debt', 'reserve'].includes(r.k)) : ''}</span></div>
         <div class="bar"><i style="width:${r.v / rows[0].v * 100}%"></i></div></div>`;
     }).join('') + (back.length ? back.map(r => `<div class="cat-row"><div class="row"><span>${esc(r.name)}</span><b class="num pos">− ${fmt(-r.v)}</b></div></div>`).join('')
       + `<div class="row" style="border-top:1px solid var(--line); padding-top:8px; margin-top:4px"><b>الخارج من رصيدك</b><b class="num">${fmt(totalOut)}</b></div>` : '') + `</div>`;
@@ -3893,6 +3915,7 @@ const ACT = {
     else openSheet('القائمة', `<div class="pre">${esc(txt)}</div>`);
   },
   shopSort:(d) => { S.settings.shopSort = d.v; save(); },
+  rowDetail:(d) => rowDetail(d.k),
   importJard:() => importStart('jard'),
   importBuy:() => importStart('buy'),
   copyImpPrompt:(d) => { const t = importPrompt(d.m); if(navigator.clipboard) navigator.clipboard.writeText(t).then(() => toast('اتنسخ — ابعته مع الصورة لـ Claude')).catch(() => openSheet('الطلب', `<div class="pre">${esc(t)}</div>`)); else openSheet('الطلب', `<div class="pre">${esc(t)}</div>`); },

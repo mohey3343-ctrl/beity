@@ -1009,6 +1009,16 @@ await test('الشهر الجديد بعد ما قبضت جزء من مرتبه 
   assert.deepEqual(r.slice(0, 4), [-3000, 0, 5000, 4600]);
 });
 
+await test('تقرير الشهر: دوسة على سطر في "الفلوس راحت فين" بتفتح تفاصيله (مجمّعة بالاسم + الحركات)', async page => {
+  await ev(page, () => { S.tx.push({ id: 'a', ts: 1, type: 'exp', cat: 'cafe', amount: 50, note: 'قهوة', date: '2026-10-03' }, { id: 'b', ts: 2, type: 'exp', cat: 'cafe', amount: 70, note: 'قهوة', date: '2026-10-05' },
+      { id: 'c', ts: 3, type: 'exp', cat: 'cafe', amount: 30, note: 'عصير', date: '2026-10-06' }, { id: 'd', ts: 4, type: 'exp', cat: 'food', amount: 99, date: '2026-10-06' });
+    if(!S.cats.find(c => c.id === 'cafe')) S.cats.push({ id: 'cafe', name: 'كافيه', icon: '☕' }); save(); ACT.tab({ tab: 'report' }); });
+  await page.click('.cat-row[data-k="cafe"]');
+  const txt = await page.textContent('#sheetBody');
+  assert.match(txt, /150 ج في 3 حركة/); assert.match(txt, /قهوة × 2/);
+  assert.equal(await ev(page, () => document.querySelectorAll('#sheetBody [data-act="editTx"]').length), 3);
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });
