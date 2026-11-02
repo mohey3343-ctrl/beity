@@ -1064,6 +1064,26 @@ await test('قايمة الشراء: زرار "فرط / عبوة" جنب الص�
   assert.match(await page.textContent('[data-act="toggleLoose"][data-id="n"]'), /فرط/);
 });
 
+await test('اشتريتهم: الكميات والأسعار بتتحفظ لو خرجت ورجعت، الوحدة بتتغيّر من السطر، وتضيف صنف مش في القايمة', async page => {
+  await ev(page, () => { S.items.push({ id: 'k', name: 'كاتشب', group: 'تموين', base: 'KG', pu: 'كيس', pf: 0.285, monthly: 0.3, price: 175 },
+      { id: 's', name: 'سكر', group: 'تموين', base: 'KG', pu: 'كيس', pf: 1, monthly: 2, price: 30 }, { id: 'x', name: 'خل', group: 'تموين', base: 'L', pu: 'زجاجة', pf: 1, monthly: 0.1, price: 25 });
+    S.counts.push({ id: 'a', ts: 1, itemId: 'k', date: '2026-10-09', qty: 0 }, { id: 'b', ts: 2, itemId: 's', date: '2026-10-09', qty: 0 }, { id: 'c', ts: 3, itemId: 'x', date: '2026-10-09', qty: 1 });
+    save(); buyMany(); });
+  await fill(page, 'q_s', 1); await fill(page, 'c_s', 30);
+  await page.selectOption('#sheetBody [name="u_k"]', 'base');          // الكاتشب فرط بالكيلو
+  await fill(page, 'q_k', 0.2); await fill(page, 'c_k', 40);
+  await ev(page, () => closeSheet());
+  await ev(page, () => buyMany());                                     // رجعت: كل اللي كتبته موجود
+  assert.deepEqual(await ev(page, () => ['q_s', 'c_s', 'q_k', 'c_k', 'u_k'].map(n => document.querySelector(`#sheetBody [name="${n}"]`).value)), ['1', '30', '0.2', '40', 'base']);
+  await page.selectOption('#sheetBody [data-bmadd]', 'x');             // خل مش في القايمة
+  await fill(page, 'q_x', 1); await fill(page, 'c_x', 25);
+  assert.equal(await page.inputValue('#sheetBody [name="q_s"]'), '1');
+  await submit(page);
+  const r = await ev(page, () => S.tx.filter(t => t.itemId).map(t => [t.itemId, +t.qty.toFixed(3), t.amount, t.u.n]).sort());
+  assert.deepEqual(r, [['k', 0.2, 40, 'KG'], ['s', 1, 30, 'كيس'], ['x', 1, 25, 'زجاجة']]);
+  assert.equal(await ev(page, () => localStorage.getItem(KEY + '::buyDraft')), null);
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });

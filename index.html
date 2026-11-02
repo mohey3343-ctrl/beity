@@ -530,7 +530,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-03 · 10:00';
+const APP_VER = '2026-11-03 · 12:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -3193,27 +3193,55 @@ function recordBuy(it, q, a, date, keepPrice, u){
     S.tx.push({id:uid(), ts:Date.now(), type:'exp', cat:'house', itemId:it.id, qty:q, amount:0, note:it.name, date, u});
   }
 }
-function buyMany(){
-  const L = shopList().filter(x => x.qty > 0), TK = shopTicks();   // لو علّمت في السلة: المتعلّم بس يبقى مختار
-  // الفرط بيتكتب بالكيلو/اللتر، والباقي بالعبوة
-  const bf = it => isLoose(it) ? 1 : packF(it), bu = it => isLoose(it) ? BASES[baseOf(it)].en : entryUnit(it);
-  let body = `<div class="muted" style="margin-bottom:8px">عدّل الكمية والسعر الفعلي، وشيل علامة ✓ من اللي ما اشترتهوش.</div><table class="tbl"><tr><th></th><th>الصنف</th><th>الكمية</th><th>دفعت</th></tr>`;
-  shopRows(L).forEach(x => {
-    if(x.head){ body += `<tr class="shop-grp"><td colspan="4"><b>${esc(x.head)}</b></td></tr>`; return; }
-    body += `<tr><td><input type="checkbox" name="k_${x.it.id}" ${!Object.keys(TK).length || TK[x.it.id] ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--gold)"></td><td><b>${esc(x.it.name)}</b><div class="muted">بالـ${isLoose(x.it) ? BASES[baseOf(x.it)].ar : esc(entryUnit(x.it))}</div></td>
-      <td><input name="q_${x.it.id}" data-bm="${x.it.id}" data-up="${(x.it.price || 0) * bf(x.it)}" inputmode="decimal" value="${+(x.qty / bf(x.it)).toFixed(2)}" style="width:64px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center"></td>
-      <td><input name="c_${x.it.id}" data-amt inputmode="decimal" value="${x.cost ? Math.round(x.cost) : ''}" style="width:78px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center"></td></tr>`;
+/* "اشتريتهم": اللي بتكتبه بيتحفظ مسودة أول بأول (لو خرجت تعدّل صنف ورجعت تلاقيه)، وكل سطر بوحدته (كيس أو كيلو…)،
+   وتقدر تضيف أصناف اشتريتها ومكانتش في القايمة */
+const BUY_KEY = KEY + '::buyDraft';
+function buyDraft(){ try{ const o = JSON.parse(localStorage.getItem(BUY_KEY) || '{}'); if(o.d && diffDays(o.d, todayS()) <= 1) return Object.assign({rows:{}, extra:[]}, o); }catch(e){} return {rows:{}, extra:[]}; }
+function buyDraftSave(extraAdd){
+  const box = $('#sheetBody [data-bmsheet]'); if(!box) return;
+  const d = buyDraft(), rows = {};
+  box.querySelectorAll('tr[data-bmrow]').forEach(tr => {
+    const id = tr.dataset.bmrow, g = n => tr.querySelector(`[name="${n}_${id}"]`), c = g('c');
+    rows[id] = {k:g('k').checked, q:g('q').value, c:c.value, cd:!!c.dataset.dirty, u:g('u') ? g('u').value : ''};
   });
-  body += `</table>${Fd.date('date', 'التاريخ', defaultDate())}${Fd.foot('سجّل كل ده')}`;
+  const extra = d.extra.concat(extraAdd ? [extraAdd] : []).filter((x, i, a) => a.indexOf(x) === i);
+  const dt = $('#sheetBody [name="date"]');
+  try{ localStorage.setItem(BUY_KEY, JSON.stringify({d:todayS(), rows, extra, date:dt ? dt.value : ''})); }catch(e){}
+}
+function buyMany(){
+  const dr = buyDraft(), TK = shopTicks();   // لو علّمت في السلة: المتعلّم بس يبقى مختار
+  const L = shopList().filter(x => x.qty > 0), inL = new Set(L.map(x => x.it.id));
+  const extra = dr.extra.map(id => byId(S.items, id)).filter(it => it && !inL.has(it.id)).map(it => ({it, qty:0, cost:0}));
+  const all = L.concat(extra);
+  // الوحدة الافتراضية: الفرط بالكيلو/اللتر، والباقي بالعبوة
+  const defU = it => isLoose(it) || !hasPack(it) ? 'base' : 'pack';
+  const inp = 'padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card-2);color:var(--ink);text-align:center';
+  const rowHtml = x => {
+    const id = x.it.id, d = dr.rows[id], u = unitOf(x.it, d && d.u || defU(x.it)), us = itemUnits(x.it);
+    const chk = d ? d.k : (!Object.keys(TK).length || !!TK[id] || !inL.has(id));
+    const q = d ? d.q : (x.qty ? +(x.qty / u.f).toFixed(2) : ''), c = d ? d.c : (x.cost ? Math.round(x.cost) : '');
+    return `<tr data-bmrow="${id}"><td><input type="checkbox" name="k_${id}" ${chk ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--gold)"></td>
+      <td><b>${esc(x.it.name)}</b>${us.length > 1 ? `<div><select name="u_${id}" data-bmu="${id}" data-prev="${u.k}" style="margin-top:4px; padding:4px 6px; font-size:12px; border:1px solid var(--line); border-radius:8px; background:var(--card-2); color:var(--ink)">${us.map(o => `<option value="${o.k}" data-f="${o.f}" ${o.k === u.k ? 'selected' : ''}>بالـ${esc(unitShort(x.it, o))}</option>`).join('')}</select></div>` : `<div class="muted">بالـ${esc(u.name)}</div>`}</td>
+      <td><input name="q_${id}" data-bm="${id}" data-up="${(x.it.price || 0) * u.f}" inputmode="decimal" value="${esc(q)}" style="width:64px;${inp}"></td>
+      <td><input name="c_${id}" data-amt ${d && d.cd ? 'data-dirty="1"' : ''} inputmode="decimal" value="${esc(c)}" style="width:78px;${inp}"></td></tr>`;
+  };
+  let body = `<div data-bmsheet><div class="muted" style="margin-bottom:8px">عدّل الكمية والوحدة والسعر الفعلي، وشيل علامة ✓ من اللي ما اشترتهوش. اللي بتكتبه بيتحفظ لو خرجت ورجعت.</div><table class="tbl"><tr><th></th><th>الصنف</th><th>الكمية</th><th>دفعت</th></tr>`;
+  shopRows(L).forEach(x => { body += x.head ? `<tr class="shop-grp"><td colspan="4"><b>${esc(x.head)}</b></td></tr>` : rowHtml(x); });
+  if(extra.length) body += `<tr class="shop-grp"><td colspan="4"><b>اشتريت كمان (مش في القايمة)</b></td></tr>` + extra.map(rowHtml).join('');
+  const rest = S.items.filter(it => !all.some(x => x.it.id === it.id)).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+  body += `</table><label class="fld" style="margin-top:8px"><span>اشتريت حاجة مش في القايمة؟</span><select data-bmadd><option value="">+ ضيف صنف…</option>${groupsOf().map(g => { const R = rest.filter(x => (x.group || 'تاني') === g); return R.length ? `<optgroup label="${esc(g)}">${R.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</optgroup>` : ''; }).join('')}</select></label>
+    ${Fd.date('date', 'التاريخ', dr.date || defaultDate())}</div>${Fd.foot('سجّل كل ده')}`;
   NEXT_WALLET = {label:'دفعت من'};
   openSheet('اشتريت من القائمة', body, v => {
     let n = 0, tot = 0;
-    L.forEach(x => {
-      if(!v['k_' + x.it.id]) return;
-      const q = num(v['q_' + x.it.id]), a = num(v['c_' + x.it.id]);
-      if(q > 0){ recordBuy(x.it, q * bf(x.it), a, v.date || todayS(), !$(`#sheetBody [name="c_${x.it.id}"]`).dataset.dirty, {n:bu(x.it), f:bf(x.it)}); n++; tot += a; }
+    all.forEach(x => {
+      const id = x.it.id; if(!v['k_' + id]) return;
+      const u = unitOf(x.it, v['u_' + id] || defU(x.it)), q = num(v['q_' + id]), a = num(v['c_' + id]);
+      if(q > 0){ recordBuy(x.it, q * u.f, a, v.date || todayS(), !$(`#sheetBody [name="c_${id}"]`).dataset.dirty, {n:u.name, f:u.f}); n++; tot += a; }
     });
     if(!n){ toast('مفيش حاجة متعلّمة', true); return false; }
+    try{ localStorage.removeItem(BUY_KEY); }catch(e){}
+    shopTicksSave({});
     save(); toast(`اتسجّل ${n} صنف بـ ${fmt(tot)} ج`);
   });
 }
@@ -4235,6 +4263,17 @@ document.addEventListener('change', e => {
     if(us) us.innerHTML = it ? itemUnits(it).map(u => `<option value="${u.k}" ${u.k === lineUnit(it, '', 'buy').k ? 'selected' : ''}>${esc(unitShort(it, u))}</option>`).join('') : '<option value="">—</option>';
     el.closest('.imp-row').classList.toggle('miss', !el.value); importTotal(); return;
   }
+  if(el.matches && el.matches('[data-bmu]')){
+    // وحدة السطر اتغيرت (كيس ← كيلو): الكمية تتحول، والسعر المقترح يتحسب بالوحدة الجديدة
+    const id = el.dataset.bmu, it = byId(S.items, id), q = $(`#sheetBody [name="q_${id}"]`), c = $(`#sheetBody [name="c_${id}"]`);
+    const pf = unitOf(it, el.dataset.prev).f, nf = unitOf(it, el.value).f;
+    if(q && q.value.trim() !== '') q.value = +(num(q.value) * pf / nf).toFixed(3);
+    if(q) q.dataset.up = (it.price || 0) * nf;
+    if(c && !c.dataset.dirty && it.price > 0 && q) c.value = Math.round(num(q.value) * nf * it.price);
+    el.dataset.prev = el.value; buyDraftSave(); return;
+  }
+  if(el.matches && el.matches('[data-bmadd]')){ if(el.value){ buyDraftSave(el.value); buyMany(); } return; }
+  if(el.closest && el.closest('[data-bmsheet]')){ buyDraftSave(); }
   if(el.name === 'every'){ document.querySelectorAll('#sheetBody [data-every]').forEach(x => x.style.display = (x.dataset.every === '1') === (el.value === '1') ? '' : 'none'); return; }
   if(el.name === 'evdone'){ const h = $('#sheetBody [data-evhint]'); if(h) h.textContent = el.value === '1' ? 'المناسبة هتتقفل، واللي فاضل من ميزانيتها يرجع لرصيدك.' : 'الميزانية هتفضل مفتوحة بالباقي، وتكمّل تسجّل عليها.'; return; }
   if(el.dataset && el.dataset.mp){
@@ -4270,6 +4309,7 @@ document.addEventListener('input', e => {
   if(e.target.name && /^p_\d+$/.test(e.target.name) && e.target.closest('.imp-row')) importTotal();
   // مبلغ كتبته بإيدك ما بيتغيرش لوحده، والمقترح بيتحسب من الكمية
   if(e.target.hasAttribute && e.target.hasAttribute('data-amt')) e.target.dataset.dirty = '1';
+  if(e.target.closest && e.target.closest('[data-bmsheet]')) setTimeout(() => buyDraftSave(), 0);
   if(e.target.dataset && e.target.dataset.bm){
     const c = $(`#sheetBody [name="c_${e.target.dataset.bm}"]`), up = num(e.target.dataset.up);
     if(c && !c.dataset.dirty && up > 0) c.value = Math.round(num(e.target.value) * up);
