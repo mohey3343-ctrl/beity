@@ -530,7 +530,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-03 · 12:00';
+const APP_VER = '2026-11-05 · 10:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -976,6 +976,13 @@ function estStockRaw(it){
   let s = last ? last.qty : 0, at = last || buys[0];
   for(const t of buys){ s = Math.max(0, s - r * evGap(at, t)) + t.qty; at = t; }
   return Math.max(0, s - r * evGap(at, nowEv()));   // من آخر حركة لدلوقتي بالساعة
+}
+/* المتوقع جاي منين: آخر جرد + اللي اشتريته بعده − الاستهلاك من ساعتها */
+function estHow(it){
+  const cs = itemCounts(it), last = cs[cs.length - 1]; if(!last) return '';
+  const q = x => esc(qtyPlain(it, x)), lk = evKey(last), bought = sum(itemBuys(it).filter(t => evKey(t) > lk), t => t.qty);
+  const days = evGap(last, nowEv()), used = dailyRate(it).v * days, e = estStock(it) || 0;
+  return `<div class="muted" style="font-size:12px; line-height:1.7; margin-top:2px">آخر جرد ${q(last.qty)} (${dayLabel(last.date)})${bought > 0 ? ` + اشتريت بعده ${q(bought)}` : ''} − استهلاك ${durTxt(Math.max(days, 1 / 24))} تقريبًا ${q(used)}${e <= 0.001 && last.qty + bought > 0.001 ? ' — <b>يعني المفروض خلص</b>. لو لسه عندك، اجرده وهيتصلّح' : ''}</div>`;
 }
 function daysLeft(it){
   const r = dailyRate(it).v, e = estStock(it);
@@ -2844,7 +2851,8 @@ function itemForm(id, preset){
   if(it){
     const cs = itemCounts(it).slice(-4).reverse(), bs = itemBuys(it).sort((a, b) => evKey(a) < evKey(b) ? 1 : -1).slice(0, 4);
     const fields = body, e = estStock(it), dl = daysLeft(it);
-    body = `<div class="note" style="margin-top:0">📦 عندك دلوقتي <b>${e == null ? 'مش معروف' : qtyTxt(it, e)}</b>${dl != null ? ` · يكفي <b class="num">${dl >= 60 ? '+60' : Math.floor(dl)}</b> يوم` : ''}
+    body = `<div class="note" style="margin-top:0">📦 عندك دلوقتي (متوقع) <b>${e == null ? 'مش معروف' : qtyTxt(it, e)}</b>${dl != null ? ` · يكفي <b class="num">${dl >= 60 ? '+60' : Math.floor(dl)}</b> يوم` : ''}
+      ${estHow(it)}
       <br>📊 بتستهلك <b>${qtyTxt(it, r.v * 30)}</b>/شهر <span class="muted">${r.src === 'learned' ? '(من الجرد)' : r.src === 'buys' ? '(من المشتريات)' : '(تقديري)'}</span></div>
       <div class="btns" style="margin:0 0 10px"><button type="button" class="btn good" data-act="buyItem" data-id="${it.id}">سجّل شراء</button><button type="button" class="btn" data-act="countItem" data-id="${it.id}">جرد الصنف ده</button><button type="button" class="btn danger" data-act="itemOut" data-id="${it.id}">خلص 🚫</button>${isPaused(it) ? `<button type="button" class="btn" data-act="itemResume" data-id="${it.id}">▶️ رجّعه للقايمة</button>` : `<button type="button" class="btn" data-act="itemPause" data-id="${it.id}">⏸️ إيقاف</button>`}</div>
       ${isPaused(it) ? `<div class="note" style="margin-top:0">⏸️ ${pauseTxt(it)} — مش داخل في قايمة الشراء ولا الخطة.</div>` : ''}
