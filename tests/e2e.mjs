@@ -1104,6 +1104,21 @@ await test('تقسيم المرتب: لله %، البيت والشغل مبلغ
   assert.ok(r.cat, 'تصنيف "صدقة ولله" اتعمل');
 });
 
+await test('"من بياناتي الحقيقية بس": التقدير اللي من الدماغ مش بيتحسب، واللي خلص من غير بيانات يدخل القايمة بعبوة', async page => {
+  const r = await ev(page, () => {
+    S.items.push({ id: 'g', name: 'تخمين', group: 'تموين', base: 'KG', pu: 'كيس', pf: 1, monthly: 5, price: 50 },
+      { id: 'o', name: 'خلص', group: 'تموين', base: 'KG', pu: 'كيس', pf: 1, monthly: 2, price: 30 });
+    S.counts.push({ id: 'a', ts: 1, itemId: 'g', date: '2026-10-09', qty: 1 }, { id: 'b', ts: 2, itemId: 'o', date: '2026-10-09', qty: 0 });
+    save(); const before = shopList().filter(x => x.qty > 0).map(x => x.it.id);
+    ACT.realOnly(); EPOCH++;
+    const after = shopList().filter(x => x.qty > 0).map(x => [x.it.id, x.qty, x.unknownOut]);
+    return { before, after, src: dailyRate(byId(S.items, 'g')).src };
+  });
+  assert.deepEqual(r.before, ['g', 'o']);
+  assert.deepEqual(r.after, [['o', 1, true]]);   // التخمين اتشال، واللي خلص فضل بكيس
+  assert.equal(r.src, 'none');
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });

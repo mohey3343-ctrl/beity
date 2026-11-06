@@ -532,7 +532,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-06 · 12:00';
+const APP_VER = '2026-11-06 · 14:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -964,7 +964,8 @@ function dailyRateRaw(it){
   if(i.ok) return {v:i.daily, src:'learned'};
   const b = buysInfo(it);
   if(b) return {v:b.daily, src:'buys'};
-  if(it.monthly > 0) return {v:it.monthly / 30, src:'manual'};
+  // "بياناتي الحقيقية بس": الرقم اللي كتبته من دماغك مالوش لازمة — لحد ما يبقى فيه جرد أو مشتريات كفاية
+  if(it.monthly > 0 && !S.settings.realOnly) return {v:it.monthly / 30, src:'manual'};
   return {v:0, src:'none'};
 }
 /* الموجود المتوقع دلوقتي = آخر جرد + اللي اتشرى بعده − الاستهلاك من ساعتها.
@@ -994,7 +995,11 @@ function daysLeft(it){
 /* صنف متوقف: "مش الشهر ده" (لحد آخر الشهر المالي) أو "موسمي" (لحد ما ترجّعه) — مش بيدخل قايمة الشراء ولا الخطة */
 const isPaused = it => !!it.pause && (it.pause === 'always' || todayS() <= it.pause);
 const pauseTxt = it => it.pause === 'always' ? 'موقوف (موسمي)' : 'مش الشهر ده';
-function houseMonthlyCost(){ return sum(S.items.filter(it => it.pause !== 'always'), it => dailyRate(it).v * 30 * (it.price || 0)); }
+function houseMonthlyCost(){
+  const est = sum(S.items.filter(it => it.pause !== 'always'), it => dailyRate(it).v * 30 * (it.price || 0));
+  // من غير التقدير: الأصناف اللي لسه ما اتعرفش استهلاكها مش داخلة — فبناخد اللي بتشتريه فعلًا في الشهر لو أكتر
+  return S.settings.realOnly ? Math.max(est, catMonthlyAvg(['house'])) : est;
+}
 function coverDays(){
   if(S.settings.coverMode === 'days') return Math.max(1, Math.min(120, +S.settings.coverN || 7));
   if(S.settings.coverMode === 'period'){
@@ -1012,7 +1017,10 @@ function shopList(days){
     let qty = 0;
     // العبوة المقفولة بنقرّبها لعدد عبوات كامل — والفرط (خضار، فاكهة، لحمة…) بالظبط على قد الاستهلاك (لأقرب 10 جرام/مللي)
     if(need > 0.001){ const step = isLoose(it) ? (baseOf(it) === 'PCS' ? 1 : 0.01) : hasPack(it) ? it.pf : 1; qty = Math.round(Math.ceil(need / step - 1e-9) * step * 1000) / 1000; }
-    return {it, rate, est, have, need, qty, cost:qty * (it.price || 0)};
+    // لسه استهلاكه مش معروف بس خلص (جرد صفر أو "خلص"): يدخل القايمة بعبوة واحدة عشان ما يتنسيش
+    let unknownOut = false;
+    if(!(rate.v > 0) && est != null && est <= 0.001){ qty = hasPack(it) ? it.pf : 1; unknownOut = true; }
+    return {it, rate, est, have, need, qty, cost:qty * (it.price || 0), unknownOut};
   });
 }
 
@@ -1788,6 +1796,7 @@ function itemsHtml(){
   let h = `<div class="card"><div class="row"><div><div class="muted">البيت بيستهلك من الاستوك في الشهر</div><div style="font-size:22px">${money(cost)}</div></div>
     <div style="display:flex; flex-direction:column; gap:6px"><button class="btn dark" data-act="itemForm">+ صنف</button><button class="btn sm" data-act="importBuy">🧾 فاتورة كاملة</button></div></div>
     <div class="muted" style="line-height:1.7; margin-top:4px">الشهر ده: اتصرف <span class="num">${fmt(cur.houseSpent)}</span> + فاضل تشتري لآخر الشهر <span class="num">${fmt(cur.houseToBuy)}</span></div>
+    <label class="switch" style="margin:8px 0 0"><input type="checkbox" data-act="realOnly" ${S.settings.realOnly ? 'checked' : ''}> <span>احسب من بياناتي الحقيقية بس (الجرد و"خلص" والمشتريات) — وتجاهل الاستهلاك اللي كتبته من دماغي</span></label>
     ${incomplete ? `<div class="note">فيه <b>${incomplete}</b> صنف ناقصهم الاستهلاك الشهري أو السعر — دوس على الصنف وكمّله عشان الحسابات تبقى مظبوطة.</div>` : ''}
     <div class="muted" style="font-size:12px; margin-top:6px">💡 سجّل كل شراء ودوس "خلص" لما حاجة تخلص — الاستهلاك بيتحسب من كده لوحده.</div></div>
     ${searchBox('items', true)}`;
@@ -1809,7 +1818,7 @@ function itemRowHtml(it, showGroup){
   const cls = d == null ? '' : d <= 5 ? 'bad' : d <= 12 ? 'warn' : 'good';
   const pc = priceChange(it);
   const priceTag = pc && Math.abs(pc.pct) >= 5 ? ` <span class="tag ${pc.pct > 0 ? 'bad' : 'good'}">${pc.pct > 0 ? '▲' : '▼'} ${Math.abs(Math.round(pc.pct))}%</span>` : '';
-  const srcTag = (isPaused(it) ? `<span class="tag warn">⏸️ ${pauseTxt(it)}</span> ` : '') + priceTag + ' ' + (r.src === 'learned' ? '<span class="tag good">محسوب من الجرد</span>' : r.src === 'buys' ? '<span class="tag good">من المشتريات</span>' : r.src === 'manual' ? '' : '<span class="tag bad">ناقص الاستهلاك</span>');
+  const srcTag = (isPaused(it) ? `<span class="tag warn">⏸️ ${pauseTxt(it)}</span> ` : '') + priceTag + ' ' + (r.src === 'learned' ? '<span class="tag good">محسوب من الجرد</span>' : r.src === 'buys' ? '<span class="tag good">من المشتريات</span>' : r.src === 'manual' ? '' : S.settings.realOnly ? '<span class="tag">لسه بيتعلّم</span>' : '<span class="tag bad">ناقص الاستهلاك</span>');
   return `<div class="list-item" data-act="itemForm" data-id="${it.id}" data-nm="${esc(it.name)}" data-grp="${esc(it.group || 'تاني')}" ${hideIf(!qHit('items', it))}>
     <div class="li-main"><div class="li-title">${esc(it.name)} ${srcTag}</div>${showGroup ? `<div class="li-sub">${esc(it.group || 'تاني')}</div>` : ''}
       <div class="li-sub">بتستهلك ${qtyTxt(it, r.v * 30)}/شهر${it.price > 0 ? ` · <span class="num">${fmt(it.price * packF(it))}</span> ج لل${esc(entryUnit(it))}` : ' · <span class="neg">من غير سعر</span>'}</div>
@@ -1986,7 +1995,7 @@ function shopHtml(){
       const tk = !!TICKS[x.it.id];
       return `<tr data-act="buyItem" data-id="${x.it.id}" class="${tk ? 'ticked' : ''}" style="cursor:pointer"><td><div style="display:flex; gap:8px; align-items:flex-start"><button type="button" class="tick ${tk ? 'on' : ''}" data-act="shopTick" data-id="${x.it.id}" aria-label="في السلة">${tk ? '✓' : ''}</button><div><b>${esc(x.it.name)}</b><div class="shop-acts"><button type="button" class="btn sm ghost pause-btn" data-act="itemPause" data-id="${x.it.id}">⏸️ مش دلوقتي</button>${hasPack(x.it) && !(baseOf(x.it) === 'PCS' && x.it.pf === 1) ? `<button type="button" class="btn sm ghost pause-btn" data-act="toggleLoose" data-id="${x.it.id}" title="بيتباع فرط ولا بالعبوة؟">${isLoose(x.it) ? '⚖️ فرط' : '📦 ' + esc(x.it.pu)}</button>` : ''}<button type="button" class="btn sm ghost pause-btn" data-act="itemForm" data-id="${x.it.id}" aria-label="تعديل الصنف">✏️</button></div></div></div></td>
       <td>${x.est == null ? '؟' : shopQty(x.it, x.have, sv, true)}</td><td>${shopQty(x.it, x.rate.v * (cover + (S.settings.bufferDays || 0)), sv, true)}</td>
-      <td><b>${shopQty(x.it, x.qty, sv, true)}</b>${alt ? `<div class="muted" style="font-size:11px">${alt}</div>` : ''}</td>
+      <td><b>${shopQty(x.it, x.qty, sv, true)}</b>${alt ? `<div class="muted" style="font-size:11px">${alt}</div>` : ''}${x.unknownOut ? '<div class="muted" style="font-size:11px">خلص · استهلاكه لسه مش معروف</div>' : ''}</td>
       <td class="num">${x.it.price > 0 ? fmt(x.cost) : '<span class="neg">؟</span>'}</td></tr>`; })()).join('')}
     </table><div class="muted" style="margin-top:8px">دوس على أي صنف عشان تسجّل إنك اشتريته بالسعر الفعلي. ولو مش هتجيبه دلوقتي دوس ⏸️.</div></div>`;
   return h + pausedHtml();
@@ -2910,11 +2919,11 @@ function itemForm(id, preset){
     const fields = body, e = estStock(it), dl = daysLeft(it);
     body = `<div class="note" style="margin-top:0">📦 عندك دلوقتي (متوقع) <b>${e == null ? 'مش معروف' : qtyTxt(it, e)}</b>${dl != null ? ` · يكفي <b class="num">${dl >= 60 ? '+60' : Math.floor(dl)}</b> يوم` : ''}
       ${estHow(it)}
-      <br>📊 بتستهلك <b>${qtyTxt(it, r.v * 30)}</b>/شهر <span class="muted">${r.src === 'learned' ? '(من الجرد)' : r.src === 'buys' ? '(من المشتريات)' : '(تقديري)'}</span></div>
+      <br>📊 بتستهلك <b>${qtyTxt(it, r.v * 30)}</b>/شهر <span class="muted">${r.src === 'learned' ? '(من الجرد)' : r.src === 'buys' ? '(من المشتريات)' : r.src === 'none' && S.settings.realOnly ? '(لسه بيتعلّم — محتاج جرد أو "خلص" أو كذا شراء)' : '(تقديري)'}</span></div>
       <div class="btns" style="margin:0 0 10px"><button type="button" class="btn good" data-act="buyItem" data-id="${it.id}">سجّل شراء</button><button type="button" class="btn" data-act="countItem" data-id="${it.id}">جرد الصنف ده</button><button type="button" class="btn danger" data-act="itemOut" data-id="${it.id}">خلص 🚫</button>${isPaused(it) ? `<button type="button" class="btn" data-act="itemResume" data-id="${it.id}">▶️ رجّعه للقايمة</button>` : `<button type="button" class="btn" data-act="itemPause" data-id="${it.id}">⏸️ إيقاف</button>`}</div>
       ${isPaused(it) ? `<div class="note" style="margin-top:0">⏸️ ${pauseTxt(it)} — مش داخل في قايمة الشراء ولا الخطة.</div>` : ''}
       <details class="note" style="padding:10px 12px"><summary style="cursor:pointer; font-weight:600">🧮 الحسبة والجرد والمشتريات</summary>
-      <div style="margin-top:6px">📊 المعدل المستخدم: <b>${qtyTxt(it, r.v * 30)}</b>/شهر ${r.src === 'learned' ? '(محسوب من الجرد)' : r.src === 'buys' ? '(محسوب من المشتريات)' : '(تقديري)'}
+      <div style="margin-top:6px">📊 المعدل المستخدم: <b>${qtyTxt(it, r.v * 30)}</b>/شهر ${r.src === 'learned' ? '(محسوب من الجرد)' : r.src === 'buys' ? '(محسوب من المشتريات)' : r.src === 'none' && S.settings.realOnly ? '(لسه بيتعلّم)' : '(تقديري)'}
       ${learnedHtml(it)}
       ${cs.length ? '<br><b>آخر جرد:</b> ' + cs.map(c => `<button type="button" class="chip" style="margin:3px 2px" data-act="delCount" data-id="${c.id}" title="امسح الجرد ده">${dayLabel(c.date)}${tsOk(c) ? ' ' + new Date(c.ts).toLocaleTimeString('ar-EG', {hour:'numeric', minute:'2-digit'}) : ''}: ${esc(qtyPlain(it, c.qty))} ✕</button>`).join('') + '<div class="muted" style="font-size:11.5px">جرد اتسجل غلط؟ دوس عليه وامسحه.</div>' : ''}
       ${bs.length ? '<br><b>آخر شراء:</b> ' + bs.map(b => `${dayLabel(b.date)}: ${esc(qtyPlain(it, b.qty))} بـ ${fmt(b.amount)}ج`).join(' · ') : ''}
@@ -4050,6 +4059,7 @@ const ACT = {
     else openSheet('القائمة', `<div class="pre">${esc(txt)}</div>`);
   },
   shopSort:(d) => { S.settings.shopSort = d.v; save(); },
+  realOnly:() => { S.settings.realOnly = !S.settings.realOnly; save(); toast(S.settings.realOnly ? 'تمام — الاستهلاك بقى من الجرد والمشتريات بس' : 'رجع يستخدم التقدير لحد ما يبقى فيه بيانات'); },
   splitForm:() => splitForm(),
   splitAdd:() => { SPLIT.B.push({id:uid(), name:'بند جديد', icon:'📦', amount:0, cats:[]}); SPLIT.draw(); },
   splitDel:(d) => { SPLIT.B.splice(+d.i, 1); SPLIT.draw(); },
