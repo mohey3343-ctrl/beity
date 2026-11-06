@@ -532,7 +532,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-06 · 15:00';
+const APP_VER = '2026-11-06 · 16:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -2912,7 +2912,9 @@ function itemForm(id, preset){
       <option value="" ${!pu ? 'selected' : ''}>— من غير عبوة —</option>${packs.map(o => `<option value="${esc(o)}" ${o === pu ? 'selected' : ''}>${esc(o)}</option>`).join('')}<option value="__new">➕ إضافة جديد…</option></select></label>
     <label class="fld" data-l="pfWrap"><span data-l="pf">العبوة فيها كام</span><input name="pf" inputmode="decimal" value="${it && hasPack(it) ? it.pf : (it ? '' : 1)}" data-ilbl></label></div>`;
   const m0 = it && it.monthly ? String(+(it.monthly / f).toFixed(4)) : '', p0 = it && it.price ? String(+(it.price * f).toFixed(2)) : '';
-  body += `<div class="fld2">${Fd.num('monthly', '<span data-l="monthly">بتستهلك كام في الشهر</span>' + (realOnly() ? ' <small class="muted">(مش بيتحسب)</small>' : ''), m0)}${Fd.num('price', '<span data-l="price">السعر</span>', p0)}</div>`;
+  // من البيانات الحقيقية بس (الافتراضي): مفيش خانة "بتستهلك كام" — الاستهلاك بيتحسب من الجرد والمشتريات
+  body += realOnly() ? Fd.num('price', '<span data-l="price">السعر</span>', p0)
+    : `<div class="fld2">${Fd.num('monthly', '<span data-l="monthly">بتستهلك كام في الشهر</span>', m0)}${Fd.num('price', '<span data-l="price">السعر</span>', p0)}</div>`;
   body += `<div class="muted" data-l="conv" style="margin:-4px 0 10px"></div>`;
   body += `<label class="switch" style="margin:-2px 0 10px"><input type="checkbox" name="loose" ${it ? (isLoose(it) ? 'checked' : '') : 'checked'} onchange="this.dataset.t=1"> <span>بيتباع فرط بأي كمية — قايمة الشراء تقترح على قد استهلاكك بالظبط مش عبوة كاملة</span></label>`;
   if(!it) body += Fd.num('stock', '<span data-l="stock">الموجود عندك دلوقتي (اختياري)</span>', '');
@@ -2951,7 +2953,7 @@ function itemForm(id, preset){
     // لو الرقم ما اتغيرش والعبوة زي ما هي، نسيب القيمة المحفوظة (من غير ما التقريب يزحزحها كل مرة)
     const same = it && f === f0 && (v.base || 'PCS') === baseOf(it);
     Object.assign(o, {name:v.name.trim(), group:v.group.trim() || 'تاني', base:v.base || 'PCS', pu:pu || undefined, pf:pu ? pf : undefined,
-      monthly:same && String(v.monthly).trim() === m0 ? it.monthly : num(v.monthly) * f,
+      monthly:v.monthly === undefined ? (it ? it.monthly : 0) : same && String(v.monthly).trim() === m0 ? it.monthly : num(v.monthly) * f,
       price:same && String(v.price).trim() === p0 ? it.price : Math.round(num(v.price) / f * 10000) / 10000});
     // "فرط": لو ما لمستهوش بيمشي على الافتراضي (كيلو/لتر من غير عبوة مقفولة)، ولو غيّرته بيتحفظ
     const lc = $('#sheetBody [name="loose"]'), auto = isLoose(Object.assign({}, o, {loose:undefined}));
@@ -2986,7 +2988,7 @@ function itemLabels(){
   }
   L('pfWrap').style.display = pu ? '' : 'none';
   L('pf').textContent = pu ? `الـ${pu} فيه كام ${base.en}` : '';
-  L('monthly').textContent = `بتستهلك كام ${unit} في الشهر`;
+  if(L('monthly')) L('monthly').textContent = `بتستهلك كام ${unit} في الشهر`;
   L('price').textContent = `سعر الـ${unit} (جنيه)`;
   if(L('stock')) L('stock').textContent = `الموجود عندك دلوقتي بالـ${unit} (اختياري)`;
   L('conv').innerHTML = pu ? `يعني: 1 ${esc(pu)} = <b class="num">${fmtQ(pf)}</b> ${base.en}` : `الكميات هتتكتب بالـ${base.en} (${base.ar})`;

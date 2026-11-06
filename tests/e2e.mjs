@@ -1121,6 +1121,15 @@ await test('"من بياناتي الحقيقية بس": التقدير اللي
   assert.equal(r.src, 'none');
 });
 
+await test('من البيانات الحقيقية بس: شاشة الصنف من غير خانة "بتستهلك كام"، والحفظ ما يبوّظش الرقم القديم', async page => {
+  await ev(page, () => { S.settings.realOnly = true; S.items.push({ id: 'x', name: 'رز', group: 'تموين', base: 'KG', pu: 'كيس', pf: 1, monthly: 3, price: 35 }); save(); itemForm('x'); document.querySelectorAll('#sheetBody details').forEach(d => d.open = true); });
+  assert.equal(await ev(page, () => !!document.querySelector('#sheetBody [name="monthly"]')), false);
+  await fill(page, 'price', 40); await submit(page);
+  assert.deepEqual(await ev(page, () => [byId(S.items, 'x').monthly, byId(S.items, 'x').price]), [3, 40]);
+  await ev(page, () => itemForm()); await fill(page, 'name', 'سكر'); await submit(page);
+  assert.equal(await ev(page, () => S.items.find(i => i.name === 'سكر').monthly), 0);
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });
