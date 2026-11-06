@@ -532,7 +532,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-06 · 14:00';
+const APP_VER = '2026-11-06 · 15:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -965,7 +965,7 @@ function dailyRateRaw(it){
   const b = buysInfo(it);
   if(b) return {v:b.daily, src:'buys'};
   // "بياناتي الحقيقية بس": الرقم اللي كتبته من دماغك مالوش لازمة — لحد ما يبقى فيه جرد أو مشتريات كفاية
-  if(it.monthly > 0 && !S.settings.realOnly) return {v:it.monthly / 30, src:'manual'};
+  if(it.monthly > 0 && !realOnly()) return {v:it.monthly / 30, src:'manual'};
   return {v:0, src:'none'};
 }
 /* الموجود المتوقع دلوقتي = آخر جرد + اللي اتشرى بعده − الاستهلاك من ساعتها.
@@ -995,10 +995,12 @@ function daysLeft(it){
 /* صنف متوقف: "مش الشهر ده" (لحد آخر الشهر المالي) أو "موسمي" (لحد ما ترجّعه) — مش بيدخل قايمة الشراء ولا الخطة */
 const isPaused = it => !!it.pause && (it.pause === 'always' || todayS() <= it.pause);
 const pauseTxt = it => it.pause === 'always' ? 'موقوف (موسمي)' : 'مش الشهر ده';
+/* الاستهلاك من البيانات الحقيقية بس (الجرد و"خلص" والمشتريات) — ده الافتراضي لكل الأصناف؛ التقدير اللي بيتكتب من الدماغ بيتجاهل إلا لو قفلت العلامة */
+const realOnly = () => S.settings.realOnly !== false;
 function houseMonthlyCost(){
   const est = sum(S.items.filter(it => it.pause !== 'always'), it => dailyRate(it).v * 30 * (it.price || 0));
   // من غير التقدير: الأصناف اللي لسه ما اتعرفش استهلاكها مش داخلة — فبناخد اللي بتشتريه فعلًا في الشهر لو أكتر
-  return S.settings.realOnly ? Math.max(est, catMonthlyAvg(['house'])) : est;
+  return realOnly() ? Math.max(est, catMonthlyAvg(['house'])) : est;
 }
 function coverDays(){
   if(S.settings.coverMode === 'days') return Math.max(1, Math.min(120, +S.settings.coverN || 7));
@@ -1796,7 +1798,7 @@ function itemsHtml(){
   let h = `<div class="card"><div class="row"><div><div class="muted">البيت بيستهلك من الاستوك في الشهر</div><div style="font-size:22px">${money(cost)}</div></div>
     <div style="display:flex; flex-direction:column; gap:6px"><button class="btn dark" data-act="itemForm">+ صنف</button><button class="btn sm" data-act="importBuy">🧾 فاتورة كاملة</button></div></div>
     <div class="muted" style="line-height:1.7; margin-top:4px">الشهر ده: اتصرف <span class="num">${fmt(cur.houseSpent)}</span> + فاضل تشتري لآخر الشهر <span class="num">${fmt(cur.houseToBuy)}</span></div>
-    <label class="switch" style="margin:8px 0 0"><input type="checkbox" data-act="realOnly" ${S.settings.realOnly ? 'checked' : ''}> <span>احسب من بياناتي الحقيقية بس (الجرد و"خلص" والمشتريات) — وتجاهل الاستهلاك اللي كتبته من دماغي</span></label>
+    <label class="switch" style="margin:8px 0 0"><input type="checkbox" data-act="realOnly" ${realOnly() ? 'checked' : ''}> <span>احسب من بياناتي الحقيقية بس (الجرد و"خلص" والمشتريات) — وتجاهل الاستهلاك اللي كتبته من دماغي</span></label>
     ${incomplete ? `<div class="note">فيه <b>${incomplete}</b> صنف ناقصهم الاستهلاك الشهري أو السعر — دوس على الصنف وكمّله عشان الحسابات تبقى مظبوطة.</div>` : ''}
     <div class="muted" style="font-size:12px; margin-top:6px">💡 سجّل كل شراء ودوس "خلص" لما حاجة تخلص — الاستهلاك بيتحسب من كده لوحده.</div></div>
     ${searchBox('items', true)}`;
@@ -1818,7 +1820,7 @@ function itemRowHtml(it, showGroup){
   const cls = d == null ? '' : d <= 5 ? 'bad' : d <= 12 ? 'warn' : 'good';
   const pc = priceChange(it);
   const priceTag = pc && Math.abs(pc.pct) >= 5 ? ` <span class="tag ${pc.pct > 0 ? 'bad' : 'good'}">${pc.pct > 0 ? '▲' : '▼'} ${Math.abs(Math.round(pc.pct))}%</span>` : '';
-  const srcTag = (isPaused(it) ? `<span class="tag warn">⏸️ ${pauseTxt(it)}</span> ` : '') + priceTag + ' ' + (r.src === 'learned' ? '<span class="tag good">محسوب من الجرد</span>' : r.src === 'buys' ? '<span class="tag good">من المشتريات</span>' : r.src === 'manual' ? '' : S.settings.realOnly ? '<span class="tag">لسه بيتعلّم</span>' : '<span class="tag bad">ناقص الاستهلاك</span>');
+  const srcTag = (isPaused(it) ? `<span class="tag warn">⏸️ ${pauseTxt(it)}</span> ` : '') + priceTag + ' ' + (r.src === 'learned' ? '<span class="tag good">محسوب من الجرد</span>' : r.src === 'buys' ? '<span class="tag good">من المشتريات</span>' : r.src === 'manual' ? '' : realOnly() ? '<span class="tag">لسه بيتعلّم</span>' : '<span class="tag bad">ناقص الاستهلاك</span>');
   return `<div class="list-item" data-act="itemForm" data-id="${it.id}" data-nm="${esc(it.name)}" data-grp="${esc(it.group || 'تاني')}" ${hideIf(!qHit('items', it))}>
     <div class="li-main"><div class="li-title">${esc(it.name)} ${srcTag}</div>${showGroup ? `<div class="li-sub">${esc(it.group || 'تاني')}</div>` : ''}
       <div class="li-sub">بتستهلك ${qtyTxt(it, r.v * 30)}/شهر${it.price > 0 ? ` · <span class="num">${fmt(it.price * packF(it))}</span> ج لل${esc(entryUnit(it))}` : ' · <span class="neg">من غير سعر</span>'}</div>
@@ -2910,7 +2912,7 @@ function itemForm(id, preset){
       <option value="" ${!pu ? 'selected' : ''}>— من غير عبوة —</option>${packs.map(o => `<option value="${esc(o)}" ${o === pu ? 'selected' : ''}>${esc(o)}</option>`).join('')}<option value="__new">➕ إضافة جديد…</option></select></label>
     <label class="fld" data-l="pfWrap"><span data-l="pf">العبوة فيها كام</span><input name="pf" inputmode="decimal" value="${it && hasPack(it) ? it.pf : (it ? '' : 1)}" data-ilbl></label></div>`;
   const m0 = it && it.monthly ? String(+(it.monthly / f).toFixed(4)) : '', p0 = it && it.price ? String(+(it.price * f).toFixed(2)) : '';
-  body += `<div class="fld2">${Fd.num('monthly', '<span data-l="monthly">بتستهلك كام في الشهر</span>', m0)}${Fd.num('price', '<span data-l="price">السعر</span>', p0)}</div>`;
+  body += `<div class="fld2">${Fd.num('monthly', '<span data-l="monthly">بتستهلك كام في الشهر</span>' + (realOnly() ? ' <small class="muted">(مش بيتحسب)</small>' : ''), m0)}${Fd.num('price', '<span data-l="price">السعر</span>', p0)}</div>`;
   body += `<div class="muted" data-l="conv" style="margin:-4px 0 10px"></div>`;
   body += `<label class="switch" style="margin:-2px 0 10px"><input type="checkbox" name="loose" ${it ? (isLoose(it) ? 'checked' : '') : 'checked'} onchange="this.dataset.t=1"> <span>بيتباع فرط بأي كمية — قايمة الشراء تقترح على قد استهلاكك بالظبط مش عبوة كاملة</span></label>`;
   if(!it) body += Fd.num('stock', '<span data-l="stock">الموجود عندك دلوقتي (اختياري)</span>', '');
@@ -2919,11 +2921,11 @@ function itemForm(id, preset){
     const fields = body, e = estStock(it), dl = daysLeft(it);
     body = `<div class="note" style="margin-top:0">📦 عندك دلوقتي (متوقع) <b>${e == null ? 'مش معروف' : qtyTxt(it, e)}</b>${dl != null ? ` · يكفي <b class="num">${dl >= 60 ? '+60' : Math.floor(dl)}</b> يوم` : ''}
       ${estHow(it)}
-      <br>📊 بتستهلك <b>${qtyTxt(it, r.v * 30)}</b>/شهر <span class="muted">${r.src === 'learned' ? '(من الجرد)' : r.src === 'buys' ? '(من المشتريات)' : r.src === 'none' && S.settings.realOnly ? '(لسه بيتعلّم — محتاج جرد أو "خلص" أو كذا شراء)' : '(تقديري)'}</span></div>
+      <br>📊 بتستهلك <b>${qtyTxt(it, r.v * 30)}</b>/شهر <span class="muted">${r.src === 'learned' ? '(من الجرد)' : r.src === 'buys' ? '(من المشتريات)' : r.src === 'none' && realOnly() ? '(لسه بيتعلّم — محتاج جرد أو "خلص" أو كذا شراء)' : '(تقديري)'}</span></div>
       <div class="btns" style="margin:0 0 10px"><button type="button" class="btn good" data-act="buyItem" data-id="${it.id}">سجّل شراء</button><button type="button" class="btn" data-act="countItem" data-id="${it.id}">جرد الصنف ده</button><button type="button" class="btn danger" data-act="itemOut" data-id="${it.id}">خلص 🚫</button>${isPaused(it) ? `<button type="button" class="btn" data-act="itemResume" data-id="${it.id}">▶️ رجّعه للقايمة</button>` : `<button type="button" class="btn" data-act="itemPause" data-id="${it.id}">⏸️ إيقاف</button>`}</div>
       ${isPaused(it) ? `<div class="note" style="margin-top:0">⏸️ ${pauseTxt(it)} — مش داخل في قايمة الشراء ولا الخطة.</div>` : ''}
       <details class="note" style="padding:10px 12px"><summary style="cursor:pointer; font-weight:600">🧮 الحسبة والجرد والمشتريات</summary>
-      <div style="margin-top:6px">📊 المعدل المستخدم: <b>${qtyTxt(it, r.v * 30)}</b>/شهر ${r.src === 'learned' ? '(محسوب من الجرد)' : r.src === 'buys' ? '(محسوب من المشتريات)' : r.src === 'none' && S.settings.realOnly ? '(لسه بيتعلّم)' : '(تقديري)'}
+      <div style="margin-top:6px">📊 المعدل المستخدم: <b>${qtyTxt(it, r.v * 30)}</b>/شهر ${r.src === 'learned' ? '(محسوب من الجرد)' : r.src === 'buys' ? '(محسوب من المشتريات)' : r.src === 'none' && realOnly() ? '(لسه بيتعلّم)' : '(تقديري)'}
       ${learnedHtml(it)}
       ${cs.length ? '<br><b>آخر جرد:</b> ' + cs.map(c => `<button type="button" class="chip" style="margin:3px 2px" data-act="delCount" data-id="${c.id}" title="امسح الجرد ده">${dayLabel(c.date)}${tsOk(c) ? ' ' + new Date(c.ts).toLocaleTimeString('ar-EG', {hour:'numeric', minute:'2-digit'}) : ''}: ${esc(qtyPlain(it, c.qty))} ✕</button>`).join('') + '<div class="muted" style="font-size:11.5px">جرد اتسجل غلط؟ دوس عليه وامسحه.</div>' : ''}
       ${bs.length ? '<br><b>آخر شراء:</b> ' + bs.map(b => `${dayLabel(b.date)}: ${esc(qtyPlain(it, b.qty))} بـ ${fmt(b.amount)}ج`).join(' · ') : ''}
@@ -4059,7 +4061,7 @@ const ACT = {
     else openSheet('القائمة', `<div class="pre">${esc(txt)}</div>`);
   },
   shopSort:(d) => { S.settings.shopSort = d.v; save(); },
-  realOnly:() => { S.settings.realOnly = !S.settings.realOnly; save(); toast(S.settings.realOnly ? 'تمام — الاستهلاك بقى من الجرد والمشتريات بس' : 'رجع يستخدم التقدير لحد ما يبقى فيه بيانات'); },
+  realOnly:() => { S.settings.realOnly = !realOnly(); save(); toast(realOnly() ? 'تمام — الاستهلاك بقى من الجرد والمشتريات بس' : 'رجع يستخدم التقدير لحد ما يبقى فيه بيانات'); },
   splitForm:() => splitForm(),
   splitAdd:() => { SPLIT.B.push({id:uid(), name:'بند جديد', icon:'📦', amount:0, cats:[]}); SPLIT.draw(); },
   splitDel:(d) => { SPLIT.B.splice(+d.i, 1); SPLIT.draw(); },

@@ -57,6 +57,8 @@ async function test(name, fn) {
   await page.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   try {
     await page.goto(URL_);
+    // الاختبارات القديمة بتعتمد على "بتستهلك كام في الشهر" لما مفيش بيانات — فبنشغّل التقدير فيها
+    await page.evaluate(() => { S.settings.realOnly = false; });
     await fn(page);
     assert.deepEqual(errors, [], 'أخطاء جافاسكريبت في الصفحة');
     console.log('  ✅', name); passed++;
