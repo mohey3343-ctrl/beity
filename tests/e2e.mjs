@@ -1084,6 +1084,26 @@ await test('اشتريتهم: الكميات والأسعار بتتحفظ لو 
   assert.equal(await ev(page, () => localStorage.getItem(KEY + '::buyDraft')), null);
 });
 
+await test('تقسيم المرتب: لله %، البيت والشغل مبلغ — بيتخصموا في الخطة، وصرفهم ما ياكلش من الفائض، والسطور بتتجمع صح', async page => {
+  await ev(page, () => { S.incomes.push({ id: 'i', name: 'مرتب', amount: 20000, day: 1 });
+    if(!S.cats.find(c => c.id === 'work')) S.cats.push({ id: 'work', name: 'مصروفات العمل', icon: '💼' });
+    S.tx.push({ id: 'in', ts: 1, type: 'inc', incomeId: 'i', amount: 20000, date: '2026-10-01' }, { id: 'w', ts: 2, type: 'exp', cat: 'work', amount: 300, date: '2026-10-03' },
+      { id: 'f', ts: 3, type: 'exp', cat: 'food', amount: 200, date: '2026-10-04' });
+    S.cashCounts.push({ id: 'c', ts: 0, date: '2026-09-30', amount: 0 }); save(); ACT.tab({ tab: 'home' }); splitForm(); });
+  await ev(page, () => { SPLIT.B = [{ id: 'a', name: 'لله', icon: '🤲', pct: 2.5, cats: ['charity'] }, { id: 'w', name: 'الشغل', icon: '💼', amount: 1000, cats: ['work'] }]; SPLIT.draw(); });
+  await submit(page);
+  const r = await ev(page, () => { EPOCH++; ACT.tab({ tab: 'home' }); const o = summary(VIEW);
+    const nums = [...document.querySelectorAll('.plan-line')].map(el => { const v = el.querySelector('b.num').textContent; return [el.querySelector('span').textContent, +v.replace(/[^\d.]/g, '') * (v.trim().startsWith('−') ? -1 : 1)]; });
+    const idx = nums.findIndex(([k]) => k.includes('الفائض'));
+    return { lines: o.bucketLines.map(l => [l.b.name, Math.round(l.budget), l.spent]), top: Math.round(nums.slice(0, idx).reduce((a, [, v]) => a + v, 0)), avail: Math.round(o.varAvail), varSpent: o.varSpent, free: Math.round(o.free), cat: !!S.cats.find(c => c.id === 'charity') };
+  });
+  assert.deepEqual(r.lines, [['لله', 500, 0], ['الشغل', 1000, 300]]);
+  assert.equal(r.top, r.avail);
+  assert.equal(r.varSpent, 200);                 // مصروف الشغل مش من الفائض
+  assert.equal(r.free, 20000 - 300 - 200 - 500 - 700);   // الخزنة 19500 − (لله 500 + باقي الشغل 700) = 18300
+  assert.ok(r.cat, 'تصنيف "صدقة ولله" اتعمل');
+});
+
 await test('شراء بوحدتين مختلفتين (جركن 4 لتر وزجاجة 0.6): التعديل بيعرض كل واحد بوحدته، والاستوك صح', async page => {
   await ev(page, () => { S.items.push({ id: 'sb', name: 'صابون سايل', group: 'منظفات', base: 'L', pu: 'جركن', pf: 4, monthly: 2, price: 30, alt: [{ pu: 'زجاجة', pf: 0.6 }] });
     S.counts.push({ id: 'k', ts: 1, itemId: 'sb', date: '2026-10-09', qty: 0 }); save(); buyItem('sb'); });

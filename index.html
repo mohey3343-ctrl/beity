@@ -239,6 +239,8 @@
   .tbl tr.ticked td{opacity:.45} .tbl tr.ticked b{text-decoration:line-through}
   .tick{width:24px; height:24px; flex:none; border-radius:7px; border:1.5px solid var(--line); background:transparent; color:#fff; font-weight:700; padding:0; line-height:1}
   .tick.on{background:var(--good, #2bb673); border-color:var(--good, #2bb673)}
+  .plan-sub{padding:8px 0; border-bottom:1px solid var(--line); font-size:13px}
+  [data-split] input, [data-split] select{padding:7px; border:1px solid var(--line); border-radius:9px; background:var(--card-2); color:var(--ink); font-size:14px; min-width:0}
   .imp-list{display:flex; flex-direction:column; gap:10px; margin-bottom:10px}
   .imp-row{border:1px solid var(--line); border-radius:12px; padding:8px 10px; display:flex; flex-direction:column; gap:6px}
   .imp-row.miss{border-color:var(--bad, #e66)}
@@ -530,7 +532,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-05 · 10:00';
+const APP_VER = '2026-11-06 · 12:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -1274,17 +1276,26 @@ function summaryRaw(p){
   }else o.houseBudget = r.start > todayS() ? o.houseMonthly : o.houseSpent;
   o.houseReserved = Math.max(o.houseBudget, o.houseSpent);
   // المصروف اليومي (المتغير)
-  const varT = T.filter(t => t.type === 'exp' && t.cat !== 'house' && !t.dueId);
+  // تقسيم المرتب: لله، البيت، الشغل… كل بند ليه نسبة من الدخل أو مبلغ، وبيتحسب في الخطة قبل الفائض
+  const BK = buckets(), bkCat = new Set(BK.flatMap(b => b.cats));
+  o.bucketLines = BK.map(b => {
+    const spent = sum(T.filter(t => t.type === 'exp' && !t.dueId && t.cat !== 'house' && b.cats.includes(t.cat)), t => t.amount);
+    const budget = b.pct > 0 ? o.income * b.pct / 100 : (b.amount || 0);
+    return {b, spent, budget, planned:Math.max(budget, spent)};
+  });
+  o.bucketPlanned = sum(o.bucketLines, l => l.planned); o.bucketSpent = sum(o.bucketLines, l => l.spent);
+  // المصروف اليومي (الفائض) = كل التصنيفات اللي مش في بند
+  const varT = T.filter(t => t.type === 'exp' && t.cat !== 'house' && !t.dueId && !bkCat.has(t.cat));
   o.varSpent = sum(varT, t => t.amount);
   // مصروف مناسبات (أعياد ميلاد...) — متخطط له ومتشال، فمش بيتحسب على مصروف اليوم
   o.eventSpent = sum(T.filter(t => t.type === 'exp' && t.dueId), t => t.amount);
   o.varBudget = o.income - o.billPlanned - o.debtPlanned - o.savePlanned - o.reservePlanned - o.houseReserved;
   o.lent = sum(T.filter(t => t.type === 'lend'), t => t.amount);
-  o.varBudget -= o.lent + o.eventSpent + o.duePaid;
+  o.varBudget -= o.lent + o.eventSpent + o.duePaid + o.bucketPlanned;
   // المتوقع يرجعلك الشهر ده (مش داخل في الخطة لحد ما يوصل فعلًا)
   o.recvExpected = sum(S.recvs || [], rv => sum(recvSchedule(rv).filter(it => it.date >= r.start && it.date <= r.end), it => it.left));
   o.recvGot = sum(T.filter(t => t.type === 'inc' && t.recvId), t => t.amount);
-  o.outActual = o.billPaid + o.duePaid + o.debtPaid + o.saved + o.reserveNet + o.lent + o.eventSpent + o.houseSpent + o.varSpent;
+  o.outActual = o.billPaid + o.duePaid + o.debtPaid + o.saved + o.reserveNet + o.lent + o.eventSpent + o.houseSpent + o.varSpent + o.bucketSpent;
   o.cash = o.income - o.outActual;
   o.free = o.varBudget - o.varSpent;
   const td = todayS();
@@ -1305,7 +1316,7 @@ function summaryRaw(p){
       o.cashNow = b.value;
       // الفواتير اللي كل كام شهر: حصص الشهور اللي فاتت متجنّبة في الخزنة لحد ما تدفعها
       o.billHeld = sum(S.bills.filter(x => !x.off), x => billHeld(x, p));
-      o.owedParts = [['📋 التزامات', sum(o.billLines, l => Math.max(0, l.planned - l.paidAdj))], ['🔁 متجنّب لفواتير كل كام شهر', o.billHeld], ['💳 أقساط', Math.max(0, o.debtPlanned - o.debtPaid)],
+      o.owedParts = [...o.bucketLines.map(l => [l.b.icon + ' ' + l.b.name, Math.max(0, l.budget - l.spent)]), ['📋 التزامات', sum(o.billLines, l => Math.max(0, l.planned - l.paidAdj))], ['🔁 متجنّب لفواتير كل كام شهر', o.billHeld], ['💳 أقساط', Math.max(0, o.debtPlanned - o.debtPaid)],
         ['🚗 تحويش', sum(o.goalLines, l => Math.max(0, l.need - Math.max(0, l.saved)))], ['🧺 قايمة الشراء لآخر الشهر', o.houseToBuy],
         // دخل نزل بدري بس بتاع شهر جاي: في الخزنة بس مش للصرف الشهر ده
         ['💰 دخل الشهر الجاي (نزل بدري)', sum(S.tx.filter(t => t.type === 'inc' && t.forP && t.forP > pk && t.date <= td && !t.useNow), t => t.amount)]].filter(x => x[1] > 0.5);
@@ -1392,6 +1403,49 @@ function stat(title, icon, planned, done, doneLabel, barCls){
     <div class="s" style="margin-top:5px">${doneLabel} <span class="num">${fmt(done)}</span>${over ? ' <span class="tag bad">زيادة</span>' : ''}</div></div>`;
 }
 
+/* ===================== تقسيم المرتب (بنود) =====================
+   كل بند: اسم + أيقونة + نسبة من الدخل أو مبلغ ثابت + التصنيفات اللي بتتصرف منه.
+   المصروف في تصنيفات البند بيتحسب عليه، والباقي (كافيه، خروجات…) هو الفائض */
+const buckets = () => (S.settings.buckets || []).filter(b => b && Array.isArray(b.cats) && b.cats.length);
+// متوسط الصرف الشهري لتصنيفات معيّنة من بياناتك: آخر 3 شهور كاملة، ولو مفيش — من أول ما بدأت تسجّل لحد النهارده
+function catMonthlyAvg(cats){
+  const E = S.tx.filter(t => t.type === 'exp' && !t.dueId && cats.includes(t.cat));
+  if(!E.length) return 0;
+  const first = S.tx.reduce((a, t) => t.date < a ? t.date : a, todayS()), days = Math.max(1, diffDays(first, todayS()) + 1);
+  return sum(E, t => t.amount) / days * 30;
+}
+function splitForm(){
+  const cats = S.cats.filter(c => c.id !== 'house');
+  let B = buckets().length ? JSON.parse(JSON.stringify(S.settings.buckets)) : [
+    {id:'allah', name:'لله (صدقة وزكاة)', icon:'🤲', pct:2.5, cats:['charity']},
+    {id:'home', name:'مصاريف البيت (غير الاستوك)', icon:'🏠', amount:0, cats:cats.filter(c => /صيان|اكسسوار|متنوع|market|fix|other/.test(c.name + c.id)).map(c => c.id)},
+    {id:'work', name:'الشغل', icon:'💼', amount:0, cats:cats.filter(c => /عمل|شغل|work/.test(c.name + c.id)).map(c => c.id)},
+  ];
+  const draw = () => {
+    const used = new Map(); B.forEach((b, i) => b.cats.forEach(c => used.set(c, i)));
+    const inc = summary(periodOf(todayS())).income;
+    $('#sheetBody [data-split]').innerHTML = B.map((b, i) => `<div class="card" style="padding:10px 12px; margin-bottom:10px">
+      <div class="row" style="gap:6px"><input data-sb="${i}" data-f="icon" value="${esc(b.icon)}" style="width:44px; text-align:center"><input data-sb="${i}" data-f="name" value="${esc(b.name)}" style="flex:1">
+        <button type="button" class="btn sm danger" data-act="splitDel" data-i="${i}">✕</button></div>
+      <div class="row" style="gap:6px; margin-top:8px"><select data-sb="${i}" data-f="mode"><option value="pct" ${b.pct > 0 ? 'selected' : ''}>% من الدخل</option><option value="amount" ${!(b.pct > 0) ? 'selected' : ''}>مبلغ في الشهر</option></select>
+        <input data-sb="${i}" data-f="val" inputmode="decimal" value="${b.pct > 0 ? b.pct : (b.amount || '')}" style="width:90px; text-align:center">
+        <span class="muted" style="font-size:12px">${b.pct > 0 ? '≈ ' + fmt(inc * b.pct / 100) + ' ج' : ''}</span>
+        <button type="button" class="btn sm" data-act="splitSuggest" data-i="${i}" title="من صرفك الفعلي">📊 من صرفي</button></div>
+      <div class="muted" style="font-size:12px; margin:8px 0 4px">بيتصرف منه:</div>
+      <div class="chips" style="flex-wrap:wrap">${cats.concat(b.cats.includes('charity') && !S.cats.find(c => c.id === 'charity') ? [{id:'charity', icon:'🤲', name:'صدقة ولله'}] : []).map(c => { const on = b.cats.includes(c.id), other = used.has(c.id) && used.get(c.id) !== i;
+        return `<button type="button" class="chip ${on ? 'on' : ''}" data-act="splitCat" data-i="${i}" data-c="${c.id}" ${other ? 'style="opacity:.4"' : ''}>${c.icon} ${esc(c.name)}</button>`; }).join('')}</div></div>`).join('')
+      + `<button type="button" class="btn sm" data-act="splitAdd">+ بند تاني</button>`;
+  };
+  SPLIT = {B, draw};
+  openSheet('🧩 تقسيم المرتب', `<div class="muted" style="line-height:1.8; margin-bottom:10px">كل بند بياخد جزء من المرتب (نسبة أو مبلغ)، والمصروف في تصنيفاته بيتحسب عليه. الالتزامات والاستوك والديون محسوبين لوحدهم، واللي بيفضل هو <b>الفائض</b> (كافيه، خروجات…).
+      <br>دوس <b>📊 من صرفي</b> والبرنامج يحط متوسط صرفك الحقيقي في البند ده.</div><div data-split></div>${Fd.foot('حفظ التقسيم')}`, () => {
+    const keep = SPLIT.B.filter(b => b.name.trim() && b.cats.length);
+    if(keep.some(b => b.cats.includes('charity')) && !S.cats.find(c => c.id === 'charity')) S.cats.push({id:'charity', name:'صدقة ولله', icon:'🤲'});
+    S.settings.buckets = keep; save(); toast(keep.length ? 'اتحفظ — الخطة بقت متقسمة' : 'اتشال التقسيم');
+  });
+  draw();
+}
+let SPLIT = null;
 /* ===================== رسوم ===================== */
 const VIZ = ['var(--c1)', 'var(--c2)', 'var(--c3)', 'var(--c4)', 'var(--c5)', 'var(--c6)'];
 /* دايرة: أكبر 6 بنود + "الباقي". الدوس على أي جزء (أو سطره) يوريك تفاصيله في النص */
@@ -1491,11 +1545,15 @@ PAGES.home = function(){
   }
   h += alertsHtml(o);
 
-  h += `<div class="card"><h3>خطة الشهر <span class="muted">الفلوس رايحة فين</span></h3>
+  h += `<div class="card"><h3>خطة الشهر <button class="btn sm" data-act="splitForm">🧩 تقسيم المرتب</button></h3>
+    ${!buckets().length ? `<div class="note" style="margin-top:0">💡 قسّم مرتبك: جزء لله، جزء للبيت، جزء للشغل — والبرنامج يحسب الفائض بعد الالتزامات والديون. <a href="#" data-act="splitForm">ابدأ</a></div>` : ''}
     <div class="plan-line"><span>💰 الدخل ${o.incReceived < o.income ? '<span class="tag">متوقع</span>' : ''}</span><b class="num pos">${fmt(o.income)}</b></div>
     ${o.isCurrent && o.cashKnown && Math.abs(o.opening) >= 1 ? `<div class="plan-line"><span>💼 رصيد أول الشهر<div class="muted" style="font-size:11.5px; line-height:1.6">${o.openingBack ? (o.opening < 0 ? 'محسوب من أول جرد فلوس في الشهر — بالسالب يعني فيه مصاريف قبل الجرد ده ما اتسجلتش (زي أول ما بدأت تستخدم البرنامج)' : 'محسوب من أول جرد فلوس في الشهر — فلوس كانت معاك قبل الدخل') : 'اللي كان معاك أول الشهر (فاضل من الشهر اللي فات)'}${o.earlyIn > 0.5 ? ` — من غير الـ <span class="num">${fmt(o.earlyIn)}</span> اللي اتقبضوا بدري من دخل الشهر ده (محسوبين في الدخل فوق)${o.opening < 0 ? '، يعني اتصرفوا قبل الشهر ما يبدأ' : ''}` : ''}</div></span><b class="num ${o.opening < 0 ? 'neg' : 'pos'}">${o.opening < 0 ? '− ' : '+ '}${fmt(Math.abs(o.opening))}</b></div>` : ''}
+    ${o.bucketLines.map(l => `<div class="plan-line"><span>${l.b.icon} ${esc(l.b.name)}${l.b.pct > 0 ? ` <span class="tag">${fmtQ(l.b.pct)}%</span>` : ''}<div class="muted" style="font-size:11.5px">اتصرف ${fmt(l.spent)} من ${fmt(l.budget)}${l.spent > l.budget + 0.5 ? ' — <span class="neg">زيادة</span>' : ''}</div></span><b class="num">− ${fmt(l.planned)}</b></div>`).join('')}
     <div class="plan-line"><span>📋 الالتزامات الثابتة</span><b class="num">− ${fmt(o.billPlanned)}</b></div>
     ${o.isCurrent && o.cashKnown && o.billPrior > 0.5 ? `<div class="plan-line"><span>🔁 فواتير كل كام شهر: حصص الشهور اللي فاتت<div class="muted" style="font-size:11.5px">${o.billLines.filter(l => l.prior > 0.5).map(l => `${esc(l.b.name)} ${fmt(l.prior)} ${l.isDue && l.paidT.length ? '(اتدفعت فيها)' : '(متجنّبة لحد ميعادها)'}`).join(' · ')}</div></span><b class="num">− ${fmt(o.billPrior)}</b></div>` : ''}
+    <div class="plan-line"><span>🧺 استوك البيت${o.isCurrent && o.houseToBuy > 0.5 ? `<div class="muted" style="font-size:11.5px">اتصرف ${fmt(o.houseSpent)} + محتاج تشتري لآخر الشهر (${o.houseDaysLeft} يوم${S.settings.bufferDays ? ' + ' + S.settings.bufferDays + ' احتياطي' : ''}) ${fmt(o.houseToBuy)}</div>` : ''}</span><b class="num">− ${fmt(o.houseReserved)}</b></div>
+    ${o.bucketLines.length ? `<div class="plan-sub">= فاضل بعد الأساسيات <b class="num">${fmt(o.income + (o.isCurrent && o.cashKnown ? o.opening : 0) - o.bucketPlanned - o.billPlanned - (o.isCurrent && o.cashKnown ? o.billPrior : 0) - o.houseReserved)}</b> <span class="muted">— ومنه الديون والمواعيد والتحويش، والباقي فائض</span></div>` : ''}
     <div class="plan-line"><span>💳 أقساط الديون</span><b class="num">− ${fmt(o.debtPlanned)}</b></div>
     <div class="plan-line"><span>🚗 التحويش للأهداف</span><b class="num">− ${fmt(o.savePlanned)}</b></div>
     ${(() => {
@@ -1506,11 +1564,10 @@ PAGES.home = function(){
       return `<div class="plan-line"><span>📅 ${o.reserveActual ? 'مواعيد السداد والمناسبات' : 'تتشال لمواعيد السداد'}${parts ? `<div class="muted" style="font-size:11.5px">${parts}</div>` : ''}</span><b class="num">− ${fmt(tot)}</b></div>`;
     })()}
     ${o.isCurrent && o.reserveToDo > 0.5 ? `<div class="muted" style="font-size:12px; padding:4px 0 8px; border-bottom:1px solid var(--line)">⏳ لسه المفروض تشيل <b class="num">${fmt(o.reserveToDo)}</b> للمواعيد الشهر ده — مش متخصومة من الحساب لحد ما تشيلها فعلًا.</div>` : ''}
-    <div class="plan-line"><span>🧺 استوك البيت${o.isCurrent && o.houseToBuy > 0.5 ? `<div class="muted" style="font-size:11.5px">اتصرف ${fmt(o.houseSpent)} + محتاج تشتري لآخر الشهر (${o.houseDaysLeft} يوم${S.settings.bufferDays ? ' + ' + S.settings.bufferDays + ' احتياطي' : ''}) ${fmt(o.houseToBuy)}</div>` : ''}</span><b class="num">− ${fmt(o.houseReserved)}</b></div>
     ${o.lent > 0.5 ? `<div class="plan-line"><span>🤝 سلّفت حد</span><b class="num">− ${fmt(o.lent)}</b></div>` : ''}
     ${o.isCurrent && o.cashKnown && o.incPending > 0.5 ? `<div class="plan-line"><span>💰 دخل لسه ما نزلش<div class="muted" style="font-size:11.5px">مش بيتحسب لحد ما يوصل</div></span><b class="num">− ${fmt(o.incPending)}</b></div>` : ''}
     ${o.isCurrent && o.cashKnown && Math.abs(o.unrecorded) >= 1 ? `<div class="plan-line"><span>⚖️ ${o.unrecorded < 0 ? 'فلوس خرجت ومش متسجلة' : 'فلوس زيادة عن المتسجل'}<div class="muted" style="font-size:11.5px; line-height:1.6">فرق ظهر في جرد الفلوس الشهر ده (آخر جرد ${dayLabel(o.cashLast.date)})${o.unrecorded < 0 ? ' — مصاريف ما اتسجلتش' : ' — دخل أو فلوس ما اتسجلتش'}</div></span><b class="num ${o.unrecorded < 0 ? 'neg' : 'pos'}">${o.unrecorded < 0 ? '− ' : '+ '}${fmt(Math.abs(o.unrecorded))}</b></div>` : ''}
-    <div class="plan-line" style="border-bottom:0"><span>🛒 <b>متاح للمصروف اليومي</b></span><b class="num ${o.varAvail < 0 ? 'neg' : ''}">${fmt(o.varAvail)}</b></div>
+    <div class="plan-line" style="border-bottom:0"><span>🛒 <b>${o.bucketLines.length ? 'الفائض (كافيه، خروجات، وأي حاجة تانية)' : 'متاح للمصروف اليومي'}</b></span><b class="num ${o.varAvail < 0 ? 'neg' : ''}">${fmt(o.varAvail)}</b></div>
     ${o.isCurrent ? `<div class="plan-line"><span>🧾 اتصرف لحد دلوقتي</span><b class="num">− ${fmt(o.varSpent)}</b></div>
     <div class="plan-line total"><span>💵 فاضل للمصروف</span><b class="num ${o.free < 0 ? 'neg' : 'pos'}">${fmt(o.free)}</b></div>
     <div class="muted" style="margin-top:6px; line-height:1.8">${(() => {
@@ -3993,6 +4050,11 @@ const ACT = {
     else openSheet('القائمة', `<div class="pre">${esc(txt)}</div>`);
   },
   shopSort:(d) => { S.settings.shopSort = d.v; save(); },
+  splitForm:() => splitForm(),
+  splitAdd:() => { SPLIT.B.push({id:uid(), name:'بند جديد', icon:'📦', amount:0, cats:[]}); SPLIT.draw(); },
+  splitDel:(d) => { SPLIT.B.splice(+d.i, 1); SPLIT.draw(); },
+  splitCat:(d) => { const b = SPLIT.B[+d.i], c = d.c; SPLIT.B.forEach(x => { if(x !== b) x.cats = x.cats.filter(y => y !== c); }); b.cats = b.cats.includes(c) ? b.cats.filter(y => y !== c) : b.cats.concat(c); SPLIT.draw(); },
+  splitSuggest:(d) => { const b = SPLIT.B[+d.i], a = Math.round(catMonthlyAvg(b.cats) / 50) * 50; delete b.pct; b.amount = a; SPLIT.draw(); toast(a ? `متوسط صرفك في البند ده حوالي ${fmt(a)} في الشهر` : 'لسه مفيش صرف متسجل في تصنيفاته'); },
   rowDetail:(d) => rowDetail(d.k),
   importJard:() => importStart('jard'),
   importBuy:() => importStart('buy'),
@@ -4282,6 +4344,8 @@ document.addEventListener('change', e => {
   }
   if(el.matches && el.matches('[data-bmadd]')){ if(el.value){ buyDraftSave(el.value); buyMany(); } return; }
   if(el.closest && el.closest('[data-bmsheet]')){ buyDraftSave(); }
+  if(el.dataset && el.dataset.sb != null && el.dataset.f === 'mode' && SPLIT){ const b = SPLIT.B[+el.dataset.sb], v = b.pct > 0 ? b.pct : b.amount || 0;
+    if(el.value === 'pct'){ b.pct = v > 100 ? 2.5 : v || 2.5; delete b.amount; } else { b.amount = b.pct > 0 ? Math.round(summary(periodOf(todayS())).income * b.pct / 100) : v; delete b.pct; } SPLIT.draw(); return; }
   if(el.name === 'every'){ document.querySelectorAll('#sheetBody [data-every]').forEach(x => x.style.display = (x.dataset.every === '1') === (el.value === '1') ? '' : 'none'); return; }
   if(el.name === 'evdone'){ const h = $('#sheetBody [data-evhint]'); if(h) h.textContent = el.value === '1' ? 'المناسبة هتتقفل، واللي فاضل من ميزانيتها يرجع لرصيدك.' : 'الميزانية هتفضل مفتوحة بالباقي، وتكمّل تسجّل عليها.'; return; }
   if(el.dataset && el.dataset.mp){
@@ -4313,6 +4377,10 @@ document.addEventListener('change', e => {
   if(el.dataset.act === 'rollDebts'){ const g = byId(S.goals, el.dataset.id); if(g){ g.rollDebts = el.checked; save(); } }
 });
 document.addEventListener('input', e => {
+  if(e.target.dataset && e.target.dataset.sb != null && SPLIT){ const b = SPLIT.B[+e.target.dataset.sb], f = e.target.dataset.f;
+    if(f === 'name' || f === 'icon') b[f] = e.target.value;
+    if(f === 'val'){ const v = num(e.target.value); if(b.pct > 0) b.pct = v; else b.amount = v; }
+    return; }
   if(e.target.id === 'coverN'){ const n = Math.round(num(e.target.value)); if(n >= 1 && n <= 120){ clearTimeout(e.target._t); e.target._t = setTimeout(() => { S.settings.coverN = n; save(); }, 700); } return; }
   if(e.target.name && /^p_\d+$/.test(e.target.name) && e.target.closest('.imp-row')) importTotal();
   // مبلغ كتبته بإيدك ما بيتغيرش لوحده، والمقترح بيتحسب من الكمية
