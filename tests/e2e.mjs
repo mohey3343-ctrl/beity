@@ -1140,6 +1140,30 @@ await test('نصايح التقرير أول الشهر: مفيش ضرب في 30
   assert.equal(p, 710);
 });
 
+await test('سجل الصنف: الجرد والشراء في جدول واحد، الأقدم فوق، وزرار "اعرض الأقدم" بيجيب الباقي', async page => {
+  await ev(page, () => {
+    S.items.push({ id: 'k', name: 'كابوتشا', group: 'تموين', base: 'PCS', pu: 'قطعة', pf: 1, price: 15 });
+    for(let i = 0; i < 7; i++){
+      const d = '2026-09-' + String(10 + i * 2).padStart(2, '0');
+      S.tx.push({ id: 'b' + i, ts: Date.parse(d + 'T10:00:00'), type: 'exp', cat: 'house', itemId: 'k', qty: 1, amount: 15, date: d });
+      S.counts.push({ id: 'c' + i, ts: Date.parse(d + 'T20:00:00'), itemId: 'k', date: d, qty: i % 2 ? 0 : 0.5 });
+    }
+    save(); itemForm('k');
+  });
+  await page.evaluate(() => document.querySelector('.sheet details').open = true);
+  const rows = () => page.$$eval('[data-l="hist"] .hist-row', a => a.map(r => r.dataset.k + ':' + r.dataset.id));
+  const r1 = await rows();
+  assert.equal(r1.length, 12);
+  assert.deepEqual(r1.slice(0, 2), ['b:b1', 'c:c1']);      // أقدم 2 (من الـ12 الأخيرة) فوق
+  assert.equal(r1[11], 'c:c6');                             // الأحدث تحت
+  await page.click('[data-act="histAll"]');
+  const r2 = await rows();
+  assert.equal(r2.length, 14); assert.equal(r2[0], 'b:b0');
+  assert.equal(await page.$$eval('[data-l="hist"]', a => a.length), 1);
+  assert.equal(await page.$('[data-act="histAll"]'), null);
+  assert.ok(/خلص/.test(await page.textContent('[data-l="hist"]')));
+});
+
 await test('"من بياناتي الحقيقية بس": التقدير اللي من الدماغ مش بيتحسب، واللي خلص من غير بيانات يدخل القايمة بعبوة', async page => {
   const r = await ev(page, () => {
     S.items.push({ id: 'g', name: 'تخمين', group: 'تموين', base: 'KG', pu: 'كيس', pf: 1, monthly: 5, price: 50 },

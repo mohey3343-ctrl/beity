@@ -532,7 +532,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-07 · 21:00';
+const APP_VER = '2026-11-08 · 18:30';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -2935,6 +2935,28 @@ function sane(amount, date, type, editId, cat){
 }
 
 /* ---- الأصناف ---- */
+/* سجل الصنف: الجرد والشراء مع بعض في جدول واحد، الأقدم فوق والأحدث تحت */
+const HIST_N = 12;
+function histHtml(it, all){
+  const ev = itemCounts(it).map(c => ({k:'c', x:c})).concat(itemBuys(it).map(t => ({k:'b', x:t})))
+    .sort((a, b) => evKey(a.x) < evKey(b.x) ? -1 : 1);
+  if(!ev.length) return '';
+  const L = all ? ev : ev.slice(-HIST_N);
+  // تاريخ قصير (من غير اسم اليوم) والساعة تحته صغيرة — عشان الصف يفضل سطر واحد على الموبايل
+  const when = x => { const d = pd(x.date), t = todayS(), lbl = x.date === t ? 'النهاردة' : x.date === addDays(t, -1) ? 'امبارح' : d.getDate() + ' ' + MONTHS[d.getMonth()];
+    return `${lbl}${tsOk(x) ? '<div class="muted num" style="font-size:11px">' + new Date(x.ts).toLocaleTimeString('ar-EG', {hour:'numeric', minute:'2-digit'}) + '</div>' : ''}`; };
+  const row = e => {
+    const x = e.x, c = e.k === 'c';
+    const kind = c ? (x.qty > 0 ? '📋 جرد' : '🚫 خلص') : x.gift ? '🎁 هدية' : '🛒 شراء';
+    const qty = c ? (x.qty > 0 ? `<b>${esc(qtyPlain(it, x.qty))}</b>` : '<b>0</b>') : `+<b>${esc(qtyPlain(it, x.qty))}</b>${x.gift ? '' : ` <span class="muted" style="font-size:11.5px">بـ <span class="num">${fmt(x.amount)}</span>ج</span>`}`;
+    return `<div class="hist-row" style="display:grid; grid-template-columns:5.6em 4.6em 1fr; align-items:center; gap:6px; padding:5px 2px; border-bottom:1px solid var(--line); cursor:pointer; font-size:13px; line-height:1.3" data-act="${c ? 'delCount' : 'editTx'}" data-id="${x.id}" data-k="${e.k}">
+      <span>${when(x)}</span><span style="white-space:nowrap">${kind}</span><span style="white-space:nowrap; text-align:left">${qty}</span></div>`;
+  };
+  return `<div style="margin-top:10px"><b>📜 السجل</b> <span class="muted" style="font-size:11.5px">(الأقدم فوق ← الأحدث تحت)</span></div>
+    ${ev.length > L.length ? `<button type="button" class="btn sm ghost" style="margin:4px 0" data-act="histAll" data-id="${it.id}">اعرض الأقدم (${ev.length - L.length})</button>` : ''}
+    <div data-l="hist">${L.map(row).join('')}</div>
+    <div class="muted" style="font-size:11.5px; margin-top:4px">دوس على شراء تعدّله، أو على جرد تمسحه لو اتسجل غلط.</div>`;
+}
 function itemForm(id, preset){
   const it = id ? byId(S.items, id) : null;
   preset = preset || {};
@@ -2957,7 +2979,6 @@ function itemForm(id, preset){
   body += `<label class="switch" style="margin:-2px 0 10px"><input type="checkbox" name="loose" ${it ? (isLoose(it) ? 'checked' : '') : 'checked'} onchange="this.dataset.t=1"> <span>بيتباع فرط بأي كمية — قايمة الشراء تقترح على قد استهلاكك بالظبط مش عبوة كاملة</span></label>`;
   if(!it) body += Fd.num('stock', '<span data-l="stock">الموجود عندك دلوقتي (اختياري)</span>', '');
   if(it){
-    const cs = itemCounts(it).slice(-4).reverse(), bs = itemBuys(it).sort((a, b) => evKey(a) < evKey(b) ? 1 : -1).slice(0, 4);
     const fields = body, e = estStock(it), dl = daysLeft(it);
     body = `<div class="note" style="margin-top:0">📦 عندك دلوقتي (متوقع) <b>${e == null ? 'مش معروف' : qtyTxt(it, e)}</b>${dl != null ? ` · يكفي <b class="num">${dl >= 60 ? '+60' : Math.floor(dl)}</b> يوم` : ''}
       ${estHow(it)}
@@ -2967,8 +2988,7 @@ function itemForm(id, preset){
       <details class="note" style="padding:10px 12px"><summary style="cursor:pointer; font-weight:600">🧮 الحسبة والجرد والمشتريات</summary>
       <div style="margin-top:6px">📊 المعدل المستخدم: <b>${qtyTxt(it, r.v * 30)}</b>/شهر ${r.src === 'learned' ? '(محسوب من الجرد)' : r.src === 'buys' ? '(محسوب من المشتريات)' : r.src === 'none' && realOnly() ? '(لسه بيتعلّم)' : '(تقديري)'}
       ${learnedHtml(it)}
-      ${cs.length ? '<br><b>آخر جرد:</b> ' + cs.map(c => `<button type="button" class="chip" style="margin:3px 2px" data-act="delCount" data-id="${c.id}" title="امسح الجرد ده">${dayLabel(c.date)}${tsOk(c) ? ' ' + new Date(c.ts).toLocaleTimeString('ar-EG', {hour:'numeric', minute:'2-digit'}) : ''}: ${esc(qtyPlain(it, c.qty))} ✕</button>`).join('') + '<div class="muted" style="font-size:11.5px">جرد اتسجل غلط؟ دوس عليه وامسحه.</div>' : ''}
-      ${bs.length ? '<br><b>آخر شراء:</b> ' + bs.map(b => `${dayLabel(b.date)}: ${esc(qtyPlain(it, b.qty))} بـ ${fmt(b.amount)}ج`).join(' · ') : ''}
+      ${histHtml(it)}
       ${(() => { const ph = priceHistory(it); if(ph.length < 2) return ''; const ch = (ph[ph.length - 1].p / ph[0].p - 1) * 100;
         return `<br><b>💲 سعر الـ${esc(entryUnit(it))}:</b> ` + ph.slice(-6).map(x => `<span class="num">${fmtQ(x.p)}</span>`).join(' ← ') + ` <span class="tag ${ch > 3 ? 'bad' : ch < -3 ? 'good' : ''}">${ch > 0 ? '▲' : '▼'} ${Math.abs(Math.round(ch))}% من أول مرة</span>`; })()}</div>
       </div></details>
@@ -3941,6 +3961,11 @@ const ACT = {
   qaMulti:() => multiAdd({date:defaultDate()}),
   mlAdd:() => { mlRead(); ML.push({cat:(ML[ML.length - 1] || {}).cat || 'market'}); mlRender(); const a = document.querySelectorAll('#mlines [data-f="amount"]'); a[a.length - 1].focus(); },
   mlDel:(d) => { mlRead(); ML.splice(+d.i, 1); if(!ML.length) ML.push({cat:'market'}); mlRender(); },
+  histAll:(d, el) => { const it = byId(S.items, d.id); const box = el.closest('details'); if(!it || !box) return;
+    const w = document.createElement('div'); w.innerHTML = histHtml(it, true);
+    // استبدل السجل القديم (العنوان + الزرار + الصفوف + الملحوظة) بالكامل
+    const h = box.querySelector('[data-l="hist"]'); const nodes = [h.previousElementSibling, el, h, h.nextElementSibling].filter(Boolean);
+    nodes[0].before(...w.childNodes); nodes.forEach(n => n.remove()); },
   editTx:(d) => { const t = byId(S.tx, d.id); if(!t) return; if(t.type === 'xfer') transferForm(t.id); else quickAdd({tx:t}); },
   transfer:() => transferForm(),
   walletForm:(d) => walletForm(d.id),
