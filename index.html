@@ -532,7 +532,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-06 · 16:00';
+const APP_VER = '2026-11-07 · 21:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -1296,7 +1296,7 @@ function summaryRaw(p){
   o.bucketPlanned = sum(o.bucketLines, l => l.planned); o.bucketSpent = sum(o.bucketLines, l => l.spent);
   // المصروف اليومي (الفائض) = كل التصنيفات اللي مش في بند
   const varT = T.filter(t => t.type === 'exp' && t.cat !== 'house' && !t.dueId && !bkCat.has(t.cat));
-  o.varSpent = sum(varT, t => t.amount);
+  o.varSpent = sum(varT, t => t.amount); o.varT = varT;
   // مصروف مناسبات (أعياد ميلاد...) — متخطط له ومتشال، فمش بيتحسب على مصروف اليوم
   o.eventSpent = sum(T.filter(t => t.type === 'exp' && t.dueId), t => t.amount);
   o.varBudget = o.income - o.billPlanned - o.debtPlanned - o.savePlanned - o.reservePlanned - o.houseReserved;
@@ -2248,16 +2248,30 @@ function baseline(p, n){
   return {avg, n:per.length};
 }
 const pctTxt = (a, b) => b > 0 ? Math.round((a / b - 1) * 100) : null;
+/* أقل عدد أيام من الشهر الجاري قبل ما نتوقع آخر الشهر — أول أسبوعين فيهم شروة كبيرة واشتراكات وكده،
+   ولو ضربناهم في (30 ÷ الأيام اللي عدّت) الرقم بيطلع مضروب في 4 */
+const PROJ_MIN_DAYS = 14;
+/* توقع آخر الشهر: المصاريف الصغيرة بتتضرب في نسبة الأيام، والكبيرة (≥ big) بتتحسب زي ما هي
+   — اشتراك سنوي أو صدقة كبيرة أو كيس فاكهة بالجملة مش هيتكرر كل أسبوع */
+function projT(ts, o, big){
+  if(!o.isCurrent) return sum(ts, t => t.amount);
+  const scale = o.r.days / elapsedDays(o);
+  let small = 0, once = 0;
+  ts.forEach(t => t.amount >= big ? once += t.amount : small += t.amount);
+  return small * scale + once;
+}
+const txLabel = t => (t.itemId && (byId(S.items, t.itemId) || {}).name) || (t.note || '').split(' — ')[0].trim() || catOf(t.cat).name;
 
 function insights(p){
-  const o = summary(p), el = elapsedDays(o), scale = o.r.days / el;
+  const o = summary(p), el = elapsedDays(o);
   const by = expByCat(o.T), base = baseline(p, 3), out = [];
-  const proj = v => o.isCurrent ? v * scale : v;
-  const canProject = !o.isCurrent || el >= 7;
+  const canProject = !o.isCurrent || el >= PROJ_MIN_DAYS;
+  const catT = c => o.T.filter(t => t.type === 'exp' && t.cat === c);
+  const bTxt = base.n === 1 ? 'الشهر اللي فات' : `متوسطك (آخر ${base.n} شهور)`;
   // ١) ماشي إزاي مع ميزانية المصروف اليومي
   if(o.varBudget > 0){
-    if(o.isCurrent && el >= 3){
-      const pv = proj(o.varSpent);
+    if(o.isCurrent && el >= 7){
+      const pv = projT(o.varT, o, 500);
       if(pv > o.varBudget * 1.05) out.push(['bad', '🚨', `بالمعدل ده هتصرف حوالي <b class="num">${fmt(pv)}</b> مصروف يومي، والميزانية <b class="num">${fmt(o.varBudget)}</b>. عشان تلحق نفسك، صرفك لازم ينزل لـ <b class="num">${fmt(Math.max(0, o.perDay))}</b> في اليوم.`]);
       else if(pv < o.varBudget * 0.9) out.push(['good', '👏', `ماشي كويس: بالمعدل ده هيفضل معاك حوالي <b class="num">${fmt(o.varBudget - pv)}</b> من ميزانية المصروف آخر الشهر — حطهم للعربية أو الديون.`]);
     }else if(!o.isCurrent){
@@ -2272,11 +2286,27 @@ function insights(p){
     out.push(['bad', '⚖️', `الخطة الشهرية أكبر من دخلك بـ <b class="num">${fmt(-o.varBudget)}</b>، وكده مفيش فلوس متاحة للمصروف اليومي.${gTxt}`]);
   }
   // ٢) تصنيفات زادت أو قلّت عن متوسطك
-  if(base.n && canProject){
+  if(base.n){
     for(const c in by){
-      const cur = proj(by[c]), b = base.avg[c] || 0, ct = catOf(c), name = ct.icon + ' ' + esc(ct.name);
-      if(b > 0 && cur > b * 1.25 && cur - b >= 300) out.push(['warn', '📈', `${name} ${o.isCurrent ? 'ماشي على' : 'وصل'} <b class="num">${fmt(cur)}</b>، أعلى بـ <b class="num">${pctTxt(cur, b)}%</b> من متوسطك (<span class="num">${fmt(b)}</span>).`]);
-      else if(b > 0 && cur < b * 0.8 && b - cur >= 300) out.push(['good', '✅', `${name} أقل من متوسطك بـ <b class="num">${fmt(b - cur)}</b> — برافو.`]);
+      const b = base.avg[c] || 0; if(!(b > 0)) continue;
+      const ts = catT(c), act = by[c], ct = catOf(c), name = ct.icon + ' ' + esc(ct.name);
+      if(o.isCurrent){
+        // عدّى الشهر كله فعلًا — رقم حقيقي من غير أي توقع
+        if(act > b * 1.1 && act - b >= 300){
+          const top = ts.slice().sort((x, y) => y.amount - x.amount)[0];
+          const topTxt = top && top.amount >= act * 0.4 ? ` — أكبرها ${esc(txLabel(top))} (<span class="num">${fmt(top.amount)}</span>)` : '';
+          out.push(['warn', '📈', `${name}: صرفت فيه <b class="num">${fmt(act)}</b> لحد دلوقتي، أكتر من ${bTxt} كله (<span class="num">${fmt(b)}</span>)${topTxt}.`]);
+          continue;
+        }
+        // الاستوك بيتشرى بالجملة مرة أو مرتين في الشهر — ملوش معدل يومي يتضرب
+        if(c === 'house' || !canProject) continue;
+        const cur = projT(ts, o, Math.max(300, b * 0.25));
+        if(cur > b * 1.25 && cur - b >= 300) out.push(['warn', '📈', `${name} ماشي على حوالي <b class="num">${fmt(cur)}</b> آخر الشهر، أعلى بـ <b class="num">${pctTxt(cur, b)}%</b> من ${bTxt} (<span class="num">${fmt(b)}</span>).`]);
+        else if(el >= 20 && cur < b * 0.8 && b - cur >= 300) out.push(['good', '✅', `${name} ماشي أقل من ${bTxt} بحوالي <b class="num">${fmt(b - cur)}</b> — برافو.`]);
+      }else{
+        if(act > b * 1.25 && act - b >= 300) out.push(['warn', '📈', `${name} وصل <b class="num">${fmt(act)}</b>، أعلى بـ <b class="num">${pctTxt(act, b)}%</b> من ${bTxt} (<span class="num">${fmt(b)}</span>).`]);
+        else if(act < b * 0.8 && b - act >= 300) out.push(['good', '✅', `${name} أقل من ${bTxt} بـ <b class="num">${fmt(b - act)}</b> — برافو.`]);
+      }
     }
   }
   // حدود التصنيفات
@@ -2285,7 +2315,12 @@ function insights(p){
     else if(o.isCurrent && l.pace > l.c.limit * 1.05 && el >= 5) out.push(['warn', '🎯', `${esc(l.c.name)} ماشي بمعدل هيوصل <b class="num">${fmt(l.pace)}</b> والحد <span class="num">${fmt(l.c.limit)}</span> — هدّي شوية.`]);
   });
   // غلا الأسعار: أصناف آخر سعر ليها زاد 10% أو أكتر (اشتريتها الشهر ده)
-  const ups = S.items.map(it => ({it, pc:priceChange(it)})).filter(x => x.pc && x.pc.pct >= 10 && x.pc.date >= o.r.start && x.pc.date <= o.r.end);
+  const pcs = S.items.map(it => ({it, pc:priceChange(it)})).filter(x => x.pc && x.pc.date >= o.r.start && x.pc.date <= o.r.end);
+  const pcTxt = x => `${esc(x.it.name)} (${fmtQ(x.pc.from)} ← ${fmtQ(x.pc.to)} لل${esc(entryUnit(x.it))})`;
+  // زيادة أو نقص كبير قوي غالبًا مش غلا: صنف تاني أو حجم تاني اتسجل على نفس الاسم، أو الكمية اتكتبت غلط
+  const odd = pcs.filter(x => x.pc.pct >= 60 || x.pc.pct <= -40);
+  if(odd.length) out.push(['info', '🔍', `سعر ${odd.slice(0, 3).map(pcTxt).join('، ')} اتغير جامد عن آخر مرة — غالبًا ده صنف أو حجم مختلف اتسجل على نفس الاسم، أو الكمية اتكتبت غلط. لو صنف تاني اعمله صنف لوحده عشان الأسعار والاستهلاك يتحسبوا صح.`]);
+  const ups = pcs.filter(x => x.pc.pct >= 10 && x.pc.pct < 60);
   if(ups.length) out.push(['warn', '💲', `أسعار زادت: ${ups.slice(0, 4).map(x => `${esc(x.it.name)} <b class="num">+${Math.round(x.pc.pct)}%</b> (${fmtQ(x.pc.from)} ← ${fmtQ(x.pc.to)} لل${esc(entryUnit(x.it))})`).join('، ')}. قارن أماكن الشراء أو اشتري بالجملة.`]);
   // ٣) المصاريف الصغيرة المتكررة
   FLEX_CATS.forEach(c => {
@@ -2314,9 +2349,12 @@ function insights(p){
   const late = o.billLines.filter(l => l.due && l.paidT.length && l.paidT[0].date > l.due).length;
   if(late) out.push(['info', '⏰', `<b class="num">${late}</b> التزام اتدفع بعد ميعاده الشهر ده.`]);
   // ٩) اقتراح توفير وأثره على الهدف
-  const flex = Object.entries(by).filter(([c]) => FLEX_CATS.includes(c)).sort((a, b) => b[1] - a[1])[0];
-  if(flex && canProject){
-    const monthly = proj(flex[1]), cut = monthly * 0.25;
+  // الأكبر في المصاريف الصغيرة المتكررة بس — اشتراك سنوي أو حاجة كبيرة مرة واحدة مش "بند تتحكم فيه" كل شهر
+  const flex = canProject ? Object.keys(by).filter(c => FLEX_CATS.includes(c))
+    .map(c => { const big = Math.max(300, (base.avg[c] || 0) * 0.25); return [c, projT(catT(c).filter(t => t.amount < big), o, big)]; })
+    .sort((a, b) => b[1] - a[1])[0] : null;
+  if(flex){
+    const monthly = flex[1], cut = monthly * 0.25;
     if(cut >= 50){
       const g = S.goals.find(g => goalSaved(g) < (g.target || 0));
       const tail = g ? ` — يعني <b class="num">${fmt(cut * monthsUntil(g.deadline))}</b> زيادة لهدف ${esc(g.name)} لحد ${monthName(g.deadline)}.` : '.';

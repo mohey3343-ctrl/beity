@@ -1106,6 +1106,40 @@ await test('تقسيم المرتب: لله %، البيت والشغل مبلغ
   assert.ok(r.cat, 'تصنيف "صدقة ولله" اتعمل');
 });
 
+await test('نصايح التقرير أول الشهر: مفيش ضرب في 30÷الأيام، الحاجة اللي مرة واحدة مش "معدل"، والقفزة الكبيرة في السعر = صنف مختلف', async page => {
+  const r = await ev(page, () => {
+    // سبتمبر: خروجات 100 × 10، ومتنوع 100، واستوك 3000
+    for(let i = 1; i <= 10; i++) S.tx.push({ id: 'f' + i, ts: i, type: 'exp', cat: 'fun', amount: 100, date: '2026-09-' + String(i * 2).padStart(2, '0') });
+    S.tx.push({ id: 'o0', ts: 20, type: 'exp', cat: 'other', amount: 100, date: '2026-09-05' },
+      { id: 'h0', ts: 21, type: 'exp', cat: 'house', amount: 3000, date: '2026-09-03' });
+    // أكتوبر لحد يوم 9: اشتراك سنوي 700 + 100، خروجة كبيرة 400 + 200، وشروة استوك 2500
+    S.tx.push({ id: 'o1', ts: 30, type: 'exp', cat: 'other', amount: 700, date: '2026-10-01', note: 'الاشتراك السنوي' },
+      { id: 'o2', ts: 31, type: 'exp', cat: 'other', amount: 100, date: '2026-10-03' },
+      { id: 'f20', ts: 32, type: 'exp', cat: 'fun', amount: 400, date: '2026-10-02' },
+      { id: 'f21', ts: 33, type: 'exp', cat: 'fun', amount: 200, date: '2026-10-05' },
+      { id: 'h1', ts: 34, type: 'exp', cat: 'house', amount: 2500, date: '2026-10-02' });
+    // نفس الاسم بس منتج تاني: 70 ← 191 (مش غلا)، وصنف غلي فعلًا 100 ← 120
+    S.items.push({ id: 'n', name: 'جبنة', group: 'ألبان', base: 'PCS', pu: 'علبة', pf: 16, price: 4 },
+      { id: 'z', name: 'زيت', group: 'تموين', base: 'L', pu: 'زجاجة', pf: 1, price: 100 });
+    S.tx.push({ id: 'n1', ts: 40, type: 'exp', cat: 'house', itemId: 'n', qty: 16, amount: 70, date: '2026-09-11' },
+      { id: 'n2', ts: 41, type: 'exp', cat: 'house', itemId: 'n', qty: 16, amount: 191, date: '2026-10-04' },
+      { id: 'z1', ts: 42, type: 'exp', cat: 'house', itemId: 'z', qty: 1, amount: 100, date: '2026-09-11' },
+      { id: 'z2', ts: 43, type: 'exp', cat: 'house', itemId: 'z', qty: 1, amount: 120, date: '2026-10-04' });
+    save(); EPOCH++;
+    return insights(VIEW).map(a => a[1] + ' ' + a[2].replace(/<[^>]+>/g, ''));
+  });
+  const all = r.join('\n');
+  assert.ok(!/ماشي على/.test(all), all);                 // 9 أيام بس: مفيش توقع لآخر الشهر
+  assert.ok(!/استوك البيت.*(ماشي|أعلى)/.test(all), all); // الاستوك بالجملة مش بيتضرب
+  assert.ok(/متنوع: صرفت فيه 800 لحد دلوقتي، أكتر من الشهر اللي فات كله \(100\) — أكبرها الاشتراك السنوي/.test(all), all);
+  assert.ok(/🔍 سعر جبنة \(70 ← 191/.test(all), all);
+  assert.ok(/أسعار زادت: زيت \+20%/.test(all) && !/أسعار زادت:.*جبنة/.test(all), all);
+  // يوم 20: الخروجة الكبيرة (400) بتتحسب مرة، والباقي بس اللي بيتضرب → 400 + 200×31/20 = 710 (مش 600×31/20 = 930)
+  const p = await ev(page, () => { const o = summary(VIEW); o.isCurrent = true; const e = elapsedDays; elapsedDays = () => 20;
+    try{ return Math.round(projT(o.T.filter(t => t.cat === 'fun'), o, 300)); } finally { elapsedDays = e; } });
+  assert.equal(p, 710);
+});
+
 await test('"من بياناتي الحقيقية بس": التقدير اللي من الدماغ مش بيتحسب، واللي خلص من غير بيانات يدخل القايمة بعبوة', async page => {
   const r = await ev(page, () => {
     S.items.push({ id: 'g', name: 'تخمين', group: 'تموين', base: 'KG', pu: 'كيس', pf: 1, monthly: 5, price: 50 },
