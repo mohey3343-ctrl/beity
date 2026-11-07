@@ -1140,7 +1140,7 @@ await test('نصايح التقرير أول الشهر: مفيش ضرب في 30
   assert.equal(p, 710);
 });
 
-await test('سجل الصنف: الجرد والشراء في جدول واحد، الأقدم فوق، وزرار "اعرض الأقدم" بيجيب الباقي', async page => {
+await test('سجل الصنف: الجرد والشراء في جدول واحد، الأحدث فوق، وزرار "اعرض الأقدم" بيجيب الباقي', async page => {
   await ev(page, () => {
     S.items.push({ id: 'k', name: 'كابوتشا', group: 'تموين', base: 'PCS', pu: 'قطعة', pf: 1, price: 15 });
     for(let i = 0; i < 7; i++){
@@ -1154,11 +1154,11 @@ await test('سجل الصنف: الجرد والشراء في جدول واحد�
   const rows = () => page.$$eval('[data-l="hist"] .hist-row', a => a.map(r => r.dataset.k + ':' + r.dataset.id));
   const r1 = await rows();
   assert.equal(r1.length, 12);
-  assert.deepEqual(r1.slice(0, 2), ['b:b1', 'c:c1']);      // أقدم 2 (من الـ12 الأخيرة) فوق
-  assert.equal(r1[11], 'c:c6');                             // الأحدث تحت
+  assert.deepEqual(r1.slice(0, 2), ['c:c6', 'b:b6']);      // الأحدث فوق
+  assert.equal(r1[11], 'b:b1');                             // أقدم واحد من الـ12 تحت
   await page.click('[data-act="histAll"]');
   const r2 = await rows();
-  assert.equal(r2.length, 14); assert.equal(r2[0], 'b:b0');
+  assert.equal(r2.length, 14); assert.equal(r2[0], 'c:c6'); assert.equal(r2[13], 'b:b0');
   assert.equal(await page.$$eval('[data-l="hist"]', a => a.length), 1);
   assert.equal(await page.$('[data-act="histAll"]'), null);
   assert.ok(/خلص/.test(await page.textContent('[data-l="hist"]')));
