@@ -278,6 +278,24 @@ await test('جدول الأصناف: الفعلي (آخر جرد + اللي ات
   assert.deepEqual(r.veg, ['بصل']);
 });
 
+await test('المفروض خلص من الحسبة بس (لحمة لسه نص كيلو): "لسه زي ما هو" بيسجّل جرد بالفعلي ويشيله من "خلص"', async page => {
+  await ev(page, () => {
+    S.items.push({ id: 'm', name: 'لحمة', group: 'لحوم', base: 'KG', monthly: 6, price: 400 });
+    S.counts.push({ id: 'k', ts: Date.parse('2026-10-01T10:00:00'), itemId: 'm', date: '2026-10-01', qty: 0.5 });
+    save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'items' }); ACT.itemView({ v: 'table' });
+  });
+  assert.equal(await ev(page, () => estStock(byId(S.items, 'm'))), 0);
+  assert.ok(await ev(page, () => shopList().find(x => x.it.id === 'm').guessOut));
+  const cell = (await page.textContent('.itbl-r[data-id="m"]')).replace(/[\u2066\u2069]/g, '');
+  assert.ok(/المفروض خلص/.test(cell) && /✓ لسه/.test(cell), cell);
+  await page.click('.itbl-r[data-id="m"] [data-act="itemSame"]');
+  const r = await ev(page, () => [estStock(byId(S.items, 'm')), S.counts.filter(c => c.itemId === 'm').map(c => [c.date, c.qty]), shopList().find(x => x.it.id === 'm').guessOut]);
+  assert.ok(r[0] > 0.49, String(r[0]));
+  assert.deepEqual(r[1], [['2026-10-01', 0.5], ['2026-10-09', 0.5]]);
+  assert.equal(r[2], false);
+  assert.equal(await page.$('#sheetBody.open, .sheet.open'), null);   // ما فتحش الصنف (الزرار جوه الصف)
+});
+
 await test('هدف لسه ما بدأش: مش بيتخصم من خطة الشهر لحد شهر البداية', async page => {
   await ev(page, () => { ACT.tab({ tab: 'goals' }); goalForm(); });
   await fill(page, 'name', 'عربية'); await fill(page, 'target', 120000);

@@ -543,7 +543,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-09 · 20:00';
+const APP_VER = '2026-11-09 · 22:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -1033,7 +1033,9 @@ function shopList(days){
     // لسه استهلاكه مش معروف بس خلص (جرد صفر أو "خلص"): يدخل القايمة بعبوة واحدة عشان ما يتنسيش
     let unknownOut = false;
     if(!(rate.v > 0) && est != null && est <= 0.001){ qty = hasPack(it) ? it.pf : 1; unknownOut = true; }
-    return {it, rate, est, have, need, qty, cost:qty * (it.price || 0), unknownOut};
+    // الحسبة بس هي اللي بتقول خلص (مفيش جرد بصفر ولا "خلص") — ممكن يكون لسه عندك (زي اللحمة: بتتاكل على مرات مش كل يوم)
+    const a = est != null && est <= 0.001 ? actualInfo(it) : null, guessOut = !!(a && a.qty > 0.001);
+    return {it, rate, est, have, need, qty, cost:qty * (it.price || 0), unknownOut, guessOut, actual:a ? a.qty : null};
   });
 }
 
@@ -1842,6 +1844,10 @@ function qShort(it, q){
   if(!hasPack(it)) return `<span dir="ltr" style="unicode-bidi:isolate">${fmtQ(q)} ${BASES[baseOf(it)].en}</span>`;
   return `${fmtQ(q / it.pf)} <small class="muted">${esc(it.pu)}</small>`;
 }
+/* "المفروض خلص" من الحسبة بس: زرار "لسه زي ما هو" بيسجّل جرد بنفس الفعلي دلوقتي (والمعدل بيتصلّح لوحده)، و"خلص" لو خلص فعلًا */
+const sameBtns = (it, q) => `<div class="same-q" style="font-size:11px; margin-top:3px"><span class="muted">الحسبة بتقول خلص — لسه عندك؟</span><div style="display:flex; gap:4px; margin-top:3px; flex-wrap:wrap">
+  <button type="button" class="btn sm" style="padding:3px 8px; font-size:11.5px; min-height:0" data-act="itemSame" data-id="${it.id}">✓ لسه ${esc(qtyPlain(it, q))}</button>
+  <button type="button" class="btn sm ghost" style="padding:3px 8px; font-size:11.5px" data-act="itemOut" data-id="${it.id}">خلص فعلًا</button></div></div>`;
 const agoTxt = s => { const n = diffDays(s, todayS()); return n <= 0 ? 'النهاردة' : n === 1 ? 'امبارح' : `من ${n} يوم`; };
 function itemsTable(){
   const groups = groupsOf().sort((a, b) => a.localeCompare(b, 'ar'));
@@ -1865,7 +1871,7 @@ function itemsTable(){
   const row = r => {
     const {it, a, e, d} = r, cls = e == null ? '' : e <= 0.001 ? 'bad' : d == null ? '' : d <= 5 ? 'bad' : d <= 12 ? 'warn' : 'good';
     const act = a ? `${qShort(it, a.qty)}<div class="itbl-sub">${agoTxt(a.date)}${a.buys ? ' + شراء' : ''}</div>` : '<span class="muted" style="font-size:12px">ما اتجردش</span>';
-    const est = e == null ? '<span class="muted">—</span>' : e <= 0.001 ? '<span class="tag bad">خلص</span>'
+    const est = e == null ? '<span class="muted">—</span>' : e <= 0.001 ? (a && a.qty > 0.001 ? `<span class="tag warn" style="font-size:10.5px; padding:2px 6px">المفروض خلص؟</span><div style="display:flex; gap:4px; margin-top:4px"><button type="button" class="btn sm" style="padding:3px 7px; font-size:11px; min-height:0" data-act="itemSame" data-id="${it.id}" title="لسه ${esc(qtyPlain(it, a.qty))} زي ما هو">✓ لسه</button><button type="button" class="btn sm ghost" style="padding:3px 7px; font-size:11px; min-height:0" data-act="itemOut" data-id="${it.id}" title="خلص فعلًا">خلص</button></div>` : '<span class="tag bad">خلص</span>')
       : `${qShort(it, e)}<div class="itbl-sub ${cls}">${d == null ? '' : d >= 60 ? '+60 يوم' : Math.floor(d) + ' يوم'}</div>`;
     return `<div class="itbl-r" data-act="itemForm" data-id="${it.id}" data-nm="${esc(it.name)}" data-grp="${esc(r.grp)}" ${hideIf(!qHit('items', it))}>
       <span class="itbl-g">${esc(r.grp)}</span><span class="itbl-n">${esc(it.name)}${isPaused(it) ? ' <span class="tag warn">⏸️</span>' : ''}</span><span class="itbl-q">${act}</span><span class="itbl-q">${est}</span></div>`;
@@ -2060,7 +2066,7 @@ function shopHtml(){
       const tk = !!TICKS[x.it.id];
       return `<tr data-act="buyItem" data-id="${x.it.id}" class="${tk ? 'ticked' : ''}" style="cursor:pointer"><td><div style="display:flex; gap:8px; align-items:flex-start"><button type="button" class="tick ${tk ? 'on' : ''}" data-act="shopTick" data-id="${x.it.id}" aria-label="في السلة">${tk ? '✓' : ''}</button><div><b>${esc(x.it.name)}</b><div class="shop-acts"><button type="button" class="btn sm ghost pause-btn" data-act="itemPause" data-id="${x.it.id}">⏸️ مش دلوقتي</button>${hasPack(x.it) && !(baseOf(x.it) === 'PCS' && x.it.pf === 1) ? `<button type="button" class="btn sm ghost pause-btn" data-act="toggleLoose" data-id="${x.it.id}" title="بيتباع فرط ولا بالعبوة؟">${isLoose(x.it) ? '⚖️ فرط' : '📦 ' + esc(x.it.pu)}</button>` : ''}<button type="button" class="btn sm ghost pause-btn" data-act="itemForm" data-id="${x.it.id}" aria-label="تعديل الصنف">✏️</button></div></div></div></td>
       <td>${x.est == null ? '؟' : shopQty(x.it, x.have, sv, true)}</td><td>${shopQty(x.it, x.rate.v * (cover + (S.settings.bufferDays || 0)), sv, true)}</td>
-      <td><b>${shopQty(x.it, x.qty, sv, true)}</b>${alt ? `<div class="muted" style="font-size:11px">${alt}</div>` : ''}${x.unknownOut ? '<div class="muted" style="font-size:11px">خلص · استهلاكه لسه مش معروف</div>' : ''}</td>
+      <td><b>${shopQty(x.it, x.qty, sv, true)}</b>${alt ? `<div class="muted" style="font-size:11px">${alt}</div>` : ''}${x.unknownOut ? '<div class="muted" style="font-size:11px">خلص · استهلاكه لسه مش معروف</div>' : ''}${x.guessOut ? sameBtns(x.it, x.actual) : ''}</td>
       <td class="num">${x.it.price > 0 ? fmt(x.cost) : '<span class="neg">؟</span>'}</td></tr>`; })()).join('')}
     </table><div class="muted" style="margin-top:8px">دوس على أي صنف عشان تسجّل إنك اشتريته بالسعر الفعلي. ولو مش هتجيبه دلوقتي دوس ⏸️.</div></div>`;
   return h + pausedHtml();
@@ -4066,6 +4072,16 @@ const ACT = {
   },
   itemSort:(d) => { S.settings.itemSort = d.v; save(); },
   itemView:(d) => { S.settings.itemView = d.v; save(); },
+  // لسه زي ما هو: جرد دلوقتي = آخر جرد + اللي اتشرى بعده (يعني ما اتاكلش منه حاجة من ساعتها)
+  itemSame:(d) => {
+    const it = byId(S.items, d.id), a = it && actualInfo(it); if(!a) return;
+    const before = JSON.parse(JSON.stringify(S));
+    pushCounts([{it, qty:a.qty}], () => {
+      save(); const u = undoDiff(before);
+      toast(`${it.name}: اتسجّل جرد ${qtyPlain(it, a.qty).replace(/[\u2066\u2069]/g, '')} — المتوقع والاستهلاك اتصلّحوا`, false, 6000);
+      setTimeout(() => showUndo(u, 'اتسجّل الجرد'), 30);
+    });
+  },
   itblGroup:(d) => { ITBL.g = d.v; itblSave(); render(); },
   // دوسة على عنوان: يترتّب بيه؛ دوسة تانية على نفس العنوان: يعكس. "يكفي/المتوقع" بيبدأ بالأقل، الأسماء أ ← ي
   itblSort:(d) => { ITBL.dir = ITBL.k === d.v ? -ITBL.dir : 1; ITBL.k = d.v; itblSave(); render(); },
