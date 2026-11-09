@@ -175,10 +175,10 @@ await test('الجرد: اللي بيتكتب بيفضل لو خرجت، وقب�
 
 await test('الأصناف: البحث بيفضل شغال بعد تعديل صنف', async page => {
   await ev(page, () => { ACT.seedItems(); save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'items' }); });
-  const shown = () => ev(page, () => [...document.querySelectorAll('.list-item[data-nm]')].filter(r => r.offsetParent).map(r => r.dataset.nm));
+  const shown = () => ev(page, () => [...document.querySelectorAll('.itbl-r[data-nm]')].filter(r => r.offsetParent).map(r => r.dataset.nm));
   await page.fill('[data-q="items"]', 'رز');
   assert.deepEqual(await shown(), ['رز']);
-  await page.click('.list-item[data-nm="رز"]'); await submit(page);
+  await page.click('.itbl-r[data-nm="رز"]'); await submit(page);
   assert.deepEqual([await shown(), await page.inputValue('[data-q="items"]')], [['رز'], 'رز']);
   await page.fill('[data-q="items"]', '');
   assert.equal((await shown()).length, await ev(page, () => S.items.length));
@@ -228,7 +228,7 @@ await test('جركن بحجم مختلف للمرة دي بس، و"خلص" بض�
   await submit(page);
   assert.deepEqual(await ev(page, () => [S.tx.at(-1).qty, byId(S.items, 'sb').pf, (byId(S.items, 'sb').alt || []).length]), [4.6, 4, 0]);
   // خلص من قايمة الأصناف
-  await ev(page, () => { ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'items' }); });
+  await ev(page, () => { ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'items' }); ACT.itemView({ v: 'group' }); });
   await page.click('.list-item[data-id="sb"] [data-act="itemOut"]');
   // اتشرى النهارده → بيسأل: خلص بعد ما اشتريت (الجركن كله خلص)
   await page.click('#sheetBody input[name="when"][value="after"] + .evopt'); await submit(page);
@@ -245,12 +245,37 @@ await test('ترتيب الأصناف حسب الإتاحة: اللي خلص ا�
       { id: 'c', name: 'قرب', group: 'ج1', base: 'PCS', monthly: 30 }, { id: 'd', name: 'مش متجرد', group: 'ج2', base: 'PCS', monthly: 30 });
     S.counts.push({ id: 'k1', ts: 1, itemId: 'a', date: '2026-10-09', qty: 40 }, { id: 'k2', ts: 2, itemId: 'b', date: '2026-10-09', qty: 0 },
       { id: 'k3', ts: 3, itemId: 'c', date: '2026-10-09', qty: 3 });
-    save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'items' }); ACT.itemSort({ v: 'avail' });
+    save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'items' }); ACT.itemView({ v: 'avail' });
     return [...document.querySelectorAll('.list-item[data-nm]')].map(r => r.dataset.nm);
   });
   assert.deepEqual(order, ['خلصان', 'قرب', 'كتير', 'مش متجرد']);
   await page.fill('[data-q="items"]', 'ج2');   // البحث بالمجموعة شغال في القايمة الواحدة برضه
   assert.deepEqual(await ev(page, () => [...document.querySelectorAll('.list-item[data-nm]')].filter(r => r.offsetParent).map(r => r.dataset.nm)), ['خلصان', 'مش متجرد']);
+});
+
+await test('جدول الأصناف: الفعلي (آخر جرد + اللي اتشرى بعده) جنب المتوقع، الترتيب بالعناوين، والفلتر بالمجموعة', async page => {
+  const r = await ev(page, () => {
+    S.items.push({ id: 'z', name: 'زبادي', group: 'ألبان', base: 'PCS', pu: 'علبة', pf: 6, monthly: 30 },
+      { id: 'b', name: 'بصل', group: 'خضار', base: 'KG', monthly: 9 }, { id: 'n', name: 'نشا', group: 'تموين', base: 'KG' });
+    S.counts.push({ id: 'k1', ts: Date.parse('2026-10-05T10:00:00'), itemId: 'z', date: '2026-10-05', qty: 6 },
+      { id: 'k2', ts: Date.parse('2026-10-08T10:00:00'), itemId: 'b', date: '2026-10-08', qty: 3 });
+    S.tx.push({ id: 't1', ts: Date.parse('2026-10-07T10:00:00'), type: 'exp', cat: 'house', itemId: 'z', qty: 6, amount: 100, date: '2026-10-07' });
+    save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'items' });
+    const rows = () => [...document.querySelectorAll('.itbl-r')].map(x => x.dataset.nm);
+    const z = document.querySelector('.itbl-r[data-id="z"]').innerText;
+    const out = { def: rows(), z };
+    ACT.itblSort({ v: 'name' }); out.name = rows();
+    ACT.itblSort({ v: 'name' }); out.nameDesc = rows();
+    ACT.itblGroup({ v: 'خضار' }); out.veg = rows();
+    ACT.itblGroup({ v: '' }); ACT.itblSort({ v: 'est' });
+    return out;
+  });
+  assert.ok(/2 علبة/.test(r.z) && /من 4 يوم \+ شراء/.test(r.z), r.z);   // فعلي: 6 + 6 = 12 قطعة = 2 علبة
+  assert.ok(/1\.33 علبة/.test(r.z) && /[78] يوم/.test(r.z), r.z);        // متوقع: 12 − 4 يوم × قطعة = 8 قطع = 1.33 علبة، يكفي حوالي 8 يوم
+  assert.deepEqual(r.def, ['زبادي', 'بصل', 'نشا']);                        // بالمتوقع: اللي هيخلص الأول فوق (8 ثم 9 يوم)، واللي ملوش رقم تحت
+  assert.deepEqual(r.name, ['بصل', 'زبادي', 'نشا']);
+  assert.deepEqual(r.nameDesc, ['نشا', 'زبادي', 'بصل']);
+  assert.deepEqual(r.veg, ['بصل']);
 });
 
 await test('هدف لسه ما بدأش: مش بيتخصم من خطة الشهر لحد شهر البداية', async page => {

@@ -180,6 +180,17 @@
   .list-q.solo{margin:0 0 12px;}
   .list-q input{width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:12px; background:var(--solid, var(--card)); color:var(--ink); font-size:16px;}
   .group-h{font-size:12.5px; color:var(--soft); font-weight:700; margin:12px 0 2px;}
+  .itbl-h, .itbl-r{display:grid; grid-template-columns:minmax(52px, .9fr) minmax(70px, 1.5fr) minmax(64px, 1fr) minmax(64px, 1fr); gap:6px; align-items:center;}
+  .itbl-h{position:sticky; top:66px; z-index:2; background:var(--solid, var(--card)); border-bottom:1px solid var(--line); padding:6px 0;}
+  .itbl-th{background:none; border:none; color:var(--soft); font:inherit; font-size:12px; font-weight:700; text-align:start; padding:4px 0; cursor:pointer; white-space:nowrap;}
+  .itbl-th.on{color:var(--ink);}
+  .itbl-r{padding:8px 0; border-bottom:1px solid var(--line); cursor:pointer; font-size:13.5px; line-height:1.3;}
+  .itbl-r:last-child{border-bottom:none;}
+  .itbl-g{font-size:11.5px; color:var(--soft); overflow-wrap:anywhere;}
+  .itbl-n{font-weight:600; overflow-wrap:anywhere;}
+  .itbl-q{font-weight:700;}
+  .itbl-sub{font-size:11px; font-weight:400; color:var(--soft);}
+  .itbl-sub.bad{color:var(--bad);} .itbl-sub.warn{color:var(--warn);} .itbl-sub.good{color:var(--good);}
 
   /* ---------- TABBAR + FAB ---------- */
   .tabbar{position:fixed; bottom:0; left:0; right:0; z-index:30; display:flex; justify-content:center;
@@ -532,7 +543,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-08 · 19:30';
+const APP_VER = '2026-11-09 · 20:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -1802,10 +1813,11 @@ function itemsHtml(){
     ${incomplete ? `<div class="note">فيه <b>${incomplete}</b> صنف ناقصهم الاستهلاك الشهري أو السعر — دوس على الصنف وكمّله عشان الحسابات تبقى مظبوطة.</div>` : ''}
     <div class="muted" style="font-size:12px; margin-top:6px">💡 سجّل كل شراء ودوس "خلص" لما حاجة تخلص — الاستهلاك بيتحسب من كده لوحده.</div></div>
     ${searchBox('items', true)}`;
-  const srt = S.settings.itemSort === 'avail' ? 'avail' : 'group';
-  h += `<div class="seg" style="margin-bottom:12px"><button type="button" class="${srt === 'group' ? 'on' : ''}" data-act="itemSort" data-v="group">بالمجموعات</button><button type="button" class="${srt === 'avail' ? 'on' : ''}" data-act="itemSort" data-v="avail">حسب الإتاحة (اللي هيخلص الأول)</button></div>`;
+  const view = ['group', 'avail'].includes(S.settings.itemView) ? S.settings.itemView : 'table';
+  h += `<div class="seg" style="margin-bottom:12px">${[['table', '📋 جدول'], ['group', 'بالمجموعات'], ['avail', 'اللي هيخلص الأول']].map(([v, t]) => `<button type="button" class="${view === v ? 'on' : ''}" data-act="itemView" data-v="${v}">${t}</button>`).join('')}</div>`;
   const dl = it => { const d = daysLeft(it), e = estStock(it); return e == null ? 3e9 : e <= 0.001 ? -1 : d == null ? 2e9 : d; };
-  if(srt === 'avail'){
+  if(view === 'table') return h + itemsTable();
+  if(view === 'avail'){
     const items = S.items.slice().sort((a, b) => dl(a) - dl(b) || a.name.localeCompare(b.name, 'ar'));
     h += `<div class="card" style="padding-top:6px" data-g="" ${hideIf(!items.some(it => qHit('items', it)))}>${items.map(it => itemRowHtml(it, true)).join('')}</div>`;
   }else groupsOf().forEach(g => {
@@ -1813,6 +1825,57 @@ function itemsHtml(){
     h += `<div class="card" style="padding-top:6px" data-g="${esc(g)}" ${hideIf(!items.some(it => qHit('items', it)))}><div class="group-h">${esc(g)}</div>${items.map(it => itemRowHtml(it)).join('')}</div>`;
   });
   return h;
+}
+/* ===== جدول الأصناف: المجموعة · الصنف · الفعلي · المتوقع · يكفي — تدوس على أي عنوان يترتّب بيه، وتفلتر بالمجموعة =====
+   الفعلي = آخر جرد + اللي اشتريته بعده (أرقام حقيقية، من غير أي استهلاك متوقع)
+   المتوقع = نفس الكلام ناقص الاستهلاك من ساعتها بمعدلك */
+const ITBL_KEY = 'beity.itbl';
+let ITBL = (() => { try{ return Object.assign({k:'est', dir:1, g:''}, JSON.parse(localStorage.getItem(ITBL_KEY) || '{}')); }catch(e){ return {k:'est', dir:1, g:''}; } })();
+const itblSave = () => { try{ localStorage.setItem(ITBL_KEY, JSON.stringify(ITBL)); }catch(e){} };
+function actualInfo(it){
+  const cs = itemCounts(it), last = cs[cs.length - 1]; if(!last) return null;
+  const lk = evKey(last), B = itemBuys(it).filter(t => evKey(t) > lk);
+  return {qty:last.qty + sum(B, t => t.qty), date:last.date, buys:B.length};
+}
+/* كمية قصيرة للجدول: بالعبوة لو ليه عبوة (2 علبة، 0.5 كيس)، وإلا بالوحدة (0.9 KG) */
+function qShort(it, q){
+  if(!hasPack(it)) return `<span dir="ltr" style="unicode-bidi:isolate">${fmtQ(q)} ${BASES[baseOf(it)].en}</span>`;
+  return `${fmtQ(q / it.pf)} <small class="muted">${esc(it.pu)}</small>`;
+}
+const agoTxt = s => { const n = diffDays(s, todayS()); return n <= 0 ? 'النهاردة' : n === 1 ? 'امبارح' : `من ${n} يوم`; };
+function itemsTable(){
+  const groups = groupsOf().sort((a, b) => a.localeCompare(b, 'ar'));
+  if(ITBL.g && !groups.includes(ITBL.g)) ITBL.g = '';
+  const rows = S.items.filter(it => !ITBL.g || (it.group || 'تاني') === ITBL.g).map(it => {
+    const a = actualInfo(it), e = estStock(it), d = daysLeft(it), f = hasPack(it) ? it.pf : 1;
+    return {it, a, e, d, grp:it.group || 'تاني',
+      // المتوقع بيترتّب بـ"يكفي كام يوم" (اللي هيخلص الأول فوق) — الكميات بوحدات مختلفة ما ينفعش تتقارن ببعض
+      v:{grp:it.group || 'تاني', name:it.name, act:a ? a.qty / f : null, est:e == null ? null : e <= 0.001 ? -1 : d == null ? 9e9 : d}};
+  });
+  if(!['grp', 'name', 'act', 'est'].includes(ITBL.k)) ITBL.k = 'est';
+  const k = ITBL.k, dir = ITBL.dir;
+  rows.sort((x, y) => {
+    const a = x.v[k], b = y.v[k];
+    if(a == null && b == null) return x.it.name.localeCompare(y.it.name, 'ar');
+    if(a == null) return 1; if(b == null) return -1;   // اللي ملوش رقم دايمًا تحت
+    const c = typeof a === 'string' ? a.localeCompare(b, 'ar') : a - b;
+    return c * dir || x.it.name.localeCompare(y.it.name, 'ar');
+  });
+  const th = (key, t) => `<button type="button" class="itbl-th${k === key ? ' on' : ''}" data-act="itblSort" data-v="${key}">${t}${k === key ? (dir > 0 ? ' ▲' : ' ▼') : ''}</button>`;
+  const row = r => {
+    const {it, a, e, d} = r, cls = e == null ? '' : e <= 0.001 ? 'bad' : d == null ? '' : d <= 5 ? 'bad' : d <= 12 ? 'warn' : 'good';
+    const act = a ? `${qShort(it, a.qty)}<div class="itbl-sub">${agoTxt(a.date)}${a.buys ? ' + شراء' : ''}</div>` : '<span class="muted" style="font-size:12px">ما اتجردش</span>';
+    const est = e == null ? '<span class="muted">—</span>' : e <= 0.001 ? '<span class="tag bad">خلص</span>'
+      : `${qShort(it, e)}<div class="itbl-sub ${cls}">${d == null ? '' : d >= 60 ? '+60 يوم' : Math.floor(d) + ' يوم'}</div>`;
+    return `<div class="itbl-r" data-act="itemForm" data-id="${it.id}" data-nm="${esc(it.name)}" data-grp="${esc(r.grp)}" ${hideIf(!qHit('items', it))}>
+      <span class="itbl-g">${esc(r.grp)}</span><span class="itbl-n">${esc(it.name)}${isPaused(it) ? ' <span class="tag warn">⏸️</span>' : ''}</span><span class="itbl-q">${act}</span><span class="itbl-q">${est}</span></div>`;
+  };
+  const cnt = g => S.items.filter(it => (it.group || 'تاني') === g).length;
+  return `<div class="chips">${[['', 'الكل', S.items.length]].concat(groups.map(g => [g, g, cnt(g)])).map(([v, t, n]) => `<button type="button" class="chip ${ITBL.g === v ? 'on' : ''}" data-act="itblGroup" data-v="${esc(v)}">${esc(t)} <span class="num" style="opacity:.7">${n}</span></button>`).join('')}</div>
+    <div class="card itbl" style="padding:4px 10px" data-g="">
+      <div class="itbl-h">${th('grp', 'المجموعة')}${th('name', 'الصنف')}${th('act', 'الفعلي')}${th('est', 'المتوقع')}</div>
+      ${rows.map(row).join('') || '<div class="muted" style="padding:12px 0">مفيش أصناف في المجموعة دي.</div>'}</div>
+    <div class="muted" style="font-size:11.5px; margin-top:-4px">الفعلي = آخر جرد + اللي اشتريته بعده. المتوقع = الفعلي ناقص استهلاكك من ساعتها، وتحته يكفي كام يوم. دوس على أي عنوان يترتّب بيه (ودوسة تانية تعكس)، ودوس على الصنف تفتحه.</div>`;
 }
 function itemRowHtml(it, showGroup){
   const r = dailyRate(it), e = estStock(it), d = daysLeft(it);
@@ -4002,6 +4065,10 @@ const ACT = {
     pushCounts([{it, qty:0}], done);
   },
   itemSort:(d) => { S.settings.itemSort = d.v; save(); },
+  itemView:(d) => { S.settings.itemView = d.v; save(); },
+  itblGroup:(d) => { ITBL.g = d.v; itblSave(); render(); },
+  // دوسة على عنوان: يترتّب بيه؛ دوسة تانية على نفس العنوان: يعكس. "يكفي/المتوقع" بيبدأ بالأقل، الأسماء أ ← ي
+  itblSort:(d) => { ITBL.dir = ITBL.k === d.v ? -ITBL.dir : 1; ITBL.k = d.v; itblSave(); render(); },
   delCount:(d) => {
     const c = byId(S.counts, d.id); if(!c) return;
     const it = byId(S.items, c.itemId);
