@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#070B1A">
+<meta name="theme-color" content="#EEF1FA">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="بيتي">
@@ -488,7 +488,144 @@
   .catpick span{background:rgba(255,255,255,.06); border:1px solid var(--glass-b); border-radius:16px; min-height:68px;}
   .catpick input:checked + span{background:linear-gradient(135deg,rgba(124,92,255,.5),rgba(34,211,238,.3)); border-color:rgba(255,255,255,.35); box-shadow:none;}
   .switch input{accent-color:#7C5CFF;}
+  .hero-cash{background:rgba(255,255,255,.12); color:#fff; border-color:rgba(255,255,255,.2);}
 </style>
+<!-- ===================== زجاج فاتح (الافتراضي) — بيتحط فوق الليلي، ولو اخترت "ليلي" من الإعدادات بيتقفل ===================== -->
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style id="skin-glass">
+  :root, :root:not([data-theme="light"]), :root[data-theme="light"]{
+    --bg:#EEF1FA; --card:rgba(255,255,255,.58); --card-2:rgba(255,255,255,.45);
+    --solid:#FFFFFF; --solid-2:#F6F7FC;
+    --ink:#141833; --soft:#474C6B; --muted:#5F6482; --line:rgba(20,24,51,.09);
+    --glass-b:rgba(255,255,255,.95);
+    --night:#3A3FB8; --night-2:#5B61E0;
+    --gold:#3A3FB8; --gold-2:#5B61E0;
+    --grad:linear-gradient(90deg,#3A3FB8,#5B61E0);
+    --grad-text:linear-gradient(90deg,#141833,#141833);
+    --good:#0B7A48; --good-bg:rgba(16,185,129,.14);
+    --bad:#C02B2B;  --bad-bg:rgba(239,68,68,.12);
+    --warn:#9A5800; --warn-bg:rgba(245,158,11,.16);
+    --blue:#1D5FA8; --blue-bg:rgba(59,130,246,.10);
+    --purple:#3A3FB8; --purple-bg:rgba(58,63,184,.10);
+    --radius:24px; --shadow:0 10px 30px rgba(58,63,184,.08);
+    --c1:#3A3FB8; --c2:#0E9AAB; --c3:#D0367F; --c4:#C77700; --c5:#0E9466; --c6:#2563EB; --c-other:#A3A7BF;
+    color-scheme:light;
+  }
+  html{background:#EEF1FA;}
+  body{color:var(--ink); font-family:'IBM Plex Sans Arabic', system-ui, sans-serif;}
+  body::before{
+    background:
+      radial-gradient(340px 340px at 0% 0%, rgba(165,180,252,.85), transparent 70%),
+      radial-gradient(300px 300px at 100% 30%, rgba(249,168,212,.70), transparent 70%),
+      radial-gradient(340px 340px at 10% 90%, rgba(153,246,228,.70), transparent 70%),
+      #EEF1FA;}
+  h1,h2,h3{font-family:'IBM Plex Sans Arabic', sans-serif; font-weight:700;}
+  .num{font-family:'IBM Plex Sans Arabic', sans-serif; font-variant-numeric:tabular-nums; font-weight:700;}
+  select option{background:#FFFFFF; color:var(--ink);}
+
+  /* الهيدر */
+  .hero{color:var(--ink);}
+  .icon-btn,.month-nav button{color:var(--ink); background:rgba(255,255,255,.55); border:1px solid var(--glass-b);}
+  .month-nav{background:rgba(255,255,255,.55); border:1px solid var(--glass-b);}
+  .month-nav button{background:transparent; border:0;}
+  .month-label small,.sync-dot{color:var(--soft);}
+  .hero-main{background:var(--card); border:1px solid var(--glass-b); box-shadow:0 16px 40px rgba(58,63,184,.12);
+    backdrop-filter:blur(24px) saturate(160%); -webkit-backdrop-filter:blur(24px) saturate(160%);}
+  .hero-main .lbl{color:var(--soft);}
+  .hero-main .big{background:none; color:var(--ink); -webkit-background-clip:border-box; background-clip:border-box;}
+  .hero-main .big.neg{background:none; color:var(--bad);}
+  .hero-pills span{background:rgba(255,255,255,.6); border:1px solid rgba(255,255,255,.95); color:var(--soft);}
+  .hero-pills b{color:var(--ink);}
+  .hero-pills span:nth-child(3){background:#3A3FB8; border-color:#3A3FB8; color:#E4E5FB;}
+  .hero-pills span:nth-child(3) b{color:#FFFFFF;}
+  .hero-pills + .hero-pills span,.hero-pills + .hero-pills span:nth-child(3){background:rgba(255,255,255,.6); border-color:rgba(255,255,255,.95); color:var(--soft);}
+  .hero-pills + .hero-pills span b{color:var(--ink);}
+  .hero-cash{background:rgba(255,255,255,.6) !important; color:var(--ink) !important; border-color:var(--glass-b) !important;}
+
+  /* الكروت */
+  .card,.stat{background:var(--card); border:1px solid var(--glass-b); box-shadow:var(--shadow);
+    backdrop-filter:blur(22px) saturate(150%); -webkit-backdrop-filter:blur(22px) saturate(150%);}
+  .today .big{background:none; color:var(--ink); -webkit-background-clip:border-box; background-clip:border-box;}
+  .plan-line.total{background:rgba(58,63,184,.10); border:1px solid rgba(58,63,184,.18);}
+
+  /* الشرايط */
+  .bar{background:rgba(20,24,51,.08);}
+  .bar > i{background:#3A3FB8;}
+  .bar.good > i{background:#10A36A;}
+  .bar.bad > i{background:#E04848;}
+  .bar.warn > i{background:#E39A10;}
+  .bar.gold > i{background:#3A3FB8;}
+  .bar.purple > i{background:#7C5CCF;}
+
+  /* الأزرار */
+  .btn{background:rgba(255,255,255,.65); border:1px solid rgba(20,24,51,.10); color:var(--ink);}
+  .btn.primary,.btn.dark{background:#141833; color:#FFFFFF; border:0; box-shadow:0 10px 24px rgba(20,24,51,.18);}
+  .btn.good{background:var(--good-bg); color:var(--good); border-color:transparent;}
+  .btn.danger{background:var(--bad-bg); color:var(--bad); border-color:transparent;}
+  .btn.ghost{background:transparent;}
+
+  /* Segments / Chips / Tags */
+  .seg{background:rgba(255,255,255,.55); border:1px solid var(--glass-b);}
+  .seg button{color:var(--soft);}
+  .seg button.on{background:#FFFFFF; color:var(--ink); box-shadow:0 2px 10px rgba(20,24,51,.10);}
+  .seg input[type="radio"]:checked + .evopt{background:#FFFFFF; color:var(--ink); box-shadow:0 2px 10px rgba(20,24,51,.10);}
+  .chip{background:rgba(255,255,255,.6); border:1px solid var(--glass-b); color:var(--ink);}
+  .chip.on{background:#3A3FB8; border-color:#3A3FB8; color:#FFFFFF;}
+  .tag{background:rgba(20,24,51,.06); color:var(--soft);}
+  .tag.good{background:var(--good-bg); color:var(--good);}
+  .tag.bad{background:var(--bad-bg); color:var(--bad);}
+  .tag.warn{background:var(--warn-bg); color:var(--warn);}
+
+  /* القوايم */
+  .li-ic{background:rgba(58,63,184,.10); border:1px solid rgba(255,255,255,.9);}
+
+  /* التنبيهات */
+  .alert.warn{background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.35); color:#7A4600;}
+  .alert.bad{background:rgba(239,68,68,.10); border:1px solid rgba(239,68,68,.30); color:#9B1C1C;}
+  .alert.info{background:rgba(59,130,246,.09); border:1px solid rgba(59,130,246,.25); color:#1E4C86;}
+  .alert.good{background:rgba(16,185,129,.11); border:1px solid rgba(16,185,129,.30); color:#0B5E39;}
+  .note{background:rgba(255,255,255,.55); border:1px solid var(--glass-b); color:var(--soft);}
+  .note b{color:var(--ink);}
+
+  /* الأهداف / الرسوم */
+  .ring{background:conic-gradient(#3A3FB8 calc(var(--p)*1%), rgba(20,24,51,.08) 0);}
+  .ring b{background:#FFFFFF;}
+  .lg-row.on{background:rgba(58,63,184,.08);}
+  .fc-tip,.toast,.undo-bar{background:#141833; color:#FFFFFF; border:0;}
+  .undo-bar button{background:#FFFFFF; color:#141833;}
+  .pre{background:rgba(20,24,51,.04);}
+
+  /* شريط التنقل + زرار الإضافة */
+  .tabbar{background:rgba(255,255,255,.62); border:1px solid var(--glass-b); box-shadow:0 12px 30px rgba(20,24,51,.12);
+    backdrop-filter:blur(24px) saturate(160%); -webkit-backdrop-filter:blur(24px) saturate(160%);}
+  .tabbar button{color:var(--soft);}
+  .tabbar button.active{color:#3A3FB8;}
+  .tabbar button.active svg{filter:none;}
+  .tabbar button.active .tb-ic{background:rgba(58,63,184,.12);}
+  @media (prefers-color-scheme: dark){ .tabbar button.active{color:#3A3FB8;} }
+  .fab,.tabbar .fab{background:#141833 !important; color:#FFFFFF !important; border:0 !important; box-shadow:0 10px 24px rgba(20,24,51,.28) !important;}
+
+  /* الشيت */
+  .sheet-wrap{background:rgba(20,24,51,.30);}
+  .sheet{background:rgba(248,249,255,.92); border:1px solid var(--glass-b);}
+  .sheet-head .x{background:rgba(20,24,51,.05); border:1px solid rgba(20,24,51,.08); color:var(--ink);}
+  .fld input,.fld select,.fld textarea,.jard-row input,.jard-row select,.ml-row select,.ml-row input{
+    background:#FFFFFF; border:1px solid rgba(20,24,51,.12); color:var(--ink);}
+  .ml-row{background:rgba(255,255,255,.6);}
+  .fld input:focus,.fld select:focus{outline:2px solid #3A3FB8;}
+  .fld input.amount{background:transparent; background-image:none; color:var(--ink); -webkit-background-clip:border-box; background-clip:border-box; caret-color:#3A3FB8; border:0;}
+  .catpick span{background:#FFFFFF; border:1px solid rgba(20,24,51,.10);}
+  .catpick input:checked + span{background:rgba(58,63,184,.10); border-color:#3A3FB8; box-shadow:0 0 0 1px #3A3FB8 inset;}
+  .switch input{accent-color:#3A3FB8;}
+  .itbl-h{background:rgba(248,249,255,.96);}
+</style>
+<script>
+  /* الشكل: "زجاج فاتح" (الافتراضي) أو "ليلي" — بيتقري قبل ما الصفحة تترسم عشان مايحصلش وميض */
+  (function(){ var k = 'glass'; try{ k = localStorage.getItem('beity.skin') || 'glass'; }catch(e){}
+    if(k === 'night') document.getElementById('skin-glass').disabled = true;
+    document.documentElement.dataset.skin = k;
+    var m = document.querySelector('meta[name="theme-color"]'); if(m) m.content = k === 'night' ? '#070B1A' : '#EEF1FA'; })();
+</script>
 </head>
 <body>
 
@@ -543,7 +680,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-09 · 22:00';
+const APP_VER = '2026-11-10 · 00:30';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -1406,7 +1543,7 @@ function renderHero(){
     ${b.known
       ? `<div class="big num ${b.value < 0 ? 'neg' : ''}">${fmt(b.value)}</div>
          ${res > 0 ? `<div class="hero-total">💰 معاك كله (شامل المحجوز) <b class="num">${fmt(all)}</b></div>` : ''}
-         <div style="margin:-2px 0 10px"><button class="btn sm" style="background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.2)" data-act="cashCount">جرد الفلوس · آخر جرد ${dayLabel(b.last.date)}</button></div>`
+         <div style="margin:-2px 0 10px"><button class="btn sm hero-cash" data-act="cashCount">جرد الفلوس · آخر جرد ${dayLabel(b.last.date)}</button></div>`
       : `<div style="margin:8px 0 12px"><button class="btn primary" data-act="cashCount">اكتب رصيدك الحالي</button></div>`}
     <div class="hero-pills">
       <span>دخل نزل <b class="num">${fmt(o.incReceived)}</b></span>
@@ -1848,6 +1985,14 @@ function qShort(it, q){
 const sameBtns = (it, q) => `<div class="same-q" style="font-size:11px; margin-top:3px"><span class="muted">الحسبة بتقول خلص — لسه عندك؟</span><div style="display:flex; gap:4px; margin-top:3px; flex-wrap:wrap">
   <button type="button" class="btn sm" style="padding:3px 8px; font-size:11.5px; min-height:0" data-act="itemSame" data-id="${it.id}">✓ لسه ${esc(qtyPlain(it, q))}</button>
   <button type="button" class="btn sm ghost" style="padding:3px 8px; font-size:11.5px" data-act="itemOut" data-id="${it.id}">خلص فعلًا</button></div></div>`;
+/* الشكل على الجهاز ده (مش بيتزامن — كل موبايل بشكله) */
+const skinNow = () => document.documentElement.dataset.skin === 'night' ? 'night' : 'glass';
+function setSkin(k){
+  try{ localStorage.setItem('beity.skin', k); }catch(e){}
+  document.documentElement.dataset.skin = k;
+  const el = document.getElementById('skin-glass'); if(el) el.disabled = k === 'night';
+  const m = document.querySelector('meta[name="theme-color"]'); if(m) m.content = k === 'night' ? '#070B1A' : '#EEF1FA';
+}
 const agoTxt = s => { const n = diffDays(s, todayS()); return n <= 0 ? 'النهاردة' : n === 1 ? 'امبارح' : `من ${n} يوم`; };
 function itemsTable(){
   const groups = groupsOf().sort((a, b) => a.localeCompare(b, 'ar'));
@@ -2784,6 +2929,8 @@ PAGES.settings = function(){
   const s = S.settings;
   let h = `<div class="row" style="margin-bottom:10px"><h2 style="font-size:19px">⚙︎ الإعدادات</h2><button class="btn sm" data-act="tab" data-tab="home">رجوع</button></div>
     <div class="muted" style="margin:-4px 2px 10px">نسخة التطبيق: <b class="num">${APP_VER}</b></div>`;
+  const sk = skinNow();
+  h += `<div class="card"><h3>🎨 الشكل</h3><div class="seg" style="margin:0">${[['glass', 'زجاج فاتح'], ['night', 'ليلي']].map(([v, t]) => `<button type="button" class="${sk === v ? 'on' : ''}" data-act="skin" data-v="${v}">${t}</button>`).join('')}</div></div>`;
   h += `<div class="card"><h3>💰 مصادر الدخل الشهرية <button class="btn sm dark" data-act="incomeForm">+ إضافة</button></h3>
     ${S.incomes.length ? S.incomes.map(i => `<div class="list-item" data-act="incomeForm" data-id="${i.id}"><div class="li-ic">💰</div><div class="li-main"><div class="li-title">${esc(i.name)}</div><div class="li-sub">بينزل يوم ${i.day || 1}</div></div><div class="li-end">${money(i.amount)}</div></div>`).join('') : '<div class="muted">لسه ما سجلتش مرتبك.</div>'}
   </div>`;
@@ -4072,6 +4219,7 @@ const ACT = {
   },
   itemSort:(d) => { S.settings.itemSort = d.v; save(); },
   itemView:(d) => { S.settings.itemView = d.v; save(); },
+  skin:(d) => { setSkin(d.v); render(); },
   // لسه زي ما هو: جرد دلوقتي = آخر جرد + اللي اتشرى بعده (يعني ما اتاكلش منه حاجة من ساعتها)
   itemSame:(d) => {
     const it = byId(S.items, d.id), a = it && actualInfo(it); if(!a) return;
