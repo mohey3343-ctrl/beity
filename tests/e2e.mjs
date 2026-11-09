@@ -278,22 +278,185 @@ await test('جدول الأصناف: الفعلي (آخر جرد + اللي ات
   assert.deepEqual(r.veg, ['بصل']);
 });
 
-await test('المفروض خلص من الحسبة بس (لحمة لسه نص كيلو): "لسه زي ما هو" بيسجّل جرد بالفعلي ويشيله من "خلص"', async page => {
+await test('المفروض خلص من الحسبة بس (جبنة لسه نص كيلو): "لسه زي ما هو" بيسجّل جرد بالفعلي ويشيله من "خلص"', async page => {
   await ev(page, () => {
-    S.items.push({ id: 'm', name: 'لحمة', group: 'لحوم', base: 'KG', monthly: 6, price: 400 });
+    S.items.push({ id: 'm', name: 'جبنة رومي', group: 'ألبان', base: 'KG', monthly: 6, price: 400 });
     S.counts.push({ id: 'k', ts: Date.parse('2026-10-01T10:00:00'), itemId: 'm', date: '2026-10-01', qty: 0.5 });
     save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'items' }); ACT.itemView({ v: 'table' });
   });
   assert.equal(await ev(page, () => estStock(byId(S.items, 'm'))), 0);
   assert.ok(await ev(page, () => shopList().find(x => x.it.id === 'm').guessOut));
   const cell = (await page.textContent('.itbl-r[data-id="m"]')).replace(/[\u2066\u2069]/g, '');
-  assert.ok(/المفروض خلص/.test(cell) && /✓ لسه/.test(cell), cell);
+  assert.ok(/المفروض خلص/.test(cell) && /لسه/.test(cell), cell);
   await page.click('.itbl-r[data-id="m"] [data-act="itemSame"]');
   const r = await ev(page, () => [estStock(byId(S.items, 'm')), S.counts.filter(c => c.itemId === 'm').map(c => [c.date, c.qty]), shopList().find(x => x.it.id === 'm').guessOut]);
   assert.ok(r[0] > 0.49, String(r[0]));
   assert.deepEqual(r[1], [['2026-10-01', 0.5], ['2026-10-09', 0.5]]);
   assert.equal(r[2], false);
   assert.equal(await page.$('#sheetBody.open, .sheet.open'), null);   // ما فتحش الصنف (الزرار جوه الصف)
+});
+
+await test('بيتاكل على مرات (لحمة): الموجود يفضل زي آخر جرد + الشراء، و"استخدمت" بتنقّص، والمعدل لسه بيتحسب', async page => {
+  const r = await ev(page, () => {
+    S.items.push({ id: 'm', name: 'لحمة', group: 'لحوم', base: 'KG', monthly: 6, price: 400 }, { id: 'z', name: 'زيت', group: 'تموين', base: 'L', monthly: 6, price: 60 });
+    S.counts.push({ id: 'k', ts: Date.parse('2026-09-20T10:00:00'), itemId: 'm', date: '2026-09-20', qty: 2 }, { id: 'k2', ts: Date.parse('2026-10-01T10:00:00'), itemId: 'm', date: '2026-10-01', qty: 0.5 },
+      { id: 'kz', ts: Date.parse('2026-10-01T10:00:00'), itemId: 'z', date: '2026-10-01', qty: 0.5 });
+    S.tx.push({ id: 'b', ts: Date.parse('2026-10-03T10:00:00'), type: 'exp', cat: 'house', itemId: 'm', qty: 1, amount: 400, date: '2026-10-03' });
+    save(); EPOCH++;
+    return [isLumpy(byId(S.items, 'm')), isLumpy(byId(S.items, 'z')), estStock(byId(S.items, 'm')), estStock(byId(S.items, 'z')), dailyRate(byId(S.items, 'm')).src, shopList().find(x => x.it.id === 'm').guessOut];
+  });
+  assert.deepEqual(r, [true, false, 1.5, 0, 'learned', false]);   // 0.5 + 1 من غير طرح؛ الزيت العادي اتطرح لحد ما خلص
+  await ev(page, () => useItem('m'));
+  await page.click('#sheetBody [data-act="useQuick"][data-q="0.5"]'); await submit(page);
+  assert.deepEqual(await ev(page, () => [estStock(byId(S.items, 'm')), S.counts.filter(c => c.itemId === 'm').at(-1).qty]), [1, 1]);
+  // تقدر تقفلها من شاشة الصنف
+  await ev(page, () => itemForm('m'));
+  await page.evaluate(() => document.querySelectorAll('#sheetBody details').forEach(d => d.open = true));
+  assert.equal(await page.isChecked('#sheetBody [name="lumpy"]'), true);
+  await page.uncheck('#sheetBody [name="lumpy"]'); await submit(page);
+  assert.deepEqual(await ev(page, () => [byId(S.items, 'm').lumpy, isLumpy(byId(S.items, 'm'))]), [false, false]);
+});
+
+await test('جرد سريع على الرئيسية: بيختار اللي محتاج تأكيد، ودوسة واحدة بتسجّل جرد وتشيله من القايمة', async page => {
+  await ev(page, () => {
+    const D = s => Date.parse(s);
+    S.items.push({ id: 'g', name: 'جبنة', group: 'ألبان', base: 'KG', monthly: 6 },      // الحسبة بتقول خلص
+      { id: 'm', name: 'فراخ', group: 'لحوم', base: 'KG', monthly: 4 },                   // على مرات وبقاله أسبوع
+      { id: 's', name: 'سكر', group: 'تموين', base: 'KG', monthly: 3 },                   // قرب يخلص
+      { id: 'n', name: 'نشا', group: 'تموين', base: 'KG' },                               // ما اتجردش
+      { id: 'ok', name: 'رز', group: 'تموين', base: 'KG', monthly: 3 });                  // لسه متجرد امبارح
+    S.counts.push({ id: 'c1', ts: D('2026-10-01T10:00:00'), itemId: 'g', date: '2026-10-01', qty: 0.5 }, { id: 'c2', ts: D('2026-10-01T10:00:00'), itemId: 'm', date: '2026-10-01', qty: 2 },
+      { id: 'c3', ts: D('2026-10-04T10:00:00'), itemId: 's', date: '2026-10-04', qty: 0.7 }, { id: 'c4', ts: D('2026-10-08T10:00:00'), itemId: 'ok', date: '2026-10-08', qty: 5 });
+    save(); ACT.tab({ tab: 'home' });
+  });
+  const rows = () => page.$$eval('[data-l="quickCheck"] .qc-row', a => a.map(r => r.dataset.qc + ':' + r.dataset.why));
+  assert.deepEqual(await rows(), ['g:guess', 'm:lumpy', 's:soon', 'n:never']);
+  await page.click('.qc-row[data-qc="s"] [data-act="itemConfirm"]');            // "صح": جرد بالمتوقع
+  const c = await ev(page, () => S.counts.filter(x => x.itemId === 's').map(x => [x.date, x.qty]));
+  assert.equal(c.length, 2); assert.equal(c[1][0], '2026-10-09'); assert.ok(c[1][1] > 0.1 && c[1][1] < 0.3, String(c[1][1]));
+  await page.click('.qc-row[data-qc="g"] [data-act="itemSame"]');               // "لسه": جرد بالفعلي
+  await page.click('.qc-row[data-qc="m"] [data-act="itemOut"]');                // خلص
+  assert.deepEqual(await rows(), ['n:never']);
+  assert.deepEqual(await ev(page, () => [estStock(byId(S.items, 'g')), estStock(byId(S.items, 'm'))]), [0.5, 0]);
+  await page.click('[data-act="qcHide"]');
+  assert.equal(await page.$('[data-l="quickCheck"]'), null);
+});
+
+await test('كمّل الأسعار: الأصناف اللي من غير سعر في شاشة واحدة، والسعر بيتحفظ بالعبوة', async page => {
+  await ev(page, () => {
+    S.items.push({ id: 'a', name: 'زبادي', group: 'ألبان', base: 'PCS', pu: 'علبة', pf: 6 }, { id: 'b', name: 'رز', group: 'تموين', base: 'KG' }, { id: 'c', name: 'سكر', group: 'تموين', base: 'KG', price: 30 });
+    save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'items' });
+  });
+  assert.match(await page.textContent('[data-act="pricesForm"]'), /2/);
+  await page.click('[data-act="pricesForm"]');
+  assert.equal(await page.$('#sheetBody [name="p_c"]'), null);        // اللي ليه سعر مش في الشاشة
+  await fill(page, 'p_a', 18); await submit(page);                     // الرز اتساب فاضي
+  assert.deepEqual(await ev(page, () => [byId(S.items, 'a').price, byId(S.items, 'b').price || 0]), [3, 0]);   // 18 للعلبة = 3 للقطعة
+});
+
+await test('جدول الأصناف: زرار "خلص" في الصف من غير ما تفتح الصنف', async page => {
+  await ev(page, () => {
+    S.items.push({ id: 'a', name: 'سكر', group: 'تموين', base: 'KG', monthly: 3 });
+    S.counts.push({ id: 'c', ts: Date.parse('2026-10-08T10:00:00'), itemId: 'a', date: '2026-10-08', qty: 2 });
+    save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'items' }); ACT.itemView({ v: 'table' });
+  });
+  await page.click('.itbl-r[data-id="a"] .itbl-out');
+  assert.equal(await ev(page, () => estStock(byId(S.items, 'a'))), 0);
+  assert.equal(await page.$('.itbl-r[data-id="a"] .itbl-out'), null);
+  assert.equal(await page.isVisible('#sheetBody [data-act="buyItem"]'), false);   // ما فتحش شاشة الصنف
+});
+
+await test('السعر حسب المكان: آخر سعر في كل مكان، و"أرخص في" في قايمة الشراء، والمكان بيتسجّل مع الشراء', async page => {
+  await ev(page, () => {
+    const D = s => Date.parse(s);
+    S.items.push({ id: 'a', name: 'زيت', group: 'تموين', base: 'L', pu: 'زجاجة', pf: 1, monthly: 8, price: 100 });
+    S.tx.push({ id: 't1', ts: D('2026-09-10T10:00:00'), grp: 'g1', type: 'exp', cat: 'house', itemId: 'a', qty: 1, amount: 110, date: '2026-09-10', note: 'زيت — العثيم' },
+      { id: 't2', ts: D('2026-09-20T10:00:00'), grp: 'g2', type: 'exp', cat: 'house', itemId: 'a', qty: 2, amount: 180, date: '2026-09-20', note: 'زيت — كارفور' },
+      { id: 't3', ts: D('2026-10-01T10:00:00'), type: 'exp', cat: 'house', itemId: 'a', qty: 1, amount: 100, date: '2026-10-01', note: 'زيت — عرض' });   // ملاحظة مش مكان
+    S.counts.push({ id: 'c', ts: D('2026-10-08T10:00:00'), itemId: 'a', date: '2026-10-08', qty: 0 });
+    save(); buyItem('a');
+  });
+  assert.deepEqual(await ev(page, () => placePrices(byId(S.items, 'a')).map(x => [x.place, x.p])), [['كارفور', 90], ['العثيم', 110]]);
+  await fill(page, 'qty', 1); await fill(page, 'amount', 85); await fill(page, 'place', 'هايبر'); await submit(page);
+  assert.equal(await ev(page, () => S.tx.at(-1).place), 'هايبر');
+  assert.equal(await ev(page, () => placePrices(byId(S.items, 'a'))[0].place), 'هايبر');
+  await ev(page, () => { S.counts.push({ id: 'c9', ts: Date.now() + 5, itemId: 'a', date: todayS(), qty: 0 }); save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'shop' }); });
+  assert.match(await page.textContent('.cheap-hint'), /أرخص في هايبر/);
+});
+
+await test('نقل شراء لصنف جديد (منتج تاني اتسجل بنفس الاسم) ودمج صنفين: الأسعار بتتحسب من جديد والتراجع شغال', async page => {
+  await ev(page, () => {
+    const D = s => Date.parse(s);
+    S.items.push({ id: 'n', name: 'نستو', group: 'ألبان', base: 'PCS', pu: 'علبة', pf: 16, price: 4 }, { id: 'k', name: 'كيري', group: 'ألبان', base: 'PCS', price: 5 }, { id: 'kg', name: 'رز', group: 'تموين', base: 'KG' });
+    S.tx.push({ id: 'p1', ts: D('2026-09-11T10:00:00'), type: 'exp', cat: 'house', itemId: 'n', qty: 16, amount: 70, date: '2026-09-11', note: 'نستو' },
+      { id: 'p2', ts: D('2026-10-02T10:00:00'), type: 'exp', cat: 'house', itemId: 'n', qty: 16, amount: 191, date: '2026-10-02', note: 'نستو — العثيم' });
+    S.counts.push({ id: 'ck', ts: D('2026-10-05T10:00:00'), itemId: 'k', date: '2026-10-05', qty: 3 });
+    byId(S.items, 'n').price = 191 / 16; save(); moveBuy('p2');
+  });
+  assert.deepEqual(await page.$$eval('#sheetBody [name="to"] option', a => a.map(o => o.textContent)), ['➕ صنف جديد…', 'كيري']);   // نفس المقياس بس
+  await fill(page, 'nname', 'جبنة مثلثات'); await submit(page);
+  const r = await ev(page, () => { const d = S.items.find(i => i.name === 'جبنة مثلثات'), t = byId(S.tx, 'p2'); return [t.itemId === d.id, t.note, d.pf, +d.price.toFixed(3), +byId(S.items, 'n').price.toFixed(3), itemBuys(byId(S.items, 'n')).length]; });
+  assert.deepEqual(r, [true, 'جبنة مثلثات — العثيم', 16, 11.938, 4.375, 1]);
+  // دمج كيري في نستو: مشترياته تتنقل، وهو وجرده يتمسحوا
+  await ev(page, () => { S.tx.push({ id: 'p3', ts: Date.now(), type: 'exp', cat: 'house', itemId: 'k', qty: 8, amount: 40, date: todayS(), note: 'كيري' }); save(); mergeItemForm('k'); });
+  await page.selectOption('#sheetBody [name="to"]', 'n'); await submit(page);
+  assert.deepEqual(await ev(page, () => [!!byId(S.items, 'k'), S.counts.some(c => c.itemId === 'k'), byId(S.tx, 'p3').itemId, byId(S.tx, 'p3').note, byId(S.items, 'n').price, S.tomb.length >= 2]), [false, false, 'n', 'نستو', 5, true]);
+  await page.click('#undoBar [data-act="undo"]');
+  assert.deepEqual(await ev(page, () => [!!byId(S.items, 'k'), byId(S.tx, 'p3').itemId]), [true, 'k']);
+});
+
+await test('خطة واقعية للأهداف: تقدر تحوّش كام فعلًا، ومواعيد واقعية هدف ورا هدف، وتطبيقها', async page => {
+  const R = await ev(page, () => {
+    S.incomes.push({ id: 'i', name: 'مرتب', amount: 20000, day: 1 });
+    S.bills.push({ id: 'b', name: 'إيجار', amount: 5000, day: 5 });
+    // سبتمبر: مصروف يومي 9000
+    for(let d = 1; d <= 30; d++) S.tx.push({ id: 'x' + d, ts: d, type: 'exp', cat: 'food', amount: 300, date: '2026-09-' + String(d).padStart(2, '0') });
+    S.goals.push({ id: 'g1', name: 'عربية', icon: '🚗', target: 120000, deadline: '2027-09', initial: 0 }, { id: 'g2', name: 'عمرة', icon: '🕋', target: 18000, deadline: '2026-12', initial: 0 });
+    save(); EPOCH++; const R = goalsReality();
+    return { cap: R.cap, daily: R.daily, fixed: R.fixed, asked: Math.round(R.asked), ok: R.ok, rows: R.rows.map(x => [x.g.id, x.start, x.end, x.late]) };
+  });
+  // 20000 − 5000 − 9000 = 6000 في الشهر؛ العمرة الأول (3 شهور) وبعدها العربية (20 شهر)
+  assert.deepEqual([R.cap, R.daily, R.fixed, R.ok], [6000, 9000, 5000, false]);
+  assert.deepEqual(R.rows, [['g2', '2026-10', '2026-12', false], ['g1', '2027-01', '2028-08', true]]);
+  await ev(page, () => ACT.tab({ tab: 'goals' }));
+  assert.match(await page.textContent('[data-l="reality"]'), /6,000/);
+  await page.click('[data-act="goalsApplyReality"]');
+  assert.deepEqual(await ev(page, () => S.goals.map(g => [g.id, g.start || '', g.deadline])), [['g1', '2027-01', '2028-08'], ['g2', '', '2026-12']]);
+  assert.equal(await ev(page, () => { EPOCH++; return goalsReality().rows.every(x => !x.late); }), true);
+});
+
+await test('الرئيسية: رسم صرف آخر 7 أيام، واللي عدّى المسموح متعلّم', async page => {
+  await ev(page, () => {
+    S.incomes.push({ id: 'i', name: 'مرتب', amount: 9300, day: 1 });
+    S.tx.push({ id: 'a', ts: 1, type: 'exp', cat: 'food', amount: 100, date: '2026-10-07' }, { id: 'b', ts: 2, type: 'exp', cat: 'food', amount: 900, date: '2026-10-08' },
+      { id: 'h', ts: 3, type: 'exp', cat: 'house', amount: 5000, date: '2026-10-08' });   // الاستوك مش من المصروف اليومي
+    save(); ACT.tab({ tab: 'home' });
+  });
+  assert.deepEqual(await ev(page, () => last7().map(x => x.v)), [0, 0, 0, 0, 100, 900, 0]);
+  assert.equal(await page.$$eval('[data-l="week"] .wk-bars i', a => a.length), 7);
+  assert.equal(await page.$$eval('[data-l="week"] .wk-bars i.over', a => a.length), 1);
+  assert.equal(await page.$$eval('[data-l="week"] .wk-line', a => a.length), 1);
+});
+
+await test('أيقونات موحّدة بدل الإيموجي (من غير ما تبوّظ القوايم)، والشكل "تلقائي" بيمشي مع وضع الموبايل', async page => {
+  await ev(page, () => { S.items.push({ id: 'a', name: 'سكر', group: 'تموين', base: 'KG' }); save(); ACT.tab({ tab: 'home' }); });
+  await page.waitForTimeout(50);
+  assert.ok(await page.$$eval('#view .ico svg', a => a.length) > 3);
+  assert.equal(await ev(page, () => /[📈📊📅🛒💰📋🧺]/u.test(document.querySelector('#view').textContent)), false);
+  // جوه <option> الإيموجي بيفضل (SVG ما ينفعش هناك)، والرسالة المنبثقة بتتحوّل
+  await ev(page, () => buyItem('a'));
+  assert.equal(await page.$$eval('#sheetBody option .ico', a => a.length), 0);
+  await ev(page, () => { closeSheet(); toast('✔ تمام'); });
+  await page.waitForTimeout(50);
+  assert.equal(await page.$$eval('#toast .ico', a => a.length), 1);
+  // الشكل
+  await ev(page, () => ACT.tab({ tab: 'settings' }));
+  await page.emulateMedia({ colorScheme: 'dark' });
+  assert.equal(await ev(page, () => document.documentElement.dataset.skin), 'glass');     // الافتراضي فاتح حتى لو الموبايل غامق
+  await page.click('[data-act="skin"][data-v="auto"]'); await page.waitForTimeout(50);
+  assert.deepEqual(await ev(page, () => [document.documentElement.dataset.skin, document.getElementById('skin-glass').disabled]), ['night', true]);
+  await page.emulateMedia({ colorScheme: 'light' }); await page.waitForTimeout(150);
+  assert.deepEqual(await ev(page, () => [document.documentElement.dataset.skin, document.getElementById('skin-glass').disabled]), ['glass', false]);
 });
 
 await test('هدف لسه ما بدأش: مش بيتخصم من خطة الشهر لحد شهر البداية', async page => {
@@ -940,7 +1103,7 @@ await test('"خارج" نفس الرقم في الرئيسية والتقرير�
   const o = await ev(page, () => { EPOCH++; return summary(VIEW).outActual; });
   assert.equal(o, 500);   // الـ 3000 خرجوا من رصيدك في سبتمبر لما اتشالوا
   assert.match(await page.textContent('body'), /اتدفع من فلوس كانت محجوزة قبل كده/);
-  assert.match(await page.textContent('#view'), /📤 خارج\s*500 ج/);
+  assert.match(await page.textContent('#view'), /خارج\s*500 ج/);
 });
 
 await test('مراجعة بيانات حقيقية: جرد اتصحح بعدها بيومين، رصيد أول الشهر، التوابل فرط، ودخل بدري "هصرف منه"', async page => {
@@ -1020,7 +1183,7 @@ await test('لصق قايمة: جرد من ورقة وفاتورة كاملة �
   await ev(page, () => importStart('buy'));
   await page.fill('#sheetBody [name="txt"]', 'سكر 2 كيلو 74\nزيت | 1 | زجاجة | 104\nكمون 50 جرام 9\nمناديل 2 120');
   await submit(page);
-  assert.match(await page.textContent('#sheetBody'), /⚠️ مناديل/);
+  assert.match(await page.textContent('#sheetBody'), /مناديل/);
   assert.match(await page.textContent('#sheetBody [data-imptotal]'), /307/);
   await submit(page);
   const r = await ev(page, () => S.tx.filter(t => t.grp).map(t => [t.itemId || t.cat, +(t.qty || 0).toFixed(3), t.amount]));
