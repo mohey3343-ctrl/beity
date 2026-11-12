@@ -459,6 +459,39 @@ await test('أيقونات موحّدة بدل الإيموجي (من غير م�
   assert.deepEqual(await ev(page, () => [document.documentElement.dataset.skin, document.getElementById('skin-glass').disabled]), ['glass', false]);
 });
 
+await test('جرد الفلوس وطلع فرق، وبعدين افتكرت المصروف: يتسجّل "قبل الجرد" والرصيد ما ينقصش مرتين (بالتلات طرق)', async page => {
+  const bal = () => ev(page, () => Math.round(cashBalance().value));
+  const count = async amt => { await ev(page, () => cashCount()); await fill(page, 'amount', amt); await submit(page); };
+  await ev(page, () => { S.cashCounts.push({ id: 'c0', ts: Date.parse('2026-10-08T10:00:00'), date: '2026-10-08', amount: 1000, total: 1000 }); save(); });
+  await count(800);                                        // ناقص 200 → "فرق جرد الفلوس" 200
+  assert.deepEqual(await ev(page, () => [S.tx.length, S.tx[0].amount, /^فرق جرد/.test(S.tx[0].note)]), [1, 200, true]);
+  assert.equal(await bal(), 800);
+  // 1) من شاشة التسجيل: العلامة بتحطه قبل الجرد وتخصمه من الفرق
+  await ev(page, () => quickAdd());
+  await fill(page, 'amount', 120); await page.check('#sheetBody [name="preCount"]'); await submit(page);
+  assert.equal(await bal(), 800);
+  assert.deepEqual(await ev(page, () => S.tx.map(t => t.amount).sort((a, b) => a - b)), [80, 120]);     // الفرق بقى 80، والمصروف 120 — المجموع زي ما هو
+  // 2) سجّله عادي (اتخصم تاني)، وبعدين مسح الفرق: بيسأل ويحطه قبل الجرد
+  await ev(page, () => quickAdd());
+  await fill(page, 'amount', 80); await submit(page);
+  assert.equal(await bal(), 720);
+  await ev(page, () => ACT.delTx({ id: S.tx.find(t => /^فرق جرد/.test(t.note)).id }));
+  assert.equal(await bal(), 800);
+  assert.equal(await ev(page, () => S.tx.some(t => /^فرق جرد/.test(t.note))), false);
+  // 3) اتسجّل بعد الجرد من غير العلامة: تتصلّح من شاشة التعديل
+  await ev(page, () => quickAdd());
+  await fill(page, 'amount', 50); await submit(page);
+  assert.equal(await bal(), 750);
+  await ev(page, () => quickAdd({ tx: S.tx.find(t => t.amount === 50) }));
+  assert.equal(await page.isChecked('#sheetBody [name="preCount"]'), false);
+  await page.check('#sheetBody [name="preCount"]'); await submit(page);
+  assert.equal(await bal(), 800);
+  // ومصروف جديد فعلًا بعد الجرد لسه بيتخصم عادي
+  await ev(page, () => quickAdd());
+  await fill(page, 'amount', 30); await submit(page);
+  assert.equal(await bal(), 770);
+});
+
 await test('هدف لسه ما بدأش: مش بيتخصم من خطة الشهر لحد شهر البداية', async page => {
   await ev(page, () => { ACT.tab({ tab: 'goals' }); goalForm(); });
   await fill(page, 'name', 'عربية'); await fill(page, 'target', 120000);

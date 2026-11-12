@@ -698,7 +698,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-10 · 14:00';
+const APP_VER = '2026-11-12 · 12:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -3309,6 +3309,7 @@ function quickAdd(preset){
   }
   body += Fd.text('note', 'ملاحظة (اختياري)', t ? t.note : '', 'placeholder="مثلاً: خضار من السوق"');
   body += Fd.date('date', 'التاريخ', t ? t.date : (preset.date || todayS()));
+  if(t ? t.type !== 'xfer' && t.type !== 'inc' : type === 'exp') body += preCountHtml(t);
   body += Fd.foot(t ? 'حفظ التعديل' : 'سجّل', t ? {act:'delTx', id:t.id} : null);
   const title = t ? 'تعديل: ' + txInfo(t).title : isInc ? 'دخل إضافي' : 'مصروف جديد';
   NEXT_WALLET = {sel:t ? walletOf(t) : undefined, label:t && t.type === 'inc' ? 'دخلوا في' : 'دفعت من'};
@@ -3339,6 +3340,7 @@ function quickAdd(preset){
         const lastBuy = eit && itemBuys(eit).filter(x => x.amount > 0).sort((a, b) => evKey(a) < evKey(b) ? -1 : 1).pop();
         if(lastBuy === t && t.qty > 0) eit.price = Math.round(t.amount / t.qty * 10000) / 10000;
       }
+      if($('#sheetBody [name="preCount"]')) setPreCount(t, !!v.preCount, false);
       save(); toast('اتعدّل');
     }else{
       if(v.src && byId(S.incomes, v.src)){ receiveIncome(v.src, {amount, date:v.date}); return false; }
@@ -3351,6 +3353,8 @@ function quickAdd(preset){
         save(); toast(`اتسجّل — ${qit.name} ${fmtQ(q)} ${u.name} اتضافوا للاستوك`); return;
       }
       S.tx.push({id:uid(), ts:Date.now(), type, amount, cat:type === 'exp' ? (v.cat || 'other') : undefined, note:v.note.trim(), date:v.date || todayS()});
+      const nt = S.tx[S.tx.length - 1];
+      if(v.preCount){ if(v.wallet) nt.walletId = v.wallet; if(setPreCount(nt, true, true)) setTimeout(() => toast('اتسجّل قبل الجرد — رصيدك زي ما هو', false, 4000), 80); }
       save();
       const lm = type === 'exp' ? limitMsg(v.cat || 'other') : null;
       if(lm) setTimeout(() => toast(lm.t, lm.bad), 50); else toast(type === 'inc' ? 'اتسجّل الدخل' : 'اتسجّل ✔');
@@ -4243,6 +4247,33 @@ function reservedIn(w){
   return Math.max(0, sum(S.tx.filter(t => t.type === 'reserve' && act.has(t.dueId) && walletOf(t) === w.id), t => t.amount));
 }
 /* جرد الفلوس: بتكتب كل اللي في الخزنة (شامل المحجوز للمواعيد)، والبرنامج بيطرح المحجوز لوحده */
+/* ===== مصروف اتصرف قبل جرد الفلوس بس اتسجّل بعده =====
+   جرد الفلوس نقطة ثابتة: أي حاجة قبله محسوبة جوه رقم الجرد، وأي حاجة بعده بتتخصم من الرصيد.
+   فلو افتكرت مصروف قديم وسجّلته بعد الجرد، لازم يتحط "قبل الجرد" — وإلا يتخصم مرتين (مرة جوه الجرد ومرة لوحده). */
+const cwid = c => c.walletId && byId(S.wallets, c.walletId) ? c.walletId : mainWallet();
+function dayCount(date, wid){
+  return (S.cashCounts || []).filter(c => c.date === date && cwid(c) === wid).sort((a, b) => evKey(a) < evKey(b) ? -1 : 1).pop() || null;
+}
+/* "فرق جرد الفلوس" اللي اتسجل مع الجرد ده (لو لسه موجود) */
+const countDiff = c => S.tx.find(t => t.type === 'exp' && /^فرق جرد الفلوس/.test(t.note || '') && t.date === c.date && walletOf(t) === cwid(c) && t.ts < c.ts && c.ts - t.ts < 60000) || null;
+const isPreCount = t => { const c = dayCount(t.date, walletOf(t)); return !!c && evKey(t) < evKey(c); };
+/* يحط الحركة قبل الجرد (أو يرجّعها بعده). fromDiff: يخصم مبلغها من "فرق الجرد" عشان ما يتحسبش مرتين في المصاريف */
+function setPreCount(t, on, fromDiff){
+  const c = dayCount(t.date, walletOf(t)); if(!c) return false;
+  if(on === (evKey(t) < evKey(c))) return false;
+  if(on){
+    const D = fromDiff && t.type === 'exp' ? countDiff(c) : null;
+    t.ts = c.ts - 100 - Math.floor(Math.random() * 50);
+    if(D && D !== t){ D.amount = Math.round((D.amount - t.amount) * 100) / 100; if(D.amount <= 0.5){ S.tx = S.tx.filter(x => x !== D); tombAdd(S, [D.id]); } }
+  }else t.ts = Math.max(Date.now(), c.ts + 1);
+  return true;
+}
+function preCountHtml(t){
+  const date = t ? t.date : todayS(), c = dayCount(date, t ? walletOf(t) : mainWallet()) || (S.cashCounts || []).filter(x => x.date === date).pop();
+  if(!c) return '';
+  const D = countDiff(c), on = t ? isPreCount(t) : false;
+  return `<label class="switch" data-l="preCount" style="margin:-2px 0 10px; align-items:flex-start"><input type="checkbox" name="preCount" ${on ? 'checked' : ''}> <span>اتصرف <b>قبل</b> جرد الفلوس بتاع ${dayLabel(date)} — الجرد شايفه خلاص، فمايتخصمش من الرصيد تاني${!t && D ? `<br><span class="muted">وهيتخصم من "فرق جرد الفلوس" (<span class="num">${fmt(D.amount)}</span> ج) عشان ما يتحسبش مرتين.</span>` : ''}</span></label>`;
+}
 function cashCount(){
   const B = cashBalance(), multi = S.wallets.length > 1, resAll = Math.max(0, totalReserved());
   const W = B.wallets.map(x => Object.assign({}, x, {res:reservedIn(x.w), total:x.value + reservedIn(x.w)}));
@@ -4418,6 +4449,17 @@ const ACT = {
     const linked = t.type === 'xfer' ? S.tx.filter(x => x.feeOf === t.id) : [];
     if(!confirm(pay && du ? 'تمسح الدفعة دي؟ الميعاد هيرجع زي ما كان قبلها، والمحجوز يرجع محجوز.' : linked.length ? 'تمسح التحويل ده ورسومه؟' : 'تمسح الحركة دي؟')) return;
     let drop = new Set([t.id, ...linked.map(x => x.id)]);
+    // مسح "فرق جرد الفلوس": لو سجّلت بعد الجرد المصاريف اللي كانت هي الفرق، نحطها قبل الجرد — وإلا تتخصم من رصيدك مرتين
+    if(t.type === 'exp' && /^فرق جرد الفلوس/.test(t.note || '')){
+      const wid = walletOf(t), c = (S.cashCounts || []).filter(x => x.date === t.date && cwid(x) === wid && x.ts > t.ts && x.ts - t.ts < 60000).pop();
+      const latest = c && !(S.cashCounts || []).some(x => cwid(x) === wid && evKey(x) > evKey(c));
+      const cand = latest ? S.tx.filter(x => x.type === 'exp' && x !== t && walletOf(x) === wid && evKey(x) > evKey(c) && diffDays(c.date, x.date) <= 3).sort((a, b) => evKey(a) < evKey(b) ? -1 : 1) : [];
+      // ناخد بالترتيب اللي مجموعهم في حدود الفرق (اللي بعدهم غالبًا مصاريف جديدة فعلًا)
+      let acc = 0; const after = cand.filter(x => acc + x.amount <= t.amount + 1 ? (acc += x.amount, true) : false);
+      if(!after.length && cand.length) after.push(cand[0]);
+      if(after.length && confirm(`بعد الجرد ده سجّلت مصاريف بـ ${fmt(sum(after, x => x.amount))} ج:\n${after.slice(0, 6).map(x => '• ' + txLabel(x) + ' ' + fmt(x.amount)).join('\n')}\n\nدي اللي كانت الفرق (اتصرفت قبل الجرد)؟\nموافق = تتحسب قبل الجرد ورصيدك يرجع زي ما جردته.\nإلغاء = مصاريف جديدة بعد الجرد، وتفضل متخصومة.`))
+        after.forEach((x, i) => { x.date = c.date; x.ts = c.ts - 200 + i; });
+    }
     if(pay && du){
       Object.assign(du, {date:pay.duePrev.date, amount:pay.duePrev.amount}); if(pay.duePrev.paidOn) du.paidOn = pay.duePrev.paidOn; else delete du.paidOn;
       drop = new Set([...drop, pay.id, ...S.tx.filter(x => x.pair === pay.id).map(x => x.id)]);
