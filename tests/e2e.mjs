@@ -522,6 +522,15 @@ await test('خطة الشهر البسيطة: المرتب − الصدقة 2.5%
   assert.equal(await page.$eval('details.plan-full', d => d.open), false);
 });
 
+await test('الكميات الصغيرة بالجرام: نص برطمان نسكافيه (47.5 جم) بيتكتب 24 جم مش 0.02 KG', async page => {
+  const r = await ev(page, () => {
+    const it = { id: 'n', name: 'برطمان نسكافيه', group: 'تموين', base: 'KG', pu: 'برطمان', pf: 0.0475 }, z = { id: 'z', name: 'زيت', base: 'L' };
+    const strip = x => x.replace(/[⁦⁩]/g, '');
+    return [strip(qtyPlain(it, 0.5 * 0.0475)), strip(qtyPlain(it, 0.32 * 0.0475)), strip(qtyPlain(it, 0.0475)), strip(qtyPlain(z, 0.25)), strip(qtyPlain(z, 0.0055)), strip(qtyPlain(z, 0))];
+  });
+  assert.deepEqual(r, ['0.5 برطمان (24 جم)', '0.32 برطمان (15 جم)', '1 برطمان (48 جم)', '0.25 L', '5.5 مل', '0 L']);
+});
+
 await test('هدف لسه ما بدأش: مش بيتخصم من خطة الشهر لحد شهر البداية', async page => {
   await ev(page, () => { ACT.tab({ tab: 'goals' }); goalForm(); });
   await fill(page, 'name', 'عربية'); await fill(page, 'target', 120000);

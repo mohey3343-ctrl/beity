@@ -708,7 +708,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-18 · 18:00';
+const APP_VER = '2026-11-19 · 10:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -819,14 +819,19 @@ function looseTxt(it, q){
   const ar = BASES[baseOf(it)].ar, r = Math.round(q * 4) / 4, n = {0.25:'ربع ' + ar, 0.5:'نص ' + ar, 0.75:'تلت تربع ' + ar, 1:'1 ' + ar, 1.5:ar + ' ونص', 2:'2 ' + ar}[r];
   return Math.abs(q - r) < 1e-6 && n ? n : `${fmtQ(q)} ${ar}`;
 }
+/* الكمية بالمقياس: أقل من 100 جرام/مللي بتتكتب بالجرام/المللي (0.02 KG كانت بتتقري غلط — 24 جم أوضح) */
+function baseAmt(it, q){
+  const b = baseOf(it);
+  if((b === 'KG' || b === 'L') && q > 1e-9 && q < 0.1) { const g = q * 1000; return `${fmtQ(g >= 10 ? Math.round(g) : Math.round(g * 10) / 10)} ${b === 'KG' ? 'جم' : 'مل'}`; }
+  return `${fmtQ(q)} ${BASES[b].en}`;
+}
 function qtyPlain(it, q){
-  const en = BASES[baseOf(it)].en;
   // ⁦…⁩ بيعزل "0.9 KG" عشان ما يتقلبش لـ "KG 0.9" جوه الكلام العربي
-  if(!hasPack(it)) return `\u2066${fmtQ(q)} ${en}\u2069`;
-  return `${fmtQ(q / it.pf)} ${it.pu}` + (baseOf(it) === 'PCS' && it.pf === 1 ? '' : ` (\u2066${fmtQ(q)} ${en}\u2069)`);
+  if(!hasPack(it)) return `\u2066${baseAmt(it, q)}\u2069`;
+  return `${fmtQ(q / it.pf)} ${it.pu}` + (baseOf(it) === 'PCS' && it.pf === 1 ? '' : ` (\u2066${baseAmt(it, q)}\u2069)`);
 }
 function qtyTxt(it, q){
-  const en = BASES[baseOf(it)].en, ltr = x => `<span dir="ltr" style="unicode-bidi:isolate">${fmtQ(x)} ${en}</span>`;
+  const ltr = x => `<span dir="ltr" style="unicode-bidi:isolate">${baseAmt(it, x)}</span>`;
   if(!hasPack(it)) return ltr(q);
   return `${fmtQ(q / it.pf)} ${esc(it.pu)}` + (baseOf(it) === 'PCS' && it.pf === 1 ? '' : ` <small class="muted">(${ltr(q)})</small>`);
 }
@@ -2128,7 +2133,7 @@ function actualInfo(it){
 }
 /* كمية قصيرة للجدول: بالعبوة لو ليه عبوة (2 علبة، 0.5 كيس)، وإلا بالوحدة (0.9 KG) */
 function qShort(it, q){
-  if(!hasPack(it)) return `<span dir="ltr" style="unicode-bidi:isolate">${fmtQ(q)} ${BASES[baseOf(it)].en}</span>`;
+  if(!hasPack(it)) return `<span dir="ltr" style="unicode-bidi:isolate">${baseAmt(it, q)}</span>`;
   return `${fmtQ(q / it.pf)} <small class="muted">${esc(it.pu)}</small>`;
 }
 /* "المفروض خلص" من الحسبة بس: زرار "لسه زي ما هو" بيسجّل جرد بنفس الفعلي دلوقتي (والمعدل بيتصلّح لوحده)، و"خلص" لو خلص فعلًا */
