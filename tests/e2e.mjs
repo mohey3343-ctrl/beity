@@ -492,6 +492,36 @@ await test('جرد الفلوس وطلع فرق، وبعدين افتكرت ال
   assert.equal(await bal(), 770);
 });
 
+await test('خطة الشهر البسيطة: المرتب − الصدقة 2.5% − الثابت واللي اتدفع = المتاح، − المديونية القديمة، − المصاريف بمتوسطك = اللي يفضل', async page => {
+  const R = await ev(page, () => {
+    const D = s => Date.parse(s);
+    S.cats.push({ id: 'cafe', name: 'كافيه', icon: '☕' }, { id: 'work', name: 'مصروفات العمل', icon: '💼' }, { id: 'sad', name: 'صدقات', icon: '🤲' });
+    S.incomes.push({ id: 'i', name: 'مرتب', amount: 20000, day: 1 });
+    S.bills.push({ id: 'b', name: 'الكهربا', amount: 500, day: 5 });
+    S.debts.push({ id: 'd', name: 'دودو', total: 10000, monthly: 1000 }, { id: 'd2', name: 'قديم', total: 3000 });
+    // سبتمبر (للمتوسط): كافيه 600، خروجات 300
+    S.tx.push({ id: 's1', ts: D('2026-09-05T10:00:00'), type: 'exp', cat: 'cafe', amount: 600, date: '2026-09-05' }, { id: 's2', ts: D('2026-09-06T10:00:00'), type: 'exp', cat: 'fun', amount: 300, date: '2026-09-06' });
+    // أكتوبر: الدين الشهري اتدفع + 500 زيادة، ودين قديم 1000 مرة واحدة، صدقة 100، استوك 1500
+    S.tx.push({ id: 'p1', ts: D('2026-10-02T10:00:00'), type: 'debt', debtId: 'd', amount: 1500, date: '2026-10-02' }, { id: 'p2', ts: D('2026-10-03T10:00:00'), type: 'debt', debtId: 'd2', amount: 1000, date: '2026-10-03' },
+      { id: 'c1', ts: D('2026-10-04T10:00:00'), type: 'exp', cat: 'sad', amount: 100, date: '2026-10-04' }, { id: 'h', ts: D('2026-10-04T11:00:00'), type: 'exp', cat: 'house', amount: 1500, date: '2026-10-04' },
+      { id: 'c2', ts: D('2026-10-05T10:00:00'), type: 'exp', cat: 'cafe', amount: 50, date: '2026-10-05' });
+    save(); ACT.tab({ tab: 'home' }); const R = simplePlan(summary(VIEW));
+    return { fixed: R.fixed.map(x => [x.k, Math.round(x.v)]), avail: Math.round(R.avail), once: R.once.map(x => [x.k, Math.round(x.v)]), after: Math.round(R.afterOnce), flex: R.flex.map(x => x.k), left: Math.round(R.left), sum: Math.round(R.income - [...R.fixed, ...R.once, ...R.flex].reduce((a, x) => a + x.v, 0)) };
+  });
+  assert.deepEqual(R.fixed.slice(0, 3), [['charity', 500], ['bills', 500], ['debts', 1000]]);   // 2.5% من 20000؛ القسط الشهري بس
+  assert.equal(R.fixed[3][0], 'house');
+  assert.deepEqual(R.once, [['old', 1500]]);                    // 500 زيادة عن القسط + 1000 دين قديم
+  assert.equal(R.after, R.avail - 1500);
+  assert.ok(R.flex.includes('cafe') && R.flex.includes('fun'), JSON.stringify(R.flex));
+  assert.equal(R.left, R.sum);                                   // السطور بتتجمع بالظبط
+  assert.match(await page.textContent('[data-l="simplePlan"]'), /المتاح بعد السداد/);
+  // نسبة الصدقة بتتغير
+  await ev(page, () => { S.settings.charityPct = 5; save(); });
+  assert.equal(await ev(page, () => Math.round(simplePlan(summary(VIEW)).fixed[0].v)), 1000);
+  // الحسبة الكاملة لسه موجودة، مقفولة
+  assert.equal(await page.$eval('details.plan-full', d => d.open), false);
+});
+
 await test('هدف لسه ما بدأش: مش بيتخصم من خطة الشهر لحد شهر البداية', async page => {
   await ev(page, () => { ACT.tab({ tab: 'goals' }); goalForm(); });
   await fill(page, 'name', 'عربية'); await fill(page, 'target', 120000);
