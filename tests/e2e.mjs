@@ -169,8 +169,8 @@ await test('الجرد: اللي بيتكتب بيفضل لو خرجت، وقب�
   assert.deepEqual(asked, ['z_' + ids[0], 'z_' + ids[1]]);
   await page.check(`#sheetBody [name="z_${ids[1]}"]`); await submit(page);
   const r = await ev(page, () => ({ c: S.counts.filter(c => !c.id.startsWith('x') && byId(S.items, c.itemId).name !== 'تونة').map(c => [c.itemId, c.qty]), draft: localStorage.getItem(JDRAFT_KEY) }));
-  const f = await ev(page, id => packF(byId(S.items, id)), ids[2]);   // الجرد بالعبوة افتراضيًا
-  assert.deepEqual(r, { c: [[ids[2], 4 * f], [ids[1], 0]], draft: null });
+  // الجرد بالمقياس (KG / L / PCS) افتراضيًا — زي ما بتجرد فعلًا
+  assert.deepEqual(r, { c: [[ids[2], 4], [ids[1], 0]], draft: null });
 });
 
 await test('الأصناف: البحث بيفضل شغال بعد تعديل صنف', async page => {
@@ -541,7 +541,7 @@ await test('سجل الصنف جدول: الكمية بوحدتها + حجم ا�
   });
   await page.evaluate(() => document.querySelector('#sheetBody details').open = true);
   const rows = await page.$$eval('[data-l="hist"] .ihist-row', a => a.map(r => [...r.children].slice(2).map(td => td.innerText.replace(/[⁦⁩]/g, '').replace(/\s+/g, ' ').trim())));
-  assert.deepEqual(rows, [['0.32', 'برطمان = 47.5 جم', '15.2 جم'], ['+1', 'كيس = 0.2 KG', '0.2 KG'], ['0.5', 'برطمان = 47.5 جم', '23.8 جم']]);
+  assert.deepEqual(rows, [['0.015', 'KG', '15.2 جم'], ['+1', 'كيس = 0.2 KG', '0.2 KG'], ['0.024', 'KG', '23.8 جم']]);
   assert.match(await page.textContent('[data-l="histBox"]'), /1 برطمان = 47.5 جم/);
 });
 

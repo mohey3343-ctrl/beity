@@ -710,7 +710,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-19 · 11:00';
+const APP_VER = '2026-11-19 · 12:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -2393,7 +2393,7 @@ function jardDone(filled, zeros){
   toast(one || `اتسجّل جرد ${filled.length + zeros.length} صنف` + (zeros.length ? ` (${zeros.length} خلصوا)` : ''), false, one ? 7000 : 0);
 }
 function jardHtml(){
-  const jv = S.settings.jardView === 'base' ? 'base' : 'pack';
+  const jv = S.settings.jardView === 'pack' ? 'pack' : 'base';
   const jd = jardDraft(), jdn = Object.keys(jd).filter(id => byId(S.items, id)).length;
   let h = `<button class="btn block" data-act="importJard" style="margin-bottom:10px">📋 جرد من ورقة أو كتابة (أو صورة) — كله مرة واحدة</button>
     <div class="card"><h3>📝 الجرد — اكتب اللي عندك دلوقتي</h3>
@@ -3501,8 +3501,10 @@ function histHtml(it, all){
   // الوحدة اللي الحركة متسجلة بيها: الشراء بوحدته (كيس، جركن 4 L…)، والجرد بعبوة الصنف (أو المقياس لو ملوش عبوة)
   const unitOfEv = e => {
     if(e.k === 'b' && e.x.u && e.x.u.f > 0) return {n:e.x.u.n, f:e.x.u.f};
-    return hasPack(it) ? {n:it.pu, f:it.pf} : {n:base.en, f:1};
+    // الجرد بالمقياس (KG / L / PCS) — زي ما بتجرد — إلا لو اخترت تجرد بالعبوة
+    return hasPack(it) && S.settings.jardView === 'pack' ? {n:it.pu, f:it.pf} : {n:base.en, f:1};
   };
+  const q3 = n => (+n || 0).toLocaleString('en-US', {maximumFractionDigits:Math.abs(n) < 1 ? 3 : 2});
   const conv = u => u.f === 1 && u.n === base.en ? '' : `= ${baseAmt(it, u.f)}`;
   const row = e => {
     const x = e.x, c = e.k === 'c', u = unitOfEv(e);
@@ -3510,7 +3512,7 @@ function histHtml(it, all){
     const n = x.qty / u.f;
     return `<tr class="ihist-row" data-act="${c ? 'delCount' : 'editTx'}" data-id="${x.id}" data-k="${e.k}">
       <td>${when(x)}</td><td style="white-space:nowrap">${kind}${!c && !x.gift ? `<div class="muted num" style="font-size:10.5px">${fmt(x.amount)} ج</div>` : ''}</td>
-      <td class="num"><b>${c ? '' : '+'}${fmtQ(n)}</b></td>
+      <td class="num"><b>${c ? '' : '+'}${q3(n)}</b></td>
       <td>${esc(u.n)}${conv(u) ? `<div class="muted" style="font-size:10.5px" dir="rtl">${conv(u)}</div>` : ''}</td>
       <td class="num" style="white-space:nowrap">${baseAmt(it, x.qty)}</td></tr>`;
   };
@@ -3757,7 +3759,7 @@ function lineUnit(it, unit, mode){
     const uw = UNIT_WORDS.find(u => u[0].test(w));
     if(uw && uw[1] === baseOf(it)) return {k:'base', mul:uw[2]};
   }
-  const def = mode === 'jard' ? (S.settings.jardView === 'base' || !hasPack(it) ? 'base' : 'pack') : (hasPack(it) && !isLoose(it) ? 'pack' : 'base');
+  const def = mode === 'jard' ? (S.settings.jardView !== 'pack' || !hasPack(it) ? 'base' : 'pack') : (hasPack(it) && !isLoose(it) ? 'pack' : 'base');
   return {k:us.some(u => u.k === def) ? def : us[0].k, mul:1};
 }
 function importPrompt(mode){
@@ -3954,7 +3956,7 @@ function buyMany(){
   });
 }
 function countItem(id){
-  const it = byId(S.items, id), e = estStock(it), jv = S.settings.jardView === 'base' ? 'base' : 'pack';
+  const it = byId(S.items, id), e = estStock(it), jv = S.settings.jardView === 'pack' ? 'pack' : 'base';
   const body = `<div class="jard-row" style="border:none"><div class="nm">الموجود دلوقتي${e != null ? `<small>متوقع <span data-est>${fmtQ(e / jardF(it, jv))}</span></small>` : ''}</div>
       ${jardUnitSel(it, jv, `name="ju" data-junit="${it.id}"`)}<input name="qty" data-item="${it.id}" inputmode="decimal" autofocus placeholder="${e != null ? fmtQ(e / jardF(it, jv)) : ''}"></div>` + Fd.foot('حفظ');
   openSheet('جرد ' + it.name, body, v => {
