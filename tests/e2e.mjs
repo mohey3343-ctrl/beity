@@ -545,6 +545,27 @@ await test('سجل الصنف جدول: الكمية بوحدتها + حجم ا�
   assert.match(await page.textContent('[data-l="histBox"]'), /1 برطمان = 47.5 جم/);
 });
 
+await test('متوسط المصروف الشهري: كل شهر لوحده من غير الأقساط ومواعيد السداد والمناسبات، والمتوسط على الشهور اللي خلصت', async page => {
+  const r = await ev(page, () => {
+    const D = s => Date.parse(s);
+    S.bills.push({ id: 'b', name: 'كهربا', amount: 500, day: 5 }); S.debts.push({ id: 'd', name: 'دودو', total: 10000, monthly: 2500 });
+    S.dues = S.dues || []; S.dues.push({ id: 'u', name: 'عمو صبحي', amount: 10000, date: '2026-09-15', repeat: 0, paidOn: '2026-09-15' });
+    S.tx.push(
+      { id: 'a1', ts: D('2026-08-05T10:00:00'), type: 'bill', billId: 'b', amount: 500, date: '2026-08-05' }, { id: 'a2', ts: D('2026-08-06T10:00:00'), type: 'exp', cat: 'house', amount: 3000, date: '2026-08-06' },
+      { id: 'a3', ts: D('2026-08-07T10:00:00'), type: 'exp', cat: 'food', amount: 1500, date: '2026-08-07' }, { id: 'a4', ts: D('2026-08-08T10:00:00'), type: 'debt', debtId: 'd', amount: 2500, date: '2026-08-08' },
+      { id: 's1', ts: D('2026-09-05T10:00:00'), type: 'bill', billId: 'b', amount: 600, date: '2026-09-05' }, { id: 's2', ts: D('2026-09-06T10:00:00'), type: 'exp', cat: 'house', amount: 4000, date: '2026-09-06' },
+      { id: 's3', ts: D('2026-09-07T10:00:00'), type: 'exp', cat: 'fun', amount: 900, date: '2026-09-07' }, { id: 's4', ts: D('2026-09-08T10:00:00'), type: 'exp', cat: 'gifts', amount: 700, date: '2026-09-08' },
+      { id: 's5', ts: D('2026-09-15T10:00:00'), type: 'bill', dueId: 'u', amount: 10000, date: '2026-09-15' }, { id: 's6', ts: D('2026-09-16T10:00:00'), type: 'save', goalId: 'x', amount: 1000, date: '2026-09-16' },
+      { id: 'o1', ts: D('2026-10-02T10:00:00'), type: 'exp', cat: 'food', amount: 400, date: '2026-10-02' });
+    save(); ACT.tab({ tab: 'report' });
+    return monthlySpendRows().map(m => [m.p.m + 1, m.bills, m.house, m.rest, m.total, m.current]);
+  });
+  assert.deepEqual(r, [[8, 500, 3000, 1500, 5000, false], [9, 600, 4000, 900, 5500, false], [10, 0, 0, 400, 400, true]]);
+  const txt = await page.textContent('[data-l="monthlySpend"]');
+  assert.match(txt, /5,250/);                 // (5000 + 5500) ÷ 2 — أكتوبر لسه شغال ومش داخل
+  assert.match(txt, /أقساط الديون\s*2,500/); assert.match(txt, /الديون القديمة\s*10,000/); assert.match(txt, /الهدايا\s*700/);
+});
+
 await test('هدف لسه ما بدأش: مش بيتخصم من خطة الشهر لحد شهر البداية', async page => {
   await ev(page, () => { ACT.tab({ tab: 'goals' }); goalForm(); });
   await fill(page, 'name', 'عربية'); await fill(page, 'target', 120000);
