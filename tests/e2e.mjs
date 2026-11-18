@@ -522,13 +522,27 @@ await test('خطة الشهر البسيطة: المرتب − الصدقة 2.5%
   assert.equal(await page.$eval('details.plan-full', d => d.open), false);
 });
 
-await test('الكميات الصغيرة بالجرام: نص برطمان نسكافيه (47.5 جم) بيتكتب 24 جم مش 0.02 KG', async page => {
+await test('الكميات الصغيرة بالجرام: نص برطمان نسكافيه (47.5 جم) بيتكتب 23.8 جم مش 0.02 KG', async page => {
   const r = await ev(page, () => {
     const it = { id: 'n', name: 'برطمان نسكافيه', group: 'تموين', base: 'KG', pu: 'برطمان', pf: 0.0475 }, z = { id: 'z', name: 'زيت', base: 'L' };
     const strip = x => x.replace(/[⁦⁩]/g, '');
     return [strip(qtyPlain(it, 0.5 * 0.0475)), strip(qtyPlain(it, 0.32 * 0.0475)), strip(qtyPlain(it, 0.0475)), strip(qtyPlain(z, 0.25)), strip(qtyPlain(z, 0.0055)), strip(qtyPlain(z, 0))];
   });
-  assert.deepEqual(r, ['0.5 برطمان (24 جم)', '0.32 برطمان (15 جم)', '1 برطمان (48 جم)', '0.25 L', '5.5 مل', '0 L']);
+  assert.deepEqual(r, ['0.5 برطمان (23.8 جم)', '0.32 برطمان (15.2 جم)', '1 برطمان (47.5 جم)', '0.25 L', '5.5 مل', '0 L']);
+});
+
+await test('سجل الصنف جدول: الكمية بوحدتها + حجم الوحدة + المقابل بالجرام (برطمان نسكافيه وجركن)', async page => {
+  await ev(page, () => {
+    S.items.push({ id: 'n', name: 'برطمان نسكافيه', group: 'تموين', base: 'KG', pu: 'برطمان', pf: 0.0475 });
+    S.counts.push({ id: 'c1', ts: Date.parse('2026-10-01T10:00:00'), itemId: 'n', date: '2026-10-01', qty: 0.5 * 0.0475 },
+      { id: 'c2', ts: Date.parse('2026-10-08T10:00:00'), itemId: 'n', date: '2026-10-08', qty: 0.32 * 0.0475 });
+    S.tx.push({ id: 'b1', ts: Date.parse('2026-10-05T10:00:00'), type: 'exp', cat: 'house', itemId: 'n', qty: 0.2, amount: 300, date: '2026-10-05', u: { n: 'كيس', f: 0.2 } });
+    save(); itemForm('n');
+  });
+  await page.evaluate(() => document.querySelector('#sheetBody details').open = true);
+  const rows = await page.$$eval('[data-l="hist"] .ihist-row', a => a.map(r => [...r.children].slice(2).map(td => td.innerText.replace(/[⁦⁩]/g, '').replace(/\s+/g, ' ').trim())));
+  assert.deepEqual(rows, [['0.32', 'برطمان = 47.5 جم', '15.2 جم'], ['+1', 'كيس = 0.2 KG', '0.2 KG'], ['0.5', 'برطمان = 47.5 جم', '23.8 جم']]);
+  assert.match(await page.textContent('[data-l="histBox"]'), /1 برطمان = 47.5 جم/);
 });
 
 await test('هدف لسه ما بدأش: مش بيتخصم من خطة الشهر لحد شهر البداية', async page => {
@@ -1429,7 +1443,7 @@ await test('سجل الصنف: الجرد والشراء في جدول واحد�
     save(); itemForm('k');
   });
   await page.evaluate(() => document.querySelector('.sheet details').open = true);
-  const rows = () => page.$$eval('[data-l="hist"] .hist-row', a => a.map(r => r.dataset.k + ':' + r.dataset.id));
+  const rows = () => page.$$eval('[data-l="hist"] .ihist-row', a => a.map(r => r.dataset.k + ':' + r.dataset.id));
   const r1 = await rows();
   assert.equal(r1.length, 12);
   assert.deepEqual(r1.slice(0, 2), ['c:c6', 'b:b6']);      // الأحدث فوق

@@ -194,6 +194,8 @@
   html[data-skin="night"] .sp-tot.sp-final{background:linear-gradient(135deg,rgba(124,92,255,.35),rgba(34,211,238,.2));}
   .sp-h{font-size:12.5px; font-weight:700; color:var(--soft); margin:10px 0 0;}
   .plan-full > summary{list-style:none; display:inline-flex; cursor:pointer;} .plan-full > summary::-webkit-details-marker{display:none;}
+  .hist-tbl{width:100%; font-size:12.5px;} .hist-tbl th{font-size:11px; white-space:nowrap;} .hist-tbl td{padding:6px 4px; vertical-align:middle; line-height:1.3;}
+  .hist-tbl tr.ihist-row{cursor:pointer;}
   .wk{margin:0 0 12px; cursor:pointer;}
   .wk-bars{position:relative; display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:8px; align-items:end; margin-top:8px;}
   .wk-bars i{display:block; border-radius:7px; background:var(--night); opacity:.28;}
@@ -708,7 +710,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-19 · 10:00';
+const APP_VER = '2026-11-19 · 11:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -822,7 +824,7 @@ function looseTxt(it, q){
 /* الكمية بالمقياس: أقل من 100 جرام/مللي بتتكتب بالجرام/المللي (0.02 KG كانت بتتقري غلط — 24 جم أوضح) */
 function baseAmt(it, q){
   const b = baseOf(it);
-  if((b === 'KG' || b === 'L') && q > 1e-9 && q < 0.1) { const g = q * 1000; return `${fmtQ(g >= 10 ? Math.round(g) : Math.round(g * 10) / 10)} ${b === 'KG' ? 'جم' : 'مل'}`; }
+  if((b === 'KG' || b === 'L') && q > 1e-9 && q < 0.1) { const g = q * 1000; return `${fmtQ(Math.round(g * 10) / 10)} ${b === 'KG' ? 'جم' : 'مل'}`; }
   return `${fmtQ(q)} ${BASES[b].en}`;
 }
 function qtyPlain(it, q){
@@ -3492,21 +3494,33 @@ function histHtml(it, all){
   const ev = itemCounts(it).map(c => ({k:'c', x:c})).concat(itemBuys(it).map(t => ({k:'b', x:t})))
     .sort((a, b) => evKey(a.x) < evKey(b.x) ? -1 : 1);
   if(!ev.length) return '';
-  const L = (all ? ev : ev.slice(-HIST_N)).reverse();
-  // تاريخ قصير (من غير اسم اليوم) والساعة تحته صغيرة — عشان الصف يفضل سطر واحد على الموبايل
+  const L = (all ? ev : ev.slice(-HIST_N)).reverse(), base = BASES[baseOf(it)];
+  // تاريخ قصير (من غير اسم اليوم) والساعة تحته صغيرة
   const when = x => { const d = pd(x.date), t = todayS(), lbl = x.date === t ? 'النهاردة' : x.date === addDays(t, -1) ? 'امبارح' : d.getDate() + ' ' + MONTHS[d.getMonth()];
-    return `${lbl}${tsOk(x) ? '<div class="muted num" style="font-size:11px">' + new Date(x.ts).toLocaleTimeString('ar-EG', {hour:'numeric', minute:'2-digit'}) + '</div>' : ''}`; };
-  const row = e => {
-    const x = e.x, c = e.k === 'c';
-    const kind = c ? (x.qty > 0 ? '📋 جرد' : '🚫 خلص') : x.gift ? '🎁 هدية' : '🛒 شراء';
-    const qty = c ? (x.qty > 0 ? `<b>${esc(qtyPlain(it, x.qty))}</b>` : '<b>0</b>') : `+<b>${esc(qtyPlain(it, x.qty))}</b>${x.gift ? '' : ` <span class="muted" style="font-size:11.5px">بـ <span class="num">${fmt(x.amount)}</span>ج</span>`}`;
-    return `<div class="hist-row" style="display:grid; grid-template-columns:5.6em 4.6em 1fr; align-items:center; gap:6px; padding:5px 2px; border-bottom:1px solid var(--line); cursor:pointer; font-size:13px; line-height:1.3" data-act="${c ? 'delCount' : 'editTx'}" data-id="${x.id}" data-k="${e.k}">
-      <span>${when(x)}</span><span style="white-space:nowrap">${kind}</span><span style="white-space:nowrap; text-align:left">${qty}</span></div>`;
+    return `${lbl}${tsOk(x) ? '<div class="muted num" style="font-size:10.5px">' + new Date(x.ts).toLocaleTimeString('ar-EG', {hour:'numeric', minute:'2-digit'}) + '</div>' : ''}`; };
+  // الوحدة اللي الحركة متسجلة بيها: الشراء بوحدته (كيس، جركن 4 L…)، والجرد بعبوة الصنف (أو المقياس لو ملوش عبوة)
+  const unitOfEv = e => {
+    if(e.k === 'b' && e.x.u && e.x.u.f > 0) return {n:e.x.u.n, f:e.x.u.f};
+    return hasPack(it) ? {n:it.pu, f:it.pf} : {n:base.en, f:1};
   };
-  return `<div data-l="histBox"><div style="margin-top:10px"><b>📜 السجل</b> <span class="muted" style="font-size:11.5px">(الأحدث فوق ← الأقدم تحت)</span></div>
-    <div data-l="hist">${L.map(row).join('')}</div>
+  const conv = u => u.f === 1 && u.n === base.en ? '' : `= ${baseAmt(it, u.f)}`;
+  const row = e => {
+    const x = e.x, c = e.k === 'c', u = unitOfEv(e);
+    const kind = c ? (x.qty > 0 ? '📋 جرد' : '🚫 خلص') : x.gift ? '🎁 هدية' : '🛒 شراء';
+    const n = x.qty / u.f;
+    return `<tr class="ihist-row" data-act="${c ? 'delCount' : 'editTx'}" data-id="${x.id}" data-k="${e.k}">
+      <td>${when(x)}</td><td style="white-space:nowrap">${kind}${!c && !x.gift ? `<div class="muted num" style="font-size:10.5px">${fmt(x.amount)} ج</div>` : ''}</td>
+      <td class="num"><b>${c ? '' : '+'}${fmtQ(n)}</b></td>
+      <td>${esc(u.n)}${conv(u) ? `<div class="muted" style="font-size:10.5px" dir="rtl">${conv(u)}</div>` : ''}</td>
+      <td class="num" style="white-space:nowrap">${baseAmt(it, x.qty)}</td></tr>`;
+  };
+  const units = hasPack(it) ? `1 ${esc(it.pu)} = <b>${baseAmt(it, it.pf)}</b>` + ((it.alt || []).length ? ' · ' + it.alt.map(a => `1 ${esc(a.pu)} = ${baseAmt(it, a.pf)}`).join(' · ') : '') : `بالـ${base.ar}`;
+  return `<div data-l="histBox"><div style="margin-top:10px"><b>📜 السجل</b> <span class="muted" style="font-size:11.5px">(الأحدث فوق)</span></div>
+    <div class="muted" style="font-size:12px; margin:2px 0 4px">الوحدة: ${units}</div>
+    <div style="overflow-x:auto"><table class="tbl hist-tbl"><tr><th>التاريخ</th><th>الحركة</th><th>الكمية</th><th>الوحدة</th><th>بالـ${base.en === 'PCS' ? 'قطعة' : base.en === 'KG' ? 'وزن' : 'حجم'}</th></tr>
+    <tbody data-l="hist">${L.map(row).join('')}</tbody></table></div>
     ${ev.length > L.length ? `<button type="button" class="btn sm ghost" style="margin:6px 0 0" data-act="histAll" data-id="${it.id}">اعرض الأقدم (${ev.length - L.length})</button>` : ''}
-    <div class="muted" style="font-size:11.5px; margin-top:4px">دوس على شراء تعدّله، أو على جرد تمسحه لو اتسجل غلط.</div></div>`;
+    <div class="muted" style="font-size:11.5px; margin-top:4px">الكمية × الوحدة = العمود الأخير. دوس على شراء تعدّله، أو على جرد تمسحه لو اتسجل غلط.</div></div>`;
 }
 function itemForm(id, preset){
   const it = id ? byId(S.items, id) : null;
