@@ -712,7 +712,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-19 · 14:00';
+const APP_VER = '2026-11-20 · 12:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -816,6 +816,10 @@ const LOOSE_G = /خضار|فاكه|لحوم|لحمة|فراخ|سمك|جبن|أل
 /* بيتاكل على مرات (لحمة، فراخ، سمك…): مش بيتطرح منه كل يوم — المتوقع يفضل زي آخر جرد + الشراء لحد ما تسجّل إنك استخدمت منه أو خلص */
 const LUMPY_N = /لحم|فراخ|دجاج|سمك|جمبري|كبد|كفت|برجر|سجق|بانيه|ستربس|ناجتس/, LUMPY_G = /لحوم|أسماك|اسماك|مجمد/;
 const isLumpy = it => it.lumpy != null ? !!it.lumpy : (LUMPY_N.test(it.name || '') || LUMPY_G.test(it.group || ''));
+/* بيبوظ (خضار وفاكهة): بيتشرى بالأسبوع — قايمة الشراء بتحسبه على قد أيام الطازة بس (افتراضي 7)، وخطة الشهر لسه بتحسب فلوسه للشهر كله */
+const FRESH_G = /خضار|خضرو|فاكه|فواكه|ورقيات/;
+const isFresh = it => it.fresh != null ? !!it.fresh : FRESH_G.test(it.group || '');
+const freshDays = () => Math.max(1, Math.min(30, +S.settings.freshDays || 7));
 const isLoose = it => baseOf(it) === 'PCS' ? !!it.loose && hasPack(it) : (it.loose != null ? !!it.loose : !hasPack(it) || LOOSE_G.test(it.group || ''));
 /* "نص كيلو" بدل 0.5 KG */
 function looseTxt(it, q){
@@ -1202,8 +1206,10 @@ function coverDays(){
 }
 /* days: لو اتبعت = بنحسب على عدد الأيام ده بالظبط (خطة الشهر: لآخر الشهر المالي) — وإلا حسب اختيارك في "أشتري إيه" */
 function shopList(days){
-  const cover = days != null ? days : coverDays() + (S.settings.bufferDays || 0);
+  const cover0 = days != null ? days : coverDays() + (S.settings.bufferDays || 0);
   return S.items.filter(it => !isPaused(it)).map(it => {
+    // قايمة الشراء: الطازة (خضار وفاكهة) على قد أسبوع بس عشان ما تبوظش · خطة الشهر (days متبعت) بتحسب الشهر كله
+    const fresh = days == null && isFresh(it), cover = fresh ? Math.min(cover0, freshDays()) : cover0;
     const rate = dailyRate(it), est = estStock(it), have = est == null ? 0 : est;
     const need = rate.v * cover - have;
     let qty = 0;
@@ -1214,7 +1220,7 @@ function shopList(days){
     if(!(rate.v > 0) && est != null && est <= 0.001){ qty = hasPack(it) ? it.pf : 1; unknownOut = true; }
     // الحسبة بس هي اللي بتقول خلص (مفيش جرد بصفر ولا "خلص") — ممكن يكون لسه عندك (زي اللحمة: بتتاكل على مرات مش كل يوم)
     const a = est != null && est <= 0.001 ? actualInfo(it) : null, guessOut = !!(a && a.qty > 0.001);
-    return {it, rate, est, have, need, qty, cost:qty * (it.price || 0), unknownOut, guessOut, actual:a ? a.qty : null};
+    return {it, rate, est, have, need, qty, cost:qty * (it.price || 0), unknownOut, guessOut, actual:a ? a.qty : null, cover, fresh};
   });
 }
 
@@ -2485,6 +2491,7 @@ function shopHtml(){
     ${S.settings.coverMode === 'days' ? `<div class="row" style="margin:-4px 0 10px; gap:6px; flex-wrap:wrap"><span class="muted">اشتري على قد</span>${[7, 10, 15].map(n => `<button type="button" class="chip ${coverDays() === n ? 'on' : ''}" data-act="coverN" data-n="${n}">${n === 7 ? 'أسبوع' : n + ' يوم'}</button>`).join('')}<input id="coverN" inputmode="numeric" value="${coverDays()}" style="width:58px; padding:6px; border:1px solid var(--line); border-radius:10px; background:var(--card-2); color:var(--ink); text-align:center"> <span class="muted">يوم</span></div>` : ''}
     <div class="row muted"><span>بنحسب على <b class="num">${cover}</b> يوم + احتياطي <b class="num">${S.settings.bufferDays || 0}</b> يوم</span>
       <span class="btns"><button class="btn sm" data-act="buffer" data-d="-1">−</button><button class="btn sm" data-act="buffer" data-d="1">+</button></span></div>
+    ${S.items.some(isFresh) ? `<div class="row" style="margin-top:8px; gap:6px; flex-wrap:wrap"><span class="muted">🥬 الخضار والفاكهة على قد</span>${[3, 5, 7, 10].map(n => `<button type="button" class="chip ${freshDays() === n ? 'on' : ''}" data-act="freshDays" data-n="${n}">${n === 7 ? 'أسبوع' : n + ' يوم'}</button>`).join('')}<span class="muted" style="font-size:11.5px; flex-basis:100%">عشان ما يبوظوش — والباقي على ${cover} يوم. فلوسهم في خطة الشهر لسه محسوبة للشهر كله.</span></div>` : ''}
     <div class="row" style="margin-top:10px"><span class="muted">اعرض الكميات بـ</span>
       <div class="seg" style="margin:0; flex:1; max-width:250px">
         <button type="button" class="${S.settings.shopView !== 'base' ? 'on' : ''}" data-act="shopView" data-v="pack">العبوة (كيس…)</button>
@@ -2501,7 +2508,7 @@ function shopHtml(){
     ${shopRows(need).map(x => x.head ? `<tr class="shop-grp"><td colspan="5"><b>${esc(x.head)}</b> <span class="muted">· ${x.n} صنف${x.cost ? ` · <span class="num">${fmt(x.cost)}</span> ج` : ''}</span></td></tr>` : (() => { const sv = S.settings.shopView, alt = isLoose(x.it) || !hasPack(x.it) ? '' : shopQty(x.it, x.qty, sv === 'base' ? 'pack' : 'base', true);
       const tk = !!TICKS[x.it.id];
       return `<tr data-act="buyItem" data-id="${x.it.id}" class="${tk ? 'ticked' : ''}" style="cursor:pointer"><td><div style="display:flex; gap:8px; align-items:flex-start"><button type="button" class="tick ${tk ? 'on' : ''}" data-act="shopTick" data-id="${x.it.id}" aria-label="في السلة">${tk ? '✓' : ''}</button><div><b>${esc(x.it.name)}</b><div class="shop-acts"><button type="button" class="btn sm ghost pause-btn" data-act="itemPause" data-id="${x.it.id}">⏸️ مش دلوقتي</button>${hasPack(x.it) && !(baseOf(x.it) === 'PCS' && x.it.pf === 1) ? `<button type="button" class="btn sm ghost pause-btn" data-act="toggleLoose" data-id="${x.it.id}" title="بيتباع فرط ولا بالعبوة؟">${isLoose(x.it) ? '⚖️ فرط' : '📦 ' + esc(x.it.pu)}</button>` : ''}<button type="button" class="btn sm ghost pause-btn" data-act="itemForm" data-id="${x.it.id}" aria-label="تعديل الصنف">✏️</button></div></div></div></td>
-      <td>${x.est == null ? '؟' : shopQty(x.it, x.have, sv, true)}</td><td>${shopQty(x.it, x.rate.v * (cover + (S.settings.bufferDays || 0)), sv, true)}</td>
+      <td>${x.est == null ? '؟' : shopQty(x.it, x.have, sv, true)}</td><td>${shopQty(x.it, x.rate.v * x.cover, sv, true)}${x.fresh ? `<div class="muted" style="font-size:10.5px">لـ${x.cover === 7 ? 'أسبوع' : x.cover + ' يوم'}</div>` : ''}</td>
       <td><b>${shopQty(x.it, x.qty, sv, true)}</b>${alt ? `<div class="muted" style="font-size:11px">${alt}</div>` : ''}${x.unknownOut ? '<div class="muted" style="font-size:11px">خلص · استهلاكه لسه مش معروف</div>' : ''}${x.guessOut ? sameBtns(x.it, x.actual) : ''}</td>
       <td class="num">${x.it.price > 0 ? fmt(x.cost) : '<span class="neg">؟</span>'}${cheapHint(x.it, KP)}</td></tr>`; })()).join('')}
     </table><div class="muted" style="margin-top:8px">دوس على أي صنف عشان تسجّل إنك اشتريته بالسعر الفعلي. ولو مش هتجيبه دلوقتي دوس ⏸️.</div></div>`;
@@ -3579,6 +3586,7 @@ function itemForm(id, preset){
     : `<div class="fld2">${Fd.num('monthly', '<span data-l="monthly">بتستهلك كام في الشهر</span>', m0)}${Fd.num('price', '<span data-l="price">السعر</span>', p0)}</div>`;
   body += `<div class="muted" data-l="conv" style="margin:-4px 0 10px"></div>`;
   body += `<label class="switch" style="margin:-2px 0 10px"><input type="checkbox" name="loose" ${it ? (isLoose(it) ? 'checked' : '') : 'checked'} onchange="this.dataset.t=1"> <span>بيتباع فرط بأي كمية — قايمة الشراء تقترح على قد استهلاكك بالظبط مش عبوة كاملة</span></label>`;
+  body += `<label class="switch" style="margin:-2px 0 10px"><input type="checkbox" name="fresh" ${it ? (isFresh(it) ? 'checked' : '') : ''} onchange="this.dataset.t=1"> <span>بيبوظ — بشتريه بالأسبوع (قايمة الشراء تحسبه على قد ${freshDays()} يوم بس)</span></label>`;
   body += `<label class="switch" style="margin:-2px 0 10px"><input type="checkbox" name="lumpy" ${it ? (isLumpy(it) ? 'checked' : '') : ''} onchange="this.dataset.t=1"> <span>بيتاكل على مرات مش كل يوم (لحمة، فراخ، سمك) — الموجود يفضل زي آخر جرد لحد ما تسجّل إنك استخدمت منه</span></label>`;
   if(!it) body += Fd.num('stock', '<span data-l="stock">الموجود عندك دلوقتي (اختياري)</span>', '');
   if(it){
@@ -3621,6 +3629,8 @@ function itemForm(id, preset){
     const lc = $('#sheetBody [name="loose"]'), auto = isLoose(Object.assign({}, o, {loose:undefined}));
     if(lc && (lc.dataset.t || it) && !!v.loose !== auto) o.loose = !!v.loose; else delete o.loose;
     // "على مرات": نفس الفكرة — الافتراضي من الاسم/المجموعة، ولو غيّرته بيتحفظ
+    const fc = $('#sheetBody [name="fresh"]'), autoF = isFresh(Object.assign({}, o, {fresh:undefined}));
+    if(fc && (fc.dataset.t || it) && !!v.fresh !== autoF) o.fresh = !!v.fresh; else delete o.fresh;
     const mc = $('#sheetBody [name="lumpy"]'), autoL = isLumpy(Object.assign({}, o, {lumpy:undefined}));
     if(mc && (mc.dataset.t || it) && !!v.lumpy !== autoL) o.lumpy = !!v.lumpy; else delete o.lumpy;
     if(!it){
@@ -4791,6 +4801,7 @@ const ACT = {
   jardDraftClear:() => { if(!confirm('تمسح كل اللي كتبته في الجرد ده وتبدأ من الأول؟')) return; try{ localStorage.removeItem(JDRAFT_KEY); }catch(e){} render(); },
   cover:(d) => { S.settings.coverMode = d.v; save(); },
   coverN:(d) => { S.settings.coverN = +d.n; save(); },
+  freshDays:(d) => { S.settings.freshDays = +d.n; save(); },
   // من قايمة الشراء: الصنف ده بيتباع فرط (على قد الاحتياج) ولا بالعبوة الكاملة
   toggleLoose:(d) => { const it = byId(S.items, d.id); if(!it) return; it.loose = !isLoose(it); save(); toast(it.loose ? `⚖️ ${it.name}: فرط — على قد احتياجك` : `📦 ${it.name}: بالـ${it.pu} الكامل`); },
   shopTick:(d) => { const t = shopTicks(); t[d.id] ? delete t[d.id] : (t[d.id] = 1); shopTicksSave(t); render(); },
@@ -4809,7 +4820,7 @@ const ACT = {
     const cover = coverDays();
     const L = shopList().filter(x => x.qty > 0), sv = S.settings.shopView;
     const line = x => `• ${x.it.name}: ${shopQty(x.it, x.qty, sv)}${hasPack(x.it) && !isLoose(x.it) ? ` (${shopQty(x.it, x.qty, sv === 'base' ? 'pack' : 'base')})` : ''}`;
-    const txt = `🛒 قائمة مشتريات البيت (تكفي ${cover} يوم)\n` + shopRows(L).map(x => x.head ? `\n— ${x.head} —` : line(x)).join('\n');
+    const txt = `🛒 قائمة مشتريات البيت (تكفي ${cover} يوم${L.some(x => x.fresh) ? ` — والخضار والفاكهة ${freshDays()} يوم` : ''})\n` + shopRows(L).map(x => x.head ? `\n— ${x.head} —` : line(x)).join('\n');
     if(navigator.share) navigator.share({text:txt}).catch(() => {});
     else if(navigator.clipboard) navigator.clipboard.writeText(txt).then(() => toast('اتنسخت القائمة'));
     else openSheet('القائمة', `<div class="pre">${esc(txt)}</div>`);

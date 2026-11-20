@@ -566,6 +566,26 @@ await test('متوسط المصروف الشهري: كل شهر لوحده من 
   assert.match(txt, /أقساط الديون\s*2,500/); assert.match(txt, /الديون القديمة\s*10,000/); assert.match(txt, /الهدايا\s*700/);
 });
 
+await test('الخضار والفاكهة بالأسبوع: قايمة الشراء على قد 7 أيام، والباقي على الشهر، وخطة الشهر لسه للشهر كله', async page => {
+  const r = await ev(page, () => {
+    S.items.push({ id: 't', name: 'طماطم', group: 'خضار وفاكهة', base: 'KG', monthly: 6, price: 20 }, { id: 'r', name: 'رز', group: 'تموين', base: 'KG', monthly: 6, price: 30 });
+    S.counts.push({ id: 'c1', ts: Date.now() - 10, itemId: 't', date: '2026-10-09', qty: 0 }, { id: 'c2', ts: Date.now() - 9, itemId: 'r', date: '2026-10-09', qty: 0 });
+    save(); EPOCH++;
+    const L = shopList(), q = id => L.find(x => x.it.id === id).qty;
+    const month = shopList(23), qm = id => month.find(x => x.it.id === id).qty;
+    return [isFresh(byId(S.items, 't')), isFresh(byId(S.items, 'r')), q('t'), q('r'), qm('t'), qm('r')];
+  });
+  assert.deepEqual(r, [true, false, 1.4, 6.6, 4.6, 4.6]);   // 0.2/يوم × 7 · 0.2 × (30 + 3 احتياطي) · خطة الشهر: 23 يوم للاتنين
+  await ev(page, () => { ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'shop' }); });
+  await page.click('[data-act="freshDays"][data-n="3"]');
+  assert.equal(await ev(page, () => shopList().find(x => x.it.id === 't').qty), 0.6);
+  // تقفلها لصنف معيّن
+  await ev(page, () => itemForm('t'));
+  await page.evaluate(() => document.querySelectorAll('#sheetBody details').forEach(d => d.open = true));
+  await page.uncheck('#sheetBody [name="fresh"]'); await submit(page);
+  assert.equal(await ev(page, () => shopList().find(x => x.it.id === 't').qty), 6.6);
+});
+
 await test('هدف لسه ما بدأش: مش بيتخصم من خطة الشهر لحد شهر البداية', async page => {
   await ev(page, () => { ACT.tab({ tab: 'goals' }); goalForm(); });
   await fill(page, 'name', 'عربية'); await fill(page, 'target', 120000);
@@ -973,11 +993,11 @@ await test('قايمة الشراء: الفرط (كيلو/لتر) بتقترح �
     save(); const q = id => shopList().find(x => x.it.id === id).qty;
     return [q('tm'), q('zt'), q('sk'), shopQty(byId(S.items, 'tm'), 0.5), shopQty(byId(S.items, 'tm'), 1.5)];
   });
-  // 3.3 كيلو في الشهر + 3 أيام احتياطي = 3.63 بالظبط · الزيت عبوة 0.8 كاملة · السكر متعلّم "مش فرط" → 4 أكياس
-  assert.deepEqual(r, [3.63, 0.8, 4, 'نص كيلو', 'كيلو ونص']);
+  // الطماطم طازة: 3.3 كيلو في الشهر على قد أسبوع = 0.77 بالظبط · الزيت عبوة 0.8 كاملة · السكر متعلّم "مش فرط" → 4 أكياس
+  assert.deepEqual(r, [0.77, 0.8, 4, 'نص كيلو', 'كيلو ونص']);
   // من الصنف: تشيل علامة "فرط" فتتحفظ
   await ev(page, () => { itemForm('tm'); document.querySelectorAll('#sheetBody details').forEach(d => d.open = true); }); await page.uncheck('#sheetBody [name="loose"]'); await submit(page);
-  assert.deepEqual(await ev(page, () => [byId(S.items, 'tm').loose, shopList().find(x => x.it.id === 'tm').qty]), [false, 4]);
+  assert.deepEqual(await ev(page, () => [byId(S.items, 'tm').loose, shopList().find(x => x.it.id === 'tm').qty]), [false, 1]);   // أسبوع = 0.77 → كيس كامل
 });
 
 await test('جرد أقل من اللي اتشرى النهارده: يسأل "قبل الشراء ولا بعده"، وجرد غلط يتمسح من الصنف', async page => {
