@@ -712,7 +712,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-20 · 12:00';
+const APP_VER = '2026-11-23 · 15:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -2110,6 +2110,7 @@ function itemsHtml(){
     <div class="muted" style="line-height:1.7; margin-top:4px">الشهر ده: اتصرف <span class="num">${fmt(cur.houseSpent)}</span> + فاضل تشتري لآخر الشهر <span class="num">${fmt(cur.houseToBuy)}</span></div>
     <label class="switch" style="margin:8px 0 0"><input type="checkbox" data-act="realOnly" ${realOnly() ? 'checked' : ''}> <span>احسب من بياناتي الحقيقية بس (الجرد و"خلص" والمشتريات) — وتجاهل الاستهلاك اللي كتبته من دماغي</span></label>
     ${incomplete ? `<div class="note">فيه <b>${incomplete}</b> صنف ناقصهم الاستهلاك الشهري أو السعر — دوس على الصنف وكمّله عشان الحسابات تبقى مظبوطة.</div>` : ''}
+    ${dupsHtml()}
     ${noPrice ? `<button type="button" class="btn sm" style="margin-top:8px" data-act="pricesForm">💲 كمّل الأسعار (<span class="num">${noPrice}</span> صنف من غير سعر)</button>` : ''}
     <div class="muted" style="font-size:12px; margin-top:6px">💡 سجّل كل شراء ودوس "خلص" لما حاجة تخلص — الاستهلاك بيتحسب من كده لوحده.</div></div>
     ${searchBox('items', true)}`;
@@ -2265,11 +2266,28 @@ function moveBuy(id){
   });
 }
 /* دمج صنف في صنف تاني (كانوا نفس الحاجة باسمين): المشتريات تتنقل، وجرد الصنف المدموج بيتشال */
-function mergeItemForm(id){
+/* أصناف شكلها نفس الحاجة باسمين ("ارز ابيض" و"رز ابيض"، "الزيت" و"زيت") — نفس المقياس واسمهم واحد بعد ما نشيل الألف واللام */
+const dupKey = n => normAr(n).replace(/\s+/g, ' ').split(' ').map(w => w.replace(/^ال(?=..)/, '').replace(/^ا(?=..)/, '')).join(' ');
+function dupPairs(){
+  const by = {}, out = [];
+  S.items.forEach(it => { const k = baseOf(it) + '|' + dupKey(it.name); (by[k] = by[k] || []).push(it); });
+  Object.values(by).forEach(L => { if(L.length > 1){
+    // الأساسي = اللي عليه حركات أكتر (مشتريات + جرد)
+    const n = it => itemBuys(it).length + itemCounts(it).length, s_ = L.slice().sort((a, b) => n(b) - n(a));
+    s_.slice(1).forEach(x => out.push({keep:s_[0], drop:x}));
+  } });
+  return out;
+}
+function dupsHtml(){
+  const D = dupPairs(); if(!D.length) return '';
+  return `<div class="alert warn" data-l="dups" style="display:block"><b>🔗 ${D.length === 1 ? 'صنف متسجل مرتين' : D.length + ' أصناف متسجلة مرتين'} باسمين</b> — الجرد والمشتريات بيتقسموا عليهم والحسبة بتبوظ:
+    ${D.slice(0, 5).map(x => `<div class="row" style="margin-top:6px"><span>"${esc(x.drop.name)}" و"${esc(x.keep.name)}"</span><button type="button" class="btn sm" data-act="mergeItemForm" data-id="${x.drop.id}" data-to="${x.keep.id}">ادمجهم</button></div>`).join('')}</div>`;
+}
+function mergeItemForm(id, toId){
   const src = byId(S.items, id); if(!src) return;
   const L = sameBaseItems(src);
   if(!L.length){ toast('مفيش صنف تاني بنفس المقياس تدمجه فيه', true); return; }
-  openSheet('دمج ' + src.name, `<label class="fld"><span>ادمجه في</span><select name="to">${L.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></label>
+  openSheet('دمج ' + src.name, `<label class="fld"><span>ادمجه في</span><select name="to">${L.map(x => `<option value="${x.id}" ${x.id === toId ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
     <div class="muted" style="line-height:1.8; margin-bottom:8px">كل مشتريات <b>${esc(src.name)}</b> (<span class="num">${itemBuys(src).length}</span>) هتتنقل للصنف التاني، و<b>${esc(src.name)}</b> هيتمسح هو وجرده. بعد الدمج اجرد الصنف مرة عشان الموجود يتظبط.</div>${Fd.foot('ادمج')}`,
     v => { ACT.delMergeItem({id:src.id, to:v.to}); });
 }
@@ -3619,6 +3637,8 @@ function itemForm(id, preset){
     // تغيير المقياس (KG ↔ PCS…) مالوش تحويل: الجرد والمشتريات القديمة متسجلة بالمقياس القديم
     if(it && (v.base || 'PCS') !== baseOf(it) && (S.counts.some(c => c.itemId === it.id) || itemBuys(it).length)
       && !confirm(`الجرد والمشتريات القديمة لـ${it.name} متسجلة بالـ${BASES[baseOf(it)].en}، وبعد التغيير هتتقري ${(BASES[v.base] || BASES.PCS).en}.\nكمّل؟ وبعدها اجرده تاني عشان الرقم يتظبط.`)) return false;
+    if(!it){ const dk = (v.base || 'PCS') + '|' + dupKey(v.name), same = S.items.find(x => baseOf(x) + '|' + dupKey(x.name) === dk);
+      if(same && !confirm(`فيه صنف اسمه "${same.name}" — ده نفس الصنف؟\nموافق = تضيفه برضه صنف جديد · إلغاء = ترجع (واستخدم "${same.name}")`)) return false; }
     const o = it || {id:uid(), createdAt:todayS()};
     // لو الرقم ما اتغيرش والعبوة زي ما هي، نسيب القيمة المحفوظة (من غير ما التقريب يزحزحها كل مرة)
     const same = it && f === f0 && (v.base || 'PCS') === baseOf(it);
@@ -4675,7 +4695,7 @@ const ACT = {
     save(); const u = undoDiff(before); toast('اتغيّرت مواعيد الأهداف'); setTimeout(() => showUndo(u, 'اتغيّرت المواعيد'), 30);
   },
   moveBuy:(d) => moveBuy(d.id),
-  mergeItemForm:(d) => mergeItemForm(d.id),
+  mergeItemForm:(d) => mergeItemForm(d.id, d.to),
   // اسمه بيبدأ بـ del عشان الممسوح (الصنف وجرده) يتعلّم عليه في المزامنة، والتراجع يشتغل
   delMergeItem:(d) => {
     const src = byId(S.items, d.id), dst = byId(S.items, d.to); if(!src || !dst || src === dst) return;

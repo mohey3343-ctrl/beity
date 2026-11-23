@@ -586,6 +586,30 @@ await test('الخضار والفاكهة بالأسبوع: قايمة الشر�
   assert.equal(await ev(page, () => shopList().find(x => x.it.id === 't').qty), 6.6);
 });
 
+await test('أصناف متسجلة مرتين باسمين ("ارز ابيض" و"رز ابيض"): تنبيه بزرار دمج، والدمج بيروح للي عليه حركات أكتر', async page => {
+  await ev(page, () => {
+    S.items.push({ id: 'a', name: 'ارز ابيض', group: 'تموين', base: 'KG', pu: 'كيس', pf: 1 }, { id: 'b', name: 'رز ابيض', group: 'تموين', base: 'KG', pu: 'كيس', pf: 1, price: 30 },
+      { id: 'c', name: 'زيت', group: 'تموين', base: 'L' }, { id: 'd', name: 'الزيت', group: 'تموين', base: 'L' }, { id: 'e', name: 'رز بسمتي', group: 'تموين', base: 'KG' });
+    S.counts.push({ id: 'k1', ts: 1, itemId: 'a', date: '2026-10-01', qty: 0.1 }, { id: 'k2', ts: 2, itemId: 'b', date: '2026-10-01', qty: 1 });
+    S.tx.push({ id: 't1', ts: 3, type: 'exp', cat: 'house', itemId: 'b', qty: 1, amount: 30, date: '2026-10-05', note: 'رز ابيض' });
+    save(); ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'items' });
+  });
+  // "ارز ابيض" بيتدمج في "رز ابيض" (عليه مشتريات)، و"زيت"/"الزيت" زوج — و"رز بسمتي" لوحده
+  assert.deepEqual(await ev(page, () => dupPairs().map(x => [x.drop.id, x.keep.id].sort().join('')).sort()), ['ab', 'cd']);
+  assert.deepEqual(await ev(page, () => { const x = dupPairs().find(p => p.keep.id === 'b'); return x && x.drop.id; }), 'a');
+  await page.click('[data-l="dups"] [data-act="mergeItemForm"][data-id="a"]');
+  assert.equal(await page.inputValue('#sheetBody [name="to"]'), 'b');
+  await submit(page);
+  assert.deepEqual(await ev(page, () => [!!byId(S.items, 'a'), S.counts.some(c => c.itemId === 'a'), dupPairs().length]), [false, false, 1]);
+  // صنف جديد باسم موجود: بيسأل
+  let asked = '';
+  page.removeAllListeners('dialog'); page.on('dialog', d => { asked = d.message(); d.dismiss(); });
+  await ev(page, () => itemForm());
+  await fill(page, 'name', 'الرز ابيض'); await page.selectOption('#sheetBody [name="base"]', 'KG'); await submit(page);
+  assert.match(asked, /فيه صنف اسمه "رز ابيض"/);
+  assert.equal(await ev(page, () => S.items.filter(i => /ابيض/.test(i.name)).length), 1);
+});
+
 await test('هدف لسه ما بدأش: مش بيتخصم من خطة الشهر لحد شهر البداية', async page => {
   await ev(page, () => { ACT.tab({ tab: 'goals' }); goalForm(); });
   await fill(page, 'name', 'عربية'); await fill(page, 'target', 120000);
