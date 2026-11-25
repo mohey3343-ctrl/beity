@@ -712,7 +712,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-23 · 15:00';
+const APP_VER = '2026-11-25 · 15:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -4491,11 +4491,19 @@ function cashCount(){
     const shortSum = sum(short, e => e.x.value - e.amount);
     if(short.length && confirm(`فيه ${fmt(shortSum)} ج أقل من المتسجل — غالبًا مصاريف ما اتسجلتش.\nأسجّلهم كمصروف "متنوع" عشان الحسابات تتظبط؟`))
       short.forEach((e, i) => S.tx.push({id:uid(), ts:ts + i, type:'exp', cat:'other', amount:Math.round(e.x.value - e.amount), note:'فرق جرد الفلوس — مصاريف ما اتسجلتش', date:todayS(), walletId:e.x.w.id}));
+    // الزيادة زي النقص: بتتسجل (كدخل "فرق جرد") عشان التقرير والخطة يبقوا مظبوطين — والرصيد نفسه الجرد بيظبطه في الحالتين
+    const overSum = sum(over, e => e.amount - e.x.value);
+    let overDone = false;
+    if(over.length && confirm(`معاك ${fmt(overSum)} ج زيادة عن المتسجل — غالبًا مصروف اتسجّل مرتين أو أكبر من الحقيقة، أو فلوس دخلت ما اتسجلتش.\nأسجّلهم كـ"فرق جرد — فلوس زيادة" عشان الحسابات تتظبط؟`)){
+      over.forEach((e, i) => S.tx.push({id:uid(), ts:ts + 5 + i, type:'inc', amount:Math.round(e.amount - e.x.value), note:'فرق جرد الفلوس — فلوس زيادة', date:todayS(), walletId:e.x.w.id}));
+      overDone = true;
+    }
     S.cashCounts = S.cashCounts || [];
     entries.forEach((e, i) => S.cashCounts.push({id:uid(), ts:ts + 10 + i, date:todayS(), amount:e.amount, total:e.total, walletId:e.x.w.id, note:v.note.trim()}));
     save();
     const tot = sum(entries, e => e.total), free = sum(entries, e => e.amount), res = tot - free;
-    if(over.length) toast(`معاك ${fmt(sum(over, e => e.amount - e.x.value))} ج زيادة عن المتسجل — لو دخل فلوس سجّلها كدخل إضافي`, false, 6000);
+    if(over.length) toast(overDone ? `اتسجّل الجرد + ${fmt(overSum)} ج فرق زيادة` : `اتسجّل الجرد — رصيدك اتظبط على ${fmt(free)}، والـ${fmt(overSum)} الزيادة ما اتسجلوش كحركة`, false, 6000);
+    else if(short.length) toast(S.tx.some(t => t.ts >= ts && t.ts < ts + 5) ? `اتسجّل الجرد + ${fmt(shortSum)} ج فرق ناقص (متنوع)` : `اتسجّل الجرد — رصيدك اتظبط على ${fmt(free)}، والـ${fmt(shortSum)} الناقصين ما اتسجلوش كمصروف`, false, 6000);
     else if(!short.length) toast(res > 0.5 ? `اتسجّل ✔ في الخزنة ${fmt(tot)} — منهم ${fmt(res)} محجوز للمواعيد، ورصيدك ${fmt(free)}` : 'اتسجّل الرصيد ✔', false, res > 0.5 ? 6000 : 0);
   });
 }

@@ -610,6 +610,22 @@ await test('أصناف متسجلة مرتين باسمين ("ارز ابيض" �
   assert.equal(await ev(page, () => S.items.filter(i => /ابيض/.test(i.name)).length), 1);
 });
 
+await test('جرد الفلوس: الزيادة زي النقص — بيسأل ويسجّلها "فرق جرد"، والرصيد بيتظبط في الحالتين حتى لو قلت لأ', async page => {
+  const count = async (amt, accept) => {
+    page.removeAllListeners('dialog'); page.on('dialog', d => accept ? d.accept() : d.dismiss());
+    await ev(page, () => cashCount()); await fill(page, 'amount', amt); await submit(page);
+  };
+  await ev(page, () => { S.cashCounts.push({ id: 'c0', ts: Date.parse('2026-10-08T10:00:00'), date: '2026-10-08', amount: 1000, total: 1000 }); save(); });
+  await count(1219, true);
+  assert.deepEqual(await ev(page, () => S.tx.map(t => [t.type, t.amount, t.note])), [['inc', 219, 'فرق جرد الفلوس — فلوس زيادة']]);
+  assert.equal(await ev(page, () => Math.round(cashBalance().value)), 1219);
+  assert.match(await page.textContent('#toast'), /219 ج فرق زيادة/);
+  await count(1000, false);                                    // ناقص 219 وقال لأ: مفيش حركة بس الرصيد اتظبط
+  assert.equal(await ev(page, () => S.tx.length), 1);
+  assert.equal(await ev(page, () => Math.round(cashBalance().value)), 1000);
+  assert.match(await page.textContent('#toast'), /الناقصين ما اتسجلوش/);
+});
+
 await test('هدف لسه ما بدأش: مش بيتخصم من خطة الشهر لحد شهر البداية', async page => {
   await ev(page, () => { ACT.tab({ tab: 'goals' }); goalForm(); });
   await fill(page, 'name', 'عربية'); await fill(page, 'target', 120000);
