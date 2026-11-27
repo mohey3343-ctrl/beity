@@ -712,7 +712,7 @@
 
 const KEY = 'beity.v1';
 /* نسخة التطبيق — بتتغير مع كل تحديث، وبتظهر في الإعدادات وبعد زرار ↻ عشان تعرف إن التحديث وصل */
-const APP_VER = '2026-11-25 · 15:00';
+const APP_VER = '2026-11-27 · 12:00';
 const SYNCED_KEY = KEY + '::syncedAt';
 const EXPORTED_KEY = KEY + '::exportedAt';
 const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -819,6 +819,8 @@ const isLumpy = it => it.lumpy != null ? !!it.lumpy : (LUMPY_N.test(it.name || '
 /* بيبوظ (خضار وفاكهة): بيتشرى بالأسبوع — قايمة الشراء بتحسبه على قد أيام الطازة بس (افتراضي 7)، وخطة الشهر لسه بتحسب فلوسه للشهر كله */
 const FRESH_G = /خضار|خضرو|فاكه|فواكه|ورقيات/;
 const isFresh = it => it.fresh != null ? !!it.fresh : FRESH_G.test(it.group || '');
+const freshParse = v => { const w = normAr(v).replace(/\s+/g, ''); if(/^(1)?اسبوع$/.test(w)) return 7; if(/^(اسبوعين|2اسبوع)$/.test(w)) return 14; if(/^3اسابيع$/.test(w)) return 21;
+  const n = Math.round(num(v)); return n >= 1 && n <= 30 ? n : 0; };
 const freshDays = () => Math.max(1, Math.min(30, +S.settings.freshDays || 7));
 const isLoose = it => baseOf(it) === 'PCS' ? !!it.loose && hasPack(it) : (it.loose != null ? !!it.loose : !hasPack(it) || LOOSE_G.test(it.group || ''));
 /* "نص كيلو" بدل 0.5 KG */
@@ -2509,7 +2511,7 @@ function shopHtml(){
     ${S.settings.coverMode === 'days' ? `<div class="row" style="margin:-4px 0 10px; gap:6px; flex-wrap:wrap"><span class="muted">اشتري على قد</span>${[7, 10, 15].map(n => `<button type="button" class="chip ${coverDays() === n ? 'on' : ''}" data-act="coverN" data-n="${n}">${n === 7 ? 'أسبوع' : n + ' يوم'}</button>`).join('')}<input id="coverN" inputmode="numeric" value="${coverDays()}" style="width:58px; padding:6px; border:1px solid var(--line); border-radius:10px; background:var(--card-2); color:var(--ink); text-align:center"> <span class="muted">يوم</span></div>` : ''}
     <div class="row muted"><span>بنحسب على <b class="num">${cover}</b> يوم + احتياطي <b class="num">${S.settings.bufferDays || 0}</b> يوم</span>
       <span class="btns"><button class="btn sm" data-act="buffer" data-d="-1">−</button><button class="btn sm" data-act="buffer" data-d="1">+</button></span></div>
-    ${S.items.some(isFresh) ? `<div class="row" style="margin-top:8px; gap:6px; flex-wrap:wrap"><span class="muted">🥬 الخضار والفاكهة على قد</span>${[3, 5, 7, 10].map(n => `<button type="button" class="chip ${freshDays() === n ? 'on' : ''}" data-act="freshDays" data-n="${n}">${n === 7 ? 'أسبوع' : n + ' يوم'}</button>`).join('')}<span class="muted" style="font-size:11.5px; flex-basis:100%">عشان ما يبوظوش — والباقي على ${cover} يوم. فلوسهم في خطة الشهر لسه محسوبة للشهر كله.</span></div>` : ''}
+    ${S.items.some(isFresh) ? `<div class="row" style="margin-top:8px; gap:6px; flex-wrap:wrap"><span class="muted">🥬 الخضار والفاكهة على قد</span>${[3, 5, 7, 10].map(n => `<button type="button" class="chip ${freshDays() === n ? 'on' : ''}" data-act="freshDays" data-n="${n}">${n === 7 ? 'أسبوع' : n + ' يوم'}</button>`).join('')}<input id="freshN" inputmode="text" value="${freshDays()}" aria-label="عدد أيام الخضار والفاكهة" style="width:58px; padding:6px; border:1px solid var(--line); border-radius:10px; background:var(--card-2); color:var(--ink); text-align:center"> <span class="muted">يوم</span><span class="muted" style="font-size:11.5px; flex-basis:100%">عشان ما يبوظوش — والباقي على ${cover} يوم. فلوسهم في خطة الشهر لسه محسوبة للشهر كله.</span></div>` : ''}
     <div class="row" style="margin-top:10px"><span class="muted">اعرض الكميات بـ</span>
       <div class="seg" style="margin:0; flex:1; max-width:250px">
         <button type="button" class="${S.settings.shopView !== 'base' ? 'on' : ''}" data-act="shopView" data-v="pack">العبوة (كيس…)</button>
@@ -5188,6 +5190,8 @@ document.addEventListener('input', e => {
     if(f === 'name' || f === 'icon') b[f] = e.target.value;
     if(f === 'val'){ const v = num(e.target.value); if(b.pct > 0) b.pct = v; else b.amount = v; }
     return; }
+  // أيام الخضار والفاكهة: رقم، أو "أسبوع/اسبوعين"
+  if(e.target.id === 'freshN'){ const n = freshParse(e.target.value); if(n){ clearTimeout(e.target._t); e.target._t = setTimeout(() => { S.settings.freshDays = n; save(); }, 700); } return; }
   if(e.target.id === 'coverN'){ const n = Math.round(num(e.target.value)); if(n >= 1 && n <= 120){ clearTimeout(e.target._t); e.target._t = setTimeout(() => { S.settings.coverN = n; save(); }, 700); } return; }
   if(e.target.name && /^p_\d+$/.test(e.target.name) && e.target.closest('.imp-row')) importTotal();
   // مبلغ كتبته بإيدك ما بيتغيرش لوحده، والمقترح بيتحسب من الكمية

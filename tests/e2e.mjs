@@ -579,6 +579,12 @@ await test('الخضار والفاكهة بالأسبوع: قايمة الشر�
   await ev(page, () => { ACT.tab({ tab: 'stock' }); ACT.sub({ k: 'stock', v: 'shop' }); });
   await page.click('[data-act="freshDays"][data-n="3"]');
   assert.equal(await ev(page, () => shopList().find(x => x.it.id === 't').qty), 0.6);
+  // تكتب عدد الأيام بنفسك، أو كلمة "اسبوعين"
+  await page.fill('#freshN', '4'); await page.waitForTimeout(900);
+  assert.equal(await ev(page, () => [freshDays(), shopList().find(x => x.it.id === 't').qty].join()), '4,0.8');
+  await page.fill('#freshN', 'اسبوعين'); await page.waitForTimeout(900);
+  assert.equal(await ev(page, () => freshDays()), 14);
+  assert.deepEqual(await ev(page, () => [freshParse('أسبوع'), freshParse('٥'), freshParse('0'), freshParse('كلام')]), [7, 5, 0, 0]);
   // تقفلها لصنف معيّن
   await ev(page, () => itemForm('t'));
   await page.evaluate(() => document.querySelectorAll('#sheetBody details').forEach(d => d.open = true));
